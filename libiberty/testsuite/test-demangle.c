@@ -16,7 +16,7 @@
 
    You should have received a copy of the GNU General Public License
    along with this program; if not, write to the Free Software
-   Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA 02111-1307, USA. 
+   Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA 02111-1307, USA.
 */
 
 #ifdef HAVE_CONFIG_H
@@ -40,7 +40,7 @@ static unsigned int lineno;
 #define LINELEN 80
 
 static void
-getline(buf)
+td_getln(buf)
      struct line *buf;
 {
   char *data = buf->data;
@@ -142,12 +142,12 @@ main(argc, argv)
 
   for (;;)
     {
-      getline (&format);
+      td_getln (&format);
       if (feof (stdin))
 	break;
 
-      getline (&input);
-      getline (&expect);
+      td_getln (&input);
+      td_getln (&expect);
 
       tests++;
 
@@ -262,7 +262,7 @@ main(argc, argv)
 
       if (no_params)
 	{
-	  getline (&expect);
+	  td_getln (&expect);
 	  result = cplus_demangle (input.data, DMGL_ANSI|DMGL_TYPES);
 
 	  if (result
