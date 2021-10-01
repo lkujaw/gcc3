@@ -233,6 +233,11 @@ extern bool default_must_pass_in_stack (enum machine_mode, tree);
 #define STACK_CHECK_PROBE_LOAD 0
 #endif
 
+/* The default is not to move the stack pointer.  */
+#ifndef STACK_CHECK_MOVING_SP
+#define STACK_CHECK_MOVING_SP 0
+#endif
+
 /* This is a kludge to try to capture the discrepancy between the old
    mechanism (middle-end stack checking) and the new mechanism (static
    back-end stack checking).  STACK_CHECK_PROTECT needs to be bumped
@@ -781,10 +786,9 @@ extern void emit_stack_restore (enum save_level, rtx, rtx);
 extern rtx allocate_dynamic_stack_space (rtx, rtx, int, bool);
 
 /* Probe a range of stack addresses from FIRST to FIRST+SIZE, inclusive.
-   FIRST is a constant and size is a Pmode RTX.  These are offsets from the
-   current stack pointer.  STACK_GROWS_DOWNWARD says whether to add or
-   subtract from the stack.  If SIZE is constant, this is done
-   with a fixed number of probes.  Otherwise, we must make a loop.  */
+   FIRST is a constant and size is a Pmode RTX.  These are offsets from
+   the current stack pointer.  STACK_GROWS_DOWNWARD says whether to add
+   or subtract them from the stack pointer.  */
 extern void probe_stack_range (HOST_WIDE_INT, rtx);
 
 /* Return an rtx that refers to the value returned by a library call

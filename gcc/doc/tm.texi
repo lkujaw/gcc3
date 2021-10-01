@@ -3213,6 +3213,15 @@ as a load instruction and zero if GCC should use a store instruction.
 The default is zero, which is the most efficient choice on most systems.
 @end defmac
 
+@defmac STACK_CHECK_MOVING_SP
+An integer which is nonzero if GCC should move the stack pointer page by page
+when doing probes.  This can be necessary on systems where the stack pointer
+contains the bottom address of the memory area accessible to the executing
+thread at any point in time.  In this situation an alternate signal stack
+is required in order to be able to recover from a stack overflow.  The
+default value of this macro is zero.
+@end defmac
+
 @defmac STACK_CHECK_PROTECT
 The number of bytes of stack needed to recover from a stack overflow,
 for languages where such a recovery is supported.  The default value of

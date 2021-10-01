@@ -205,6 +205,9 @@ Boston, MA 02111-1307, USA.  */
 #undef NEED_INDICATE_EXEC_STACK
 #define NEED_INDICATE_EXEC_STACK 1
 
+/* The stack pointer needs to be moved while checking the stack.  */
+#define STACK_CHECK_MOVING_SP 1
+
 /* Do code reading to identify a signal frame, and set the frame
    state data appropriately.  See unwind-dw2.c for the structs.  */
 

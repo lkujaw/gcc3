@@ -456,6 +456,9 @@ init_ra (void)
   int need_fp
     = (! flag_omit_frame_pointer
        || (current_function_calls_alloca && EXIT_IGNORE_STACK)
+       /* We need the frame pointer to catch stack overflow exceptions
+	  if the stack pointer is moving.  */
+       || (flag_stack_check && STACK_CHECK_MOVING_SP)
        || FRAME_POINTER_REQUIRED);
 
   ra_colorize_init ();

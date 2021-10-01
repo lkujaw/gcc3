@@ -41,6 +41,7 @@ Software Foundation, 59 Temple Place - Suite 330, Boston, MA
 
 static rtx break_out_memory_refs (rtx);
 static void emit_stack_probe (rtx);
+static void anti_adjust_stack_and_probe (rtx);
 
 
 /* Truncate and perhaps sign-extend C as appropriate for MODE.  */
@@ -1371,7 +1372,9 @@ allocate_dynamic_stack_space (rtx size, rtx target, int known_align,
 
   /* If needed, check that we have the required amount of stack.  Take into
      account what has already been checked.  */
-  if (flag_stack_check == 1)
+  if (STACK_CHECK_MOVING_SP)
+    ;
+  else if (flag_stack_check == 1)
     probe_stack_range (STACK_OLD_CHECK_PROTECT + STACK_CHECK_MAX_FRAME_SIZE,
 		       size);
   else if (flag_stack_check == 2)
@@ -1440,7 +1443,11 @@ allocate_dynamic_stack_space (rtx size, rtx target, int known_align,
 	  emit_label (space_available);
 	}
 
-      anti_adjust_stack (size);
+      if (flag_stack_check && STACK_CHECK_MOVING_SP)
+       anti_adjust_stack_and_probe (size);
+      else
+       anti_adjust_stack (size);
+
 #ifdef SETJMP_VIA_SAVE_AREA
       if (setjmpless_size != NULL_RTX)
 	{
@@ -1494,6 +1501,12 @@ emit_stack_probe (rtx address)
 
   MEM_VOLATILE_P (memref) = 1;
 
+  /* See if we have an insn to probe the stack.  */
+#ifdef HAVE_probe_stack
+  if (HAVE_probe_stack)
+    emit_insn (gen_probe_stack (memref));
+  else
+#endif
   if (STACK_CHECK_PROBE_LOAD)
     emit_move_insn (gen_reg_rtx (word_mode), memref);
   else
@@ -1509,11 +1522,13 @@ emit_stack_probe (rtx address)
 #define PROBE_INTERVAL (1 << STACK_CHECK_PROBE_INTERVAL_EXP)
 
 #ifdef STACK_GROWS_DOWNWARD
-#define STACK_GROW_OP     MINUS
-#define STACK_GROW_OPTAB  sub_optab
+#define STACK_GROW_OP       MINUS
+#define STACK_GROW_OPTAB    sub_optab
+#define STACK_GROW_OFF(off) -(off)
 #else
-#define STACK_GROW_OP     PLUS
-#define STACK_GROW_OPTAB  add_optab
+#define STACK_GROW_OP       PLUS
+#define STACK_GROW_OPTAB    add_optab
+#define STACK_GROW_OFF(off) (off)
 #endif
 
 void
@@ -1529,57 +1544,56 @@ probe_stack_range (HOST_WIDE_INT first, rtx size)
   if (GET_MODE (size) != VOIDmode && GET_MODE (size) != Pmode)
     size = convert_to_mode (Pmode, size, 1);
 
-  /* Next see if the front end has set up a function for us to call to
-     check the stack.  */
-  if (stack_check_libfunc != 0)
+  /* Next see if we have a function to check the stack.  */
+  if (stack_check_libfunc)
     {
-      rtx addr = memory_address (QImode,
+      rtx addr = memory_address (Pmode,
 				 gen_rtx_fmt_ee (STACK_GROW_OP, Pmode,
 					         stack_pointer_rtx,
 					         plus_constant (size, first)));
-
-      addr = convert_memory_address (ptr_mode, addr);
-      emit_library_call (stack_check_libfunc, LCT_MAY_THROW, VOIDmode, 1, addr,
-			 ptr_mode);
+      emit_library_call (stack_check_libfunc, LCT_MAY_THROW, VOIDmode, 1,
+                         addr);
     }
 
-  /* Next see if we have an insn to check the stack.  Use it if so.  */
+  /* Next see if we have an insn to check the stack.  */
 #ifdef HAVE_check_stack
   else if (HAVE_check_stack)
     {
-      insn_operand_predicate_fn pred;
-      rtx last_addr
-	= force_operand (gen_rtx_fmt_ee (STACK_GROW_OP, Pmode,
-					 stack_pointer_rtx,
-					 plus_constant (size, first)),
-			 NULL_RTX);
+      rtx addr = memory_address (Pmode,
+				 gen_rtx_fmt_ee (STACK_GROW_OP, Pmode,
+					         stack_pointer_rtx,
+					         plus_constant (size, first)));
+      insn_operand_predicate_fn pred
+	= insn_data[(int) CODE_FOR_check_stack].operand[0].predicate;
+      if (pred && !((*pred) (addr, Pmode)))
+	addr = copy_to_mode_reg (Pmode, addr);
 
-      pred = insn_data[(int) CODE_FOR_check_stack].operand[0].predicate;
-      if (pred && ! ((*pred) (last_addr, Pmode)))
-	last_addr = copy_to_mode_reg (Pmode, last_addr);
-
-      emit_insn (gen_check_stack (last_addr));
+      emit_insn (gen_check_stack (addr));
     }
 #endif
 
-  /* If we have to generate explicit probes, see if we have a constant
-     small number of them to generate.  If so, that's the easy case.  */
-  else if (GET_CODE (size) == CONST_INT
-	   && INTVAL (size) < 10 * PROBE_INTERVAL)
+  /* Otherwise we have to generate explicit probes.  If we have a constant
+     small number of them to generate, that's the easy case.  */
+  else if (GET_CODE (size) == CONST_INT && INTVAL (size) < 7 * PROBE_INTERVAL)
     {
-      HOST_WIDE_INT i;
+      HOST_WIDE_INT isize = INTVAL (size), i;
+      rtx addr;
 
       /* Probe at FIRST + N * PROBE_INTERVAL for values of N from 1 until
 	 it exceeds SIZE.  If only one probe is needed, this will not
-	 generate any code.  Then probe at SIZE.  */
-      for (i = PROBE_INTERVAL; i < INTVAL (size); i += PROBE_INTERVAL)
-	emit_stack_probe (gen_rtx_fmt_ee (STACK_GROW_OP, Pmode,
-					  stack_pointer_rtx,
-					  GEN_INT (i + first)));
+	 generate any code.  Then probe at FIRST + SIZE.  */
+      for (i = PROBE_INTERVAL; i < isize; i += PROBE_INTERVAL)
+	{
+	  addr = memory_address (Pmode,
+				 plus_constant (stack_pointer_rtx,
+						STACK_GROW_OFF (first + i)));
+	  emit_stack_probe (addr);
+	}
 
-      emit_stack_probe (gen_rtx_fmt_ee (STACK_GROW_OP, Pmode,
-					stack_pointer_rtx,
-					plus_constant (size, first)));
+      addr = memory_address (Pmode,
+			     plus_constant (stack_pointer_rtx,
+					    STACK_GROW_OFF (first + isize)));
+      emit_stack_probe (addr);
     }
 
   /* In the variable case, do the same as above, but in a loop.  We emit loop
@@ -1607,8 +1621,8 @@ probe_stack_range (HOST_WIDE_INT first, rtx size)
 
       /* TEST_ADDR = SP + FIRST.  */
       test_addr = force_operand (gen_rtx_fmt_ee (STACK_GROW_OP, Pmode,
-					 	 stack_pointer_rtx,
-					 	 GEN_INT (first)),
+						 stack_pointer_rtx,
+						 GEN_INT (first)),
 				 NULL_RTX);
 
       /* LAST_ADDR = SP + FIRST + ROUNDED_SIZE.  */
@@ -1645,7 +1659,7 @@ probe_stack_range (HOST_WIDE_INT first, rtx size)
 			   1, OPTAB_WIDEN);
 
       if (temp != test_addr)
-	abort ();      
+	abort ();
 
       /* Probe at TEST_ADDR.  */
       emit_stack_probe (test_addr);
@@ -1655,9 +1669,139 @@ probe_stack_range (HOST_WIDE_INT first, rtx size)
       emit_label (end_lab);
       emit_note (NOTE_INSN_LOOP_END);
 
+      /* Step 4: probe at FIRST + SIZE if we cannot assert at compile-time
+	 that SIZE is equal to ROUNDED_SIZE.  */
 
-      /* Step 4: probe at SIZE if we cannot assert at compile-time that
-	 it is equal to ROUNDED_SIZE.  */
+      /* TEMP = SIZE - ROUNDED_SIZE.  */
+      temp = simplify_gen_binary (MINUS, Pmode, size, rounded_size);
+      if (temp != const0_rtx)
+	{
+	  rtx addr;
+
+	  if (GET_CODE (temp) == CONST_INT)
+	    {
+	      /* Use [base + disp} addressing mode if supported.  */
+	      HOST_WIDE_INT offset = INTVAL (temp);
+	      addr = memory_address (Pmode,
+				     plus_constant (last_addr,
+						    STACK_GROW_OFF (offset)));
+	    }
+	  else
+	    {
+	      /* Manual CSE if the difference is not known at compile-time.  */
+	      temp = gen_rtx_MINUS (Pmode, size, rounded_size_op);
+	      addr = memory_address (Pmode,
+				     gen_rtx_fmt_ee (STACK_GROW_OP, Pmode,
+						     last_addr, temp));
+	    }
+
+	  emit_stack_probe (addr);
+	}
+    }
+}
+
+/* Adjust the stack by SIZE bytes while probing it.  Note that we skip the
+   probe for the first interval + a small dope of 4 words and instead probe
+   that many bytes past the specified size to maintain a protection area.  */
+
+static void
+anti_adjust_stack_and_probe (rtx size)
+{
+  const int dope = 4 * UNITS_PER_WORD;
+
+  /* First ensure SIZE is Pmode.  */
+  if (GET_MODE (size) != VOIDmode && GET_MODE (size) != Pmode)
+    size = convert_to_mode (Pmode, size, 1);
+
+  /* If we have a constant small number of probes to generate, that's the
+     easy case.  */
+  if (GET_CODE (size) == CONST_INT && INTVAL (size) < 7 * PROBE_INTERVAL)
+    {
+      HOST_WIDE_INT isize = INTVAL (size), i;
+      bool first_probe = true;
+
+      /* Adjust SP and probe to PROBE_INTERVAL + N * PROBE_INTERVAL for
+	 values of N from 1 until it exceeds SIZE.  If only one probe is
+	 needed, this will not generate any code.  Then adjust and probe
+	 to PROBE_INTERVAL + SIZE.  */
+      for (i = PROBE_INTERVAL; i < isize; i += PROBE_INTERVAL)
+	{
+	  if (first_probe)
+	    {
+	      anti_adjust_stack (GEN_INT (2 * PROBE_INTERVAL + dope));
+	      first_probe = false;
+	    }
+	  else
+	    anti_adjust_stack (GEN_INT (PROBE_INTERVAL));
+	  emit_stack_probe (stack_pointer_rtx);
+	}
+
+      if (first_probe)
+	anti_adjust_stack (plus_constant (size, PROBE_INTERVAL + dope));
+      else
+	anti_adjust_stack (plus_constant (size, PROBE_INTERVAL - i));
+      emit_stack_probe (stack_pointer_rtx);
+    }
+
+  /* In the variable case, do the same as above, but in a loop.  Note that we
+     must be extra careful with variables wrapping around because we might be
+     at the very top (or the very bottom) of the address space and we have to
+     be able to handle this case properly; in particular, we use an equality
+     test for the loop condition.  */
+  else
+    {
+      rtx rounded_size, rounded_size_op, last_addr, temp;
+      rtx loop_lab = gen_label_rtx ();
+      rtx end_lab = gen_label_rtx ();
+
+
+      /* Step 1: round SIZE to the previous multiple of the interval.  */
+
+      /* ROUNDED_SIZE = SIZE & -PROBE_INTERVAL  */
+      rounded_size
+	= simplify_gen_binary (AND, Pmode, size, GEN_INT (-PROBE_INTERVAL));
+      rounded_size_op = force_operand (rounded_size, NULL_RTX);
+
+
+      /* Step 2: compute initial and final value of the loop counter.  */
+
+      /* SP = SP_0 + PROBE_INTERVAL.  */
+      anti_adjust_stack (GEN_INT (PROBE_INTERVAL + dope));
+
+      /* LAST_ADDR = SP_0 + PROBE_INTERVAL + ROUNDED_SIZE.  */
+      last_addr = force_operand (gen_rtx_fmt_ee (STACK_GROW_OP, Pmode,
+						 stack_pointer_rtx,
+						 rounded_size_op), NULL_RTX);
+
+
+      /* Step 3: the loop
+
+	  while (SP != LAST_ADDR)
+	    {
+	      SP = SP + PROBE_INTERVAL
+	      probe at SP
+	    }
+
+	 adjusts SP and probes to PROBE_INTERVAL + N * PROBE_INTERVAL for
+	 values of N from 1 until it is equal to ROUNDED_SIZE.  */
+
+      emit_label (loop_lab);
+
+      /* Jump to END_LAB if SP == LAST_ADDR.  */
+      emit_cmp_and_jump_insns (stack_pointer_rtx, last_addr, EQ, NULL_RTX,
+			       Pmode, 1, end_lab);
+
+      /* SP = SP + PROBE_INTERVAL and probe at SP.  */
+      anti_adjust_stack (GEN_INT (PROBE_INTERVAL));
+      emit_stack_probe (stack_pointer_rtx);
+
+      emit_jump (loop_lab);
+
+      emit_label (end_lab);
+
+
+      /* Step 4: adjust SP and probe to PROBE_INTERVAL + SIZE if we cannot
+	 assert at compile-time that SIZE is equal to ROUNDED_SIZE.  */
 
       /* TEMP = SIZE - ROUNDED_SIZE.  */
       temp = simplify_gen_binary (MINUS, Pmode, size, rounded_size);
@@ -1666,11 +1810,13 @@ probe_stack_range (HOST_WIDE_INT first, rtx size)
 	  /* Manual CSE if the difference is not known at compile-time.  */
 	  if (GET_CODE (temp) != CONST_INT)
 	    temp = gen_rtx_MINUS (Pmode, size, rounded_size_op);
-	  emit_stack_probe (gen_rtx_fmt_ee (STACK_GROW_OP, Pmode,
-					    last_addr,
-					    temp));
+	  anti_adjust_stack (temp);
+	  emit_stack_probe (stack_pointer_rtx);
 	}
     }
+
+  /* Adjust back to account for the additional first interval.  */
+  adjust_stack (GEN_INT (PROBE_INTERVAL + dope));
 }
 
 /* Return an rtx representing the register or memory location

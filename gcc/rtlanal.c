@@ -2377,6 +2377,11 @@ may_trap_p (rtx x)
 
       /* Memory ref can trap unless it's a static var or a stack slot.  */
     case MEM:
+      /* Recognize specific pattern of stack checking probes.  */
+      if (flag_stack_check
+	  && MEM_VOLATILE_P (x)
+	  && XEXP (x, 0) == stack_pointer_rtx)
+	return 1;
       if (MEM_NOTRAP_P (x))
 	return 0;
       return rtx_addr_can_trap_p (XEXP (x, 0));
