@@ -960,12 +960,43 @@ __gnat_install_handler (void)
 
 #include <signal.h>
 #include <siginfo.h>
+#include <sys/ucontext.h>
+
+/* The code below is common to SPARC and i386.  Beware of the delay slot
+   differences for signal context adjustments.  */
+
+#if defined (__sparc)
+#define RETURN_ADDR_OFFSET 8
+#else
+#define RETURN_ADDR_OFFSET 0
+#endif
+
+/* Likewise regarding how the "instruction pointer" register slot can
+   be identified in signal machine contexts.  We have either "REG_PC"
+   or "PC" at hand, depending on the target CPU and solaris version.  */
+
+#if !defined (REG_PC)
+#define REG_PC PC
+#endif
 
 static void __gnat_error_handler (int, siginfo_t *, void *);
+
+/* __gnat_adjust_context_for_raise - see comments along with the default
+   version later in this file.  */
+
+#define HAVE_GNAT_ADJUST_CONTEXT_FOR_RAISE
+
+void
+__gnat_adjust_context_for_raise (int sig ATTRIBUTE_UNUSED, void *uap)
+{
+  mcontext_t * const mcontext = &((ucontext_t *)uap)->uc_mcontext;
+  mcontext->gregs[REG_PC] += (1 - RETURN_ADDR_OFFSET);
+}
 
 static void
 __gnat_error_handler (int sig, siginfo_t *sip, void *uap)
 {
+  mcontext_t * const mcontext = &((ucontext_t *)uap)->uc_mcontext;
   struct Exception_Data *exception;
   const char *msg;
 
@@ -980,28 +1011,50 @@ __gnat_error_handler (int sig, siginfo_t *sip, void *uap)
   switch (sig)
     {
     case SIGSEGV:
-      /* If the problem was permissions, this is a constraint error.
-	 Likewise if the failing address isn't maximally aligned. */
-      if (sip->si_code == SEGV_ACCERR)
-	{
-	  exception = &constraint_error;
-	  msg = "SIGSEGV (memory access violates permissions)";
-	}
-      else if ((long) sip->si_addr == 0)
+      if ((long) sip->si_addr == 0)
 	{
 	  exception = &constraint_error;
 	  msg = "SIGSEGV (null dereference)";
 	}
+      /* If the problem was permissions, this is a constraint error.  */
+      else if (sip->si_code == SEGV_ACCERR)
+	{
+	  exception = &constraint_error;
+	  msg = "SIGSEGV (memory access violating permissions)";
+	}
+      /* If the failing address is not maximally aligned, this is also
+         a constraint error. */
       else if ((((long) sip->si_addr) & 3) != 0)
 	{
 	  exception = &constraint_error;
-	  msg = "SIGSEGV (memory access violates alignment)";
+	  msg = "SIGSEGV (memory access violating alignment)";
 	}
+#if defined (__i386)
+	/* Check if the fault is the result of a stack probe (OR memory 0).
+	   Ideally, it would be possible to forbid such operations outside
+	   of stack probe generation.  */
+      else if (mcontext->gregs[EIP] &&
+	     *(unsigned char *)mcontext->gregs[EIP] == 0x83 &&
+	 (((*((unsigned char *)mcontext->gregs[EIP] + 1) & 0xF8) == 0x08 &&
+	    *((unsigned char *)mcontext->gregs[EIP] + 2) == 0) ||
+	   (*((unsigned char *)mcontext->gregs[EIP] + 1) == 0x8C &&
+	    *((unsigned char *)mcontext->gregs[EIP] + 7) == 0)))
+	{
+	  exception = &storage_error;
+	  msg = "SIGSEGV (stack overflow)";
+	}
+      else
+	{
+	  exception = &constraint_error;
+	  msg = "SIGSEGV (erroneous memory access)";
+	}
+#else
       else
 	{
 	  exception = &storage_error;
 	  msg = "SIGSEGV (stack overflow or erroneous memory access)";
 	}
+#endif
       break;
 
     case SIGBUS:
@@ -1023,6 +1076,8 @@ __gnat_error_handler (int sig, siginfo_t *sip, void *uap)
       exception = &program_error;
       msg = "unhandled signal";
     }
+
+  __gnat_adjust_context_for_raise (sig, uap);
 
   Raise_From_Signal_Handler (exception, msg);
 }

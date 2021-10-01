@@ -19,12 +19,6 @@
  * to  the  Free Software Foundation,  51  Franklin  Street,  Fifth  Floor, *
  * Boston, MA 02110-1301, USA.                                              *
  *                                                                          *
---
---
---
---
---
---
  * GNAT was originally developed  by the GNAT team at  New York University. *
  * Extensive contributions were provided by Ada Core Technologies Inc.      *
  *                                                                          *
@@ -688,9 +682,9 @@ get_call_site_action_for (_Unwind_Context *uw_context,
   /* Subtract 1 because GetIP returns the actual call_site value + 1.  */
 
   /* call_site is a direct index into the call-site table, with two special
-     values : -1 for no-action and 0 for "terminate". The latter should never
-     show up for Ada. To test for the former, beware that _Unwind_Ptr might be
-     unsigned.  */
+     values : -1 for no-action and 0 for "terminate".  The latter should never
+     show up for Ada.  To test for the former, beware that _Unwind_Ptr might
+     be unsigned.  */
 
   if ((int)call_site < 0)
     {
@@ -712,17 +706,16 @@ get_call_site_action_for (_Unwind_Context *uw_context,
       action->kind = unknown;
 
       /* We have a direct index into the call-site table, but this table is
-	 made of leb128 values, the encoding length of which is variable. We
+	 made of leb128 values, the encoding length of which is variable.  We
 	 can't merely compute an offset from the index, then, but have to read
 	 all the entries before the one of interest.  */
 
-      const unsigned char * p = region->call_site_table;
+      const unsigned char *p = region->call_site_table;
 
       do {
 	p = read_uleb128 (p, &cs_lp);
 	p = read_uleb128 (p, &cs_action);
       } while (--call_site);
-
 
       action->landing_pad = cs_lp + 1;
 
@@ -735,8 +728,7 @@ get_call_site_action_for (_Unwind_Context *uw_context,
     }
 }
 
-#else
-/* ! __USING_SJLJ_EXCEPTIONS__ */
+#else /* !__USING_SJLJ_EXCEPTIONS__  */
 
 static void
 get_call_site_action_for (_Unwind_Context *uw_context,
@@ -757,7 +749,7 @@ get_call_site_action_for (_Unwind_Context *uw_context,
   const unsigned char * p
     = region->call_site_table;
 
-  /* Unless we are able to determine otherwise ... */
+  /* Unless we are able to determine otherwise...  */
   action->kind = nothing;
 
   db (DB_CSITE, "\n");
@@ -778,7 +770,7 @@ get_call_site_action_for (_Unwind_Context *uw_context,
 	  region->base+cs_start, cs_start, cs_len,
 	  region->lp_base+cs_lp, cs_lp);
 
-      /* The table is sorted, so if we've passed the ip, stop.  */
+      /* The table is sorted, so if we've passed the IP, stop.  */
       if (ip < region->base + cs_start)
  	break;
 
@@ -807,11 +799,11 @@ get_call_site_action_for (_Unwind_Context *uw_context,
   db (DB_CSITE, "---\n");
 }
 
-#endif
+#endif /* __USING_SJLJ_EXCEPTIONS__  */
 
 /* With CHOICE an exception choice representing an "exception - when"
    argument, and PROPAGATED_EXCEPTION a pointer to the currently propagated
-   occurrence, return true iif the latter matches the former, that is, if
+   occurrence, return true if the latter matches the former, that is, if
    PROPAGATED_EXCEPTION is caught by the handling code controlled by CHOICE.
    This takes care of the special Non_Ada_Error case on VMS.  */
 
@@ -1057,7 +1049,7 @@ __gnat_eh_personality (version_arg_t version_arg,
      possible variation on VMS for IA64.  */
   if (uw_version != 1)
     {
-      #if defined (VMS) && defined (__IA64)
+#if defined (VMS) && defined (__IA64)
 
       /* Assume we're called with sigargs/mechargs arguments if really
 	 unexpected bits are set in our first two formals.  Redirect to the
@@ -1071,7 +1063,7 @@ __gnat_eh_personality (version_arg_t version_arg,
       if ((unsigned int)uw_version & version_unexpected_bits_mask
 	  && (unsigned int)uw_phases & phases_unexpected_bits_mask)
 	return __gnat_handle_vms_condition (version_arg, phases_arg);
-      #endif
+#endif
 
       return _URC_FATAL_PHASE1_ERROR;
     }

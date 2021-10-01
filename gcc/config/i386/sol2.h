@@ -51,7 +51,7 @@ Boston, MA 02111-1307, USA.  */
 "
 
 #define ASM_CPU_SPEC ""
- 
+
 #undef SUBTARGET_EXTRA_SPECS
 #define SUBTARGET_EXTRA_SPECS \
   { "cpp_subtarget",	CPP_SUBTARGET_SPEC },	\
@@ -62,8 +62,20 @@ Boston, MA 02111-1307, USA.  */
 #undef LOCAL_LABEL_PREFIX
 #define LOCAL_LABEL_PREFIX "."
 
-/* The Solaris assembler does not support .quad.  Do not use it.  */
+/* When using the native Solaris assembler, do not emit the
+   unsupported .quad instruction.  */
+#if !defined(USE_GNU_AS)
 #undef ASM_QUAD
+#endif
+
+#if !defined(USE_GNU_LD)
+/* Unlike GNU ld, the native Solaris linker does not coalesce named
+   .ctors.N/.dtors.N sections. Hence we define CTORS_SECTION_ASM_OP and
+   DTORS_SECTION_ASM_OP so that are always emitted in the same section.
+   Otherwise, many C++ constructors and destructors will never be run.  */
+#define CTORS_SECTION_ASM_OP		"\t.section\t.ctors, \"aw\""
+#define DTORS_SECTION_ASM_OP		"\t.section\t.dtors, \"aw\""
+#endif
 
 /* The Solaris assembler wants a .local for non-exported aliases.  */
 #define ASM_OUTPUT_DEF_FROM_DECLS(FILE, DECL, TARGET)	\
@@ -84,7 +96,7 @@ Boston, MA 02111-1307, USA.  */
 #include <ucontext.h>
 
 #define MD_FALLBACK_FRAME_STATE_FOR(CONTEXT, FS, SUCCESS)		\
-  do {									\
+do {									\
   unsigned char *pc_ = (CONTEXT)->ra;                                   \
   mcontext_t *mctx_;                                                    \
   long new_cfa_;                                                        \
