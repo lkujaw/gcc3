@@ -46,7 +46,7 @@ package body System.Img_WChar is
       Ada_2005 : Boolean) return String
    is
    begin
-      --  Annoying Ada 95 incompatibility with FFFE/FFFF
+      --  Ada 95 requires special cases for FFFE/FFFF, see AI95-00285-01.
 
       if V >= Wide_Character'Val (16#FFFE#)
         and then not Ada_2005
