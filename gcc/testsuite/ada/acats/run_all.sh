@@ -284,7 +284,7 @@ for chapter in $chapters; do
       target_run "$dir/tests/$chapter/$i/$binmain" > "$dir/tests/$chapter/$i/${i}.log" 2>&1
       cd "$dir/tests/$chapter/$i" || exit 1
       cat ${i}.log >> $dir/acats.log
-      egrep -e '(==== |\+\+\+\+ |\!\!\!\! )' ${i}.log > /dev/null 2>&1
+      egrep -e '(==== |\+\+\+\+ |!!!! )' ${i}.log > /dev/null 2>&1
       test_result=$?
       # To pass the ACATS, these tests MUST fail.
       # TODO: Verify the text output.
