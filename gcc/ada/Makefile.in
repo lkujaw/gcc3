@@ -751,7 +751,7 @@ ifeq ($(strip $(filter-out sparc% sun solaris%,$(targ))),)
 
   EH_MECHANISM=-gcc
   THREADSLIB = -lposix4 -lthread
-  MISCLIB = -lposix4 -lnsl -lsocket
+  MISCLIB = -lposix4 -lsocket -lnsl
   SO_OPTS = -Wl,-h,
   GNATLIB_SHARED = gnatlib-shared-dual
   GMEM_LIB = gmemlib
@@ -804,7 +804,7 @@ ifeq ($(strip $(filter-out %86 solaris2%,$(arch) $(osys))),)
 
   EH_MECHANISM=-gcc
   THREADSLIB = -lposix4 -lthread
-  MISCLIB = -lposix4 -lnsl -lsocket
+  MISCLIB = -lposix4 -lsocket -lnsl
   SO_OPTS = -Wl,-h,
   GNATLIB_SHARED = gnatlib-shared-dual
   GMEM_LIB = gmemlib
@@ -953,7 +953,7 @@ ifeq ($(strip $(filter-out sysv5,$(osys))),)
 
   EH_MECHANISM=-gcc
   THREADSLIB = -lthread
-  MISCLIB = -lnsl -lsocket
+  MISCLIB = -lsocket -lnsl
   SO_OPTS = -Wl,-h,
   GNATLIB_SHARED = gnatlib-shared-dual
   GMEM_LIB = gmemlib

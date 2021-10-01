@@ -38,6 +38,6 @@
 
 package GNAT.Sockets.Linker_Options is
 private
-   pragma Linker_Options ("-lnsl");
    pragma Linker_Options ("-lsocket");
+   pragma Linker_Options ("-lnsl");
 end GNAT.Sockets.Linker_Options;
