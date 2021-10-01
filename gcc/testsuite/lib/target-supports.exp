@@ -72,13 +72,13 @@ proc check_weak_available { } {
     global target_cpu
 
     # All mips targets should support it
-    
+
     if { [ string first "mips" $target_cpu ] >= 0 } {
         return 1
     }
 
     # All solaris2 targets should support it
-    
+
     if { [regexp ".*-solaris2.*" $target_triplet] } {
         return 1
     }
@@ -180,7 +180,7 @@ proc check_alias_available { } {
 		}
 	    }
 	}
-	
+
 	verbose "check_alias_available  returning $alias_available_saved" 2
     }
 
@@ -228,7 +228,7 @@ proc check_profiling_available { test_what } {
     # exist on any irix6 system currently posting testsuite results.
     # Support for -pg on irix relies on gcrt1.o which doesn't exist yet.
     # See: http://gcc.gnu.org/ml/gcc/2002-10/msg00169.html
-    if { [istarget mips*-*-irix*] 
+    if { [istarget mips*-*-irix*]
     && ([lindex $test_what 1] == "-p" || [lindex $test_what 1] == "-pg") } {
 	return 0
     }
@@ -329,6 +329,50 @@ proc check_vmx_hw_available { } {
     }
 
     return $vmx_hw_available_saved
+}
+
+# Returns true iff "__cxa_atexit" is used on the target system.
+
+proc check_cxa_atexit_available { } {
+	if { [istarget "hppa*-*-hpux10*"] } {
+	    # HP-UX 10 doesn't have __cxa_atexit but subsequent test passes.
+	    expr 0
+	} elseif { [istarget "*-*-vxworks"] } {
+	    # vxworks doesn't have __cxa_atexit but subsequent test passes.
+	    expr 0
+	} else {
+	    string match "" [get_compiler_messages cxa_atexit_available object {
+		// C++
+		#include <stdlib.h>
+		static unsigned int count;
+		struct X
+		{
+		  X() { count = 1; }
+		  ~X()
+		  {
+		    if (count != 3)
+		      exit(1);
+		    count = 4;
+		  }
+		};
+		void f()
+		{
+		  static X x;
+		}
+		struct Y
+		{
+		  Y() { f(); count = 2; }
+		  ~Y()
+		  {
+		    if (count != 2)
+		      exit(1);
+		    count = 3;
+		  }
+		};
+		Y y;
+		int main() { return 0; }
+	    }]
+	}
 }
 
 # Return 1 if -fpic and -fPIC are supported, as in no warnings or errors
@@ -466,6 +510,7 @@ proc is-effective-target { arg } {
 	  "vmx_hw"         { set selected [check_vmx_hw_available] }
 	  "named_sections" { set selected [check_named_sections_available] }
 	  "gc_sections"    { set selected [check_gc_sections_available] }
+	  "cxa_atexit"     { set selected [check_cxa_atexit_available] }
 	  default          { error "unknown effective target keyword `$arg'" }
 	}
     }
@@ -484,6 +529,7 @@ proc is-effective-target-keyword { arg } {
 	  "vmx_hw"         { return 1 }
 	  "named_sections" { return 1 }
 	  "gc_sections"    { return 1 }
+	  "cxa_atexit"     { return 1 }
 	  default          { return 0 }
 	}
     }
