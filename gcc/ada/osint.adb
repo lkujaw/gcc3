@@ -62,13 +62,13 @@ package body Osint is
    -------------------------------------
 
    --  This package creates a number of source, ALI and object file names
-   --  that are used to locate the actual file and for the purpose of
-   --  message construction. These names need not be accessible by Name_Find,
-   --  and can be therefore created by using routine Name_Enter. The files in
-   --  question are file names with a prefix directory (ie the files not
-   --  in the current directory). File names without a prefix directory are
-   --  entered with Name_Find because special values might be attached to
-   --  the various Info fields of the corresponding name table entry.
+   --  that are used to locate the actual file and for the purpose of message
+   --  construction. These names need not be accessible by Name_Find, and can
+   --  be therefore created by using routine Name_Enter. The files in question
+   --  are file names with a prefix directory (i.e., the files not in the
+   --  current directory). File names without a prefix directory are entered
+   --  with Name_Find because special values might be attached to the various
+   --  Info fields of the corresponding name table entry.
 
    -----------------------
    -- Local Subprograms --
@@ -2173,6 +2173,7 @@ package body Osint is
       Actual_Len : Integer;
 
       Status : Boolean;
+      pragma Warnings (Off, Status);
       --  For the call to Close
 
    begin
@@ -2181,8 +2182,8 @@ package body Osint is
 
       if Current_Full_Source_Name = No_File then
 
-         --  If we were trying to access the main file and we could not
-         --  find it we have an error.
+         --  If we were trying to access the main file and we could not find
+         --  it, we have an error.
 
          if N = Current_Main then
             Get_Name_String (N);
@@ -2234,22 +2235,22 @@ package body Osint is
       begin
          --  Allocate source buffer, allowing extra character at end for EOF
 
-         --  Some systems (e.g. VMS) have file types that require one
-         --  read per line, so read until we get the Len bytes or until
-         --  there are no more characters.
+         --  Some systems (e.g. VMS) have file types that require one read per
+         --  line, so read until we get the Len bytes or until there are no
+         --  more characters.
 
          Hi := Lo;
          loop
             Actual_Len := Read (Source_File_FD, Actual_Ptr (Hi)'Address, Len);
             Hi := Hi + Source_Ptr (Actual_Len);
-            exit when Actual_Len = Len or Actual_Len <= 0;
+            exit when Actual_Len = Len or else Actual_Len <= 0;
          end loop;
 
          Actual_Ptr (Hi) := EOF;
 
          --  Now we need to work out the proper virtual origin pointer to
-         --  return. This is exactly Actual_Ptr (0)'Address, but we have
-         --  to be careful to suppress checks to compute this address.
+         --  return. This is exactly Actual_Ptr (0)'Address, but we have to
+         --  be careful to suppress checks to compute this address.
 
          declare
             pragma Suppress (All_Checks);

@@ -9,7 +9,7 @@
 # gccflags="-O3 -fomit-frame-pointer -funroll-all-loops -finline-functions"
 # gnatflags="-gnatN"
 
-gccflags=""
+gccflags="-O2"
 gnatflags="-gnatws"
 
 target_run () {
@@ -64,10 +64,19 @@ clean_dir () {
   rm -f "$binmain" *.o *.ali > /dev/null 2>&1
 }
 
+find_main () {
+  ls ${i}?.adb > ${i}.lst 2> /dev/null
+  ls ${i}*m.adb >> ${i}.lst 2> /dev/null
+  ls ${i}.adb >> ${i}.lst 2> /dev/null
+  main=`tail -1 ${i}.lst`
+}
+
 EXTERNAL_OBJECTS=""
 # Global variable to communicate external objects to link with.
 
 rm -f $dir/acats.sum $dir/acats.log
+
+display "Test Run By $USER on `date`"
 
 display "		=== acats configuration ==="
 
@@ -122,6 +131,7 @@ sed -e "s,ACATS4GNATDIR,$dir,g" \
 
 cp $testdir/tests/cd/*.c $dir/support
 cp $testdir/tests/cxb/*.c $dir/support
+grep -v '^#' $testdir/norun.lst | sort > $dir/support/norun.lst
 
 rm -rf $dir/run
 mv $dir/tests $dir/tests.$$ 2> /dev/null
@@ -130,7 +140,7 @@ mkdir -p $dir/run
 
 cp -pr $testdir/tests $dir/
 
-for i in $dir/support/*.ada $dir/support/*.a; do 
+for i in $dir/support/*.ada $dir/support/*.a; do
    host_gnatchop $i >> $dir/acats.log 2>&1
 done
 
@@ -199,12 +209,12 @@ for chapter in $chapters; do
 
    cd $dir/tests/$chapter
    ls *.a *.ada *.adt *.am *.dep 2> /dev/null | sed -e 's/\(.*\)\..*/\1/g' | \
-   cut -c1-7 | sort | uniq | comm -23 - $testdir/norun.lst \
-     > $dir/tests/$chapter/${chapter}.lst 
+   cut -c1-7 | sort | uniq | comm -23 - $dir/support/norun.lst \
+     > $dir/tests/$chapter/${chapter}.lst
    countn=`wc -l < $dir/tests/$chapter/${chapter}.lst`
    glob_countn=`expr $glob_countn + $countn`
    counti=0
-   for i in `cat $dir/tests/$chapter/${chapter}.lst`; do 
+   for i in `cat $dir/tests/$chapter/${chapter}.lst`; do
       counti=`expr $counti + 1`
       extraflags=""
       grep $i $testdir/overflow.lst > /dev/null 2>&1
@@ -214,6 +224,14 @@ for chapter in $chapters; do
       grep $i $testdir/elabd.lst > /dev/null 2>&1
       if [ $? -eq 0 ]; then
          extraflags="$extraflags -gnatE"
+      fi
+      grep $i $testdir/stackcheck.lst > /dev/null 2>&1
+      if [ $? -eq 0 ]; then
+         extraflags="$extraflags -fstack-check"
+      fi
+      grep $i $testdir/ada95.lst > /dev/null 2>&1
+      if [ $? -eq 0 ]; then
+         extraflags="$extraflags -gnat95"
       fi
       test=$dir/tests/$chapter/$i
       mkdir $test && cd $test >> $dir/acats.log 2>&1
@@ -226,10 +244,12 @@ for chapter in $chapters; do
       fi
 
       target_gnatchop -c -w `ls ${test}*.a ${test}*.ada ${test}*.adt ${test}*.am ${test}*.dep 2> /dev/null` >> $dir/acats.log 2>&1
-      ls ${i}?.adb > ${i}.lst 2> /dev/null
-      ls ${i}*m.adb >> ${i}.lst 2> /dev/null
-      ls ${i}.adb >> ${i}.lst 2> /dev/null
-      main=`tail -1 ${i}.lst`
+      main=""
+      find_main
+      if [ -z "$main" ]; then
+         sync
+         find_main
+      fi
       binmain=`echo $main | sed -e 's/\(.*\)\..*/\1/g'`
       echo "BUILD $main" >> $dir/acats.log
       EXTERNAL_OBJECTS=""
@@ -256,12 +276,15 @@ for chapter in $chapters; do
 
       echo "RUN $binmain" >> $dir/acats.log
       cd $dir/run
+      if [ ! -x $dir/tests/$chapter/$i/$binmain ]; then
+         sync
+      fi
       target_run $dir/tests/$chapter/$i/$binmain > $dir/tests/$chapter/$i/${i}.log 2>&1
       cd $dir/tests/$chapter/$i
       cat ${i}.log >> $dir/acats.log
       egrep -e '(==== |\+\+\+\+ |\!\!\!\! )' ${i}.log > /dev/null 2>&1
       if [ $? -ne 0 ]; then
-         grep 'Tasking not implemented' ${i}.log > /dev/null 2>&1
+         grep 'tasking not implemented' ${i}.log > /dev/null 2>&1
 
          if [ $? -ne 0 ]; then
             display "FAIL:	$i"
@@ -290,5 +313,7 @@ fi
 if [ $glob_countok -ne $glob_countn ]; then
    display "*** FAILURES: $failed"
 fi
+
+display "$0 completed at `date`"
 
 exit 0

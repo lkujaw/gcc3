@@ -52,6 +52,10 @@ package body Widechar is
    is
    begin
       case Wide_Character_Encoding_Method is
+
+         --  For Hex mode, just test for an ESC character. The ESC character
+         --  cannot appear in any other context in a legal Ada program.
+
          when WCEM_Hex =>
             return S (P) = ASCII.ESC;
 

@@ -2320,7 +2320,7 @@ package body Sem_Util is
 
    begin
       Res := Internal_Full_Qualified_Name (E);
-      Store_String_Char (Get_Char_Code (ASCII.nul));
+      Store_String_Char (Get_Char_Code (ASCII.NUL));
       return End_String;
    end Full_Qualified_Name;
 
@@ -4431,8 +4431,6 @@ package body Sem_Util is
             T := Base_Type (Etyp);
          end loop;
       end if;
-
-      raise Program_Error;
    end Is_Descendent_Of;
 
    ------------------------------

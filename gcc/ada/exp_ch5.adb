@@ -188,7 +188,7 @@ package body Exp_Ch5 is
       --  This switch is set to True if the array move must be done using
       --  an explicit front end generated loop.
 
-      procedure Apply_Dereference (Arg : in out Node_Id);
+      procedure Apply_Dereference (Arg : Node_Id);
       --  If the argument is an access to an array, and the assignment is
       --  converted into a procedure call, apply explicit dereference.
 
@@ -211,7 +211,7 @@ package body Exp_Ch5 is
       -- Apply_Dereference --
       -----------------------
 
-      procedure Apply_Dereference (Arg : in out Node_Id) is
+      procedure Apply_Dereference (Arg : Node_Id) is
          Typ : constant Entity_Id := Etype (Arg);
       begin
          if Is_Access_Type (Typ) then

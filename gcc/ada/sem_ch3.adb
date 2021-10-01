@@ -95,7 +95,7 @@ package body Sem_Ch3 is
    --  Parent_Type is the entity for the parent type in the derived type
    --  definition and Derived_Type the actual derived type. Is_Completion must
    --  be set to False if Derived_Type is the N_Defining_Identifier node in N
-   --  (ie Derived_Type = Defining_Identifier (N)). In this case N is not the
+   --  (i.e. Derived_Type = Defining_Identifier (N)). In this case N is not the
    --  completion of a private type declaration. If Is_Completion is set to
    --  True, N is the completion of a private type declaration and Derived_Type
    --  is different from the defining identifier inside N (i.e. Derived_Type /=
@@ -105,7 +105,7 @@ package body Sem_Ch3 is
    --  implicit derived full type for a type derived from a private type (in
    --  that case the subprograms must only be derived for the private view of
    --  the type).
-
+   --
    --  ??? These flags need a bit of re-examination and re-documentation:
    --  ???  are they both necessary (both seem related to the recursion)?
 
@@ -12949,8 +12949,6 @@ package body Sem_Ch3 is
 
                Ancestor := Etype (Ancestor);
             end loop;
-
-            return True;
          end;
       end if;
    end Is_Visible_Component;

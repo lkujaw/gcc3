@@ -1885,7 +1885,7 @@ package body Errout is
       for J in Name_Buffer'Range loop
          Name_Buffer (J) := Ident (J);
 
-         if Name_Buffer (J) = ASCII.Nul then
+         if Name_Buffer (J) = ASCII.NUL then
             Name_Len := J - 1;
             exit;
          end if;

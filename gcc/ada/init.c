@@ -6,7 +6,7 @@
  *                                                                          *
  *                          C Implementation File                           *
  *                                                                          *
- *          Copyright (C) 1992-2006, Free Software Foundation, Inc.         *
+ *          Copyright (C) 1992-2007, Free Software Foundation, Inc.         *
  *                                                                          *
  * GNAT is free software;  you can  redistribute it  and/or modify it under *
  * terms of the  GNU General Public License as published  by the Free Soft- *
@@ -54,7 +54,7 @@
 #include "tsystem.h"
 #include <sys/stat.h>
 
-/* We don't have libiberty, so us malloc.  */
+/* We don't have libiberty, so use malloc.  */
 #define xmalloc(S) malloc (S)
 #else
 #include "config.h"
@@ -447,17 +447,18 @@ __gnat_machine_state_length (void)
   return sizeof (struct sigcontext);
 }
 
-/********************/
-/* PA HP-UX section */
-/********************/
+/*****************/
+/* HP-UX section */
+/*****************/
 
-#elif defined (__hppa__) && defined (__hpux__)
+#elif defined (__hpux__)
 
 #include <signal.h>
 #include <sys/ucontext.h>
 
 static void
 __gnat_error_handler (int sig, siginfo_t *siginfo, void *ucontext);
+#if defined (__hppa__)
 
 /* __gnat_adjust_context_for_raise - see comments along with the default
    version later in this file.  */
@@ -474,6 +475,7 @@ __gnat_adjust_context_for_raise (int signo ATTRIBUTE_UNUSED, void *ucontext)
   else
     mcontext->ss_narrow.ss_pcoq_head ++;
 }
+#endif
 
 static void
 __gnat_error_handler
@@ -560,9 +562,9 @@ __gnat_install_handler (void)
 #elif defined (linux) && (defined (i386) || defined (__x86_64__) \
                           || defined (__ia64__))
 
-#include <signal.h>
-
 #define __USE_GNU 1 /* required to get REG_EIP/RIP from glibc's ucontext.h */
+/* signal.h may include ucontext.h, so we need to define __USE_GNU first.  */
+#include <signal.h>
 #include <sys/ucontext.h>
 
 /* GNU/Linux, which uses glibc, does not define NULL in included
@@ -965,7 +967,7 @@ __gnat_error_handler (int sig, siginfo_t *sip)
 	  ((volatile char *)
 	   ((long) sip->si_addr & - getpagesize ()))[getpagesize ()];
 	  exception = &storage_error;
-	  msg = "stack overflow (or erroneous memory access)";
+	  msg = "stack overflow or erroneous memory access";
 	}
       break;
 
@@ -1044,10 +1046,10 @@ extern char *__gnat_error_prehandler_stack;   /* Alternate signal stack */
 
 /* Define macro symbols for the VMS conditions that become Ada exceptions.
    Most of these are also defined in the header file ssdef.h which has not
-   yet been converted to be recognized by Gnu C. */
+   yet been converted to be recognized by GNU C.  */
 
 /* Defining these as macros, as opposed to external addresses, allows
-   them to be used in a case statement (below */
+   them to be used in a case statement below.  */
 #define SS$_ACCVIO            12
 #define SS$_HPARITH         1284
 #define SS$_STKOVF          1364
@@ -1758,8 +1760,13 @@ __gnat_init_float (void)
   asm ("mtfsb0 26");
 #endif
 
+#if (defined (__i386__) || defined (i386)) && !defined (VTHREADS)
+  /* This is used to properly initialize the FPU on an x86 for each
+     process thread. */
+  asm ("finit");
+#endif
   /* Similarly for sparc64. Achieved by masking bits in the Trap Enable Mask
-     field of the Floating-point Status Register (see the Sparc Architecture
+     field of the Floating-point Status Register (see the SPARC Architecture
      Manual Version 9, p 48).  */
 #if defined (sparc64)
 

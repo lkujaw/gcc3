@@ -3742,6 +3742,7 @@ package body Sem_Ch6 is
       Err_Loc : Node_Id := Empty)
    is
       Result : Boolean;
+      pragma Warnings (Off, Result);
    begin
       Check_Conformance
         (New_Id, Old_Id, Fully_Conformant, True, Result, Err_Loc);
@@ -3759,6 +3760,7 @@ package body Sem_Ch6 is
    is
       Result : Boolean;
 
+      pragma Warnings (Off, Result);
    begin
       Check_Conformance
         (New_Id, Old_Id, Mode_Conformant, True, Result, Err_Loc, Get_Inst);
@@ -3986,8 +3988,8 @@ package body Sem_Ch6 is
             then
                null;
 
-            --  A loop with no exit statement or iteration scheme if either
-            --  an inifite loop, or it has some other exit (raise/return).
+            --  A loop with no exit statement or iteration scheme is either
+            --  an infinite loop, or it has some other exit (raise/return).
             --  In either case, no warning is required.
 
             else
@@ -4124,8 +4126,8 @@ package body Sem_Ch6 is
    procedure Check_Subprogram_Order (N : Node_Id) is
 
       function Subprogram_Name_Greater (S1, S2 : String) return Boolean;
-      --  This is used to check if S1 > S2 in the sense required by this
-      --  test, for example nameab < namec, but name2 < name10.
+      --  This is used to check if S1 > S2 in the sense required by this test,
+      --  for example nameab < namec, but name2 < name10.
 
       -----------------------------
       -- Subprogram_Name_Greater --
@@ -4223,6 +4225,7 @@ package body Sem_Ch6 is
       Err_Loc : Node_Id := Empty)
    is
       Result : Boolean;
+      pragma Warnings (Off, Result);
    begin
       Check_Conformance
         (New_Id, Old_Id, Subtype_Conformant, True, Result, Err_Loc);
@@ -4238,6 +4241,7 @@ package body Sem_Ch6 is
       Err_Loc : Node_Id := Empty)
    is
       Result : Boolean;
+      pragma Warnings (Off, Result);
    begin
       Check_Conformance
         (New_Id, Old_Id, Type_Conformant, True, Result, Err_Loc);

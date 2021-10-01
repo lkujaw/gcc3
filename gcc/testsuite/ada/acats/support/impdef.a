@@ -105,6 +105,8 @@ package ImpDef is
    Minimum_Task_Switch : constant Duration := 0.001;
    --                                         ^^^ --- MODIFY HERE AS NEEDED
 
+   Long_Minimum_Task_Switch : constant Duration := 0.1;
+
 --=====-=====-=====-=====-=====-=====-=====-=====-=====-=====-=====-=====--
 
    -- This is the time required to activate another task and allow it
@@ -117,13 +119,15 @@ package ImpDef is
    Switch_To_New_Task : constant Duration := 0.001;
    --                                        ^^^ -- MODIFY HERE AS NEEDED
 
+   Long_Switch_To_New_Task : constant Duration := 0.1;
+
 --=====-=====-=====-=====-=====-=====-=====-=====-=====-=====-=====-=====--
 
    -- This is the time which will clear the queues of other tasks
    -- waiting to run.  It is expected that this will be about five
    -- times greater than Switch_To_New_Task.
 
-   Clear_Ready_Queue : constant Duration := 1.1;
+   Clear_Ready_Queue : constant Duration := 0.1;
    --                                       ^^^ --- MODIFY HERE AS NEEDED
 
 --=====-=====-=====-=====-=====-=====-=====-=====-=====-=====-=====-=====--
@@ -197,11 +201,11 @@ package ImpDef is
 
    function Cd30005_Proc (X : Integer) return Integer;
    pragma Import (C, Cd30005_Proc, "_cd30005_1");
- 
+
    pragma Linker_Options ("ACATS4GNATDIR/support/cd300051.o");
- 
+
    CD30005_1_Foreign_Address : constant System.Address:= Cd30005_Proc'Address;
- 
+
    -- CD30005_1_Foreign_Address : constant System.Address:=
    --          System.Storage_Elements.To_Address ( 16#0000_0000# )
    --               --MODIFY HERE AS REQUIRED --- ^^^^^^^^^^^^^
@@ -339,6 +343,7 @@ package ImpDef is
 --=====-=====-=====-=====-=====-=====-=====-=====-=====-=====-=====-=====--
 
    One_Second : constant Duration := 0.001;
+   One_Long_Second : constant Duration := 0.1;
 
 end ImpDef;
 

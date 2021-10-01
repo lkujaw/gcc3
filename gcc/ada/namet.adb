@@ -149,7 +149,7 @@ package body Namet is
 
             else
                Write_Str ("Hash_Table (");
-               Write_Int (Int (J));
+               Write_Int (J);
                Write_Str (") has ");
 
                declare

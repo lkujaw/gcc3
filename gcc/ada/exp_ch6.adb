@@ -698,7 +698,7 @@ package body Exp_Ch6 is
                            Low_Bound  =>
                              Make_Attribute_Reference (Loc,
                                Prefix => New_Occurrence_Of (Var, Loc),
-                               Attribute_name => Name_First),
+                               Attribute_Name => Name_First),
                            High_Bound =>
                              Make_Attribute_Reference (Loc,
                                Prefix => New_Occurrence_Of (Var, Loc),
@@ -2565,9 +2565,6 @@ package body Exp_Ch6 is
                   Temp   : Node_Id;
                   Passoc : Node_Id;
 
-                  Discard : Node_Id;
-                  pragma Warnings (Off, Discard);
-
                begin
                   --  First step, remove all the named parameters from the
                   --  list (they are still chained using First_Named_Actual
@@ -2590,7 +2587,7 @@ package body Exp_Ch6 is
                      end loop;
 
                      while Present (Next (Temp)) loop
-                        Discard := Remove_Next (Temp);
+                        Remove (Next (Temp));
                      end loop;
                   end if;
 
@@ -2768,7 +2765,9 @@ package body Exp_Ch6 is
                   Rewrite (N, New_Occurrence_Of (A, Loc));
                   Check_Private_View (N);
 
-               else   --  numeric literal
+               --  Numeric literal
+
+               else
                   Rewrite (N, New_Copy (A));
                end if;
             end if;
@@ -3250,16 +3249,16 @@ package body Exp_Ch6 is
               Make_Defining_Identifier (Loc, New_Internal_Name ('C'));
             Set_Is_Internal (Temp);
 
-            --  For the unconstrained case. the generated temporary has the
-            --  same constrained declaration as the result variable.
-            --  It may eventually be possible to remove that temporary and
-            --  use the result variable directly.
+            --  For the unconstrained case, the generated temporary has the
+            --  same constrained declaration as the result variable. It may
+            --  eventually be possible to remove that temporary and use the
+            --  result variable directly.
 
             if Is_Unc then
                Decl :=
                  Make_Object_Declaration (Loc,
                    Defining_Identifier => Temp,
-                   Object_Definition =>
+                   Object_Definition   =>
                      New_Copy_Tree (Object_Definition (Parent (Targ1))));
 
                Replace_Formals (Decl);
@@ -3268,8 +3267,7 @@ package body Exp_Ch6 is
                Decl :=
                  Make_Object_Declaration (Loc,
                    Defining_Identifier => Temp,
-                   Object_Definition =>
-                     New_Occurrence_Of (Ret_Type, Loc));
+                   Object_Definition   => New_Occurrence_Of (Ret_Type, Loc));
 
                Set_Etype (Temp, Ret_Type);
             end if;
@@ -3289,9 +3287,7 @@ package body Exp_Ch6 is
       Replace_Formals (Blk);
       Set_Parent (Blk, N);
 
-      if not Comes_From_Source (Subp)
-        or else Is_Predef
-      then
+      if not Comes_From_Source (Subp) or else Is_Predef then
          Reset_Slocs (Blk);
       end if;
 
@@ -3313,7 +3309,7 @@ package body Exp_Ch6 is
       end if;
 
       --  Analyze Blk with In_Inlined_Body set, to avoid spurious errors on
-      --  conflicting private views that Gigi would ignore. If this is
+      --  conflicting private views that Gigi would ignore. If this is a
       --  predefined unit, analyze with checks off, as is done in the non-
       --  inlined run-time units.
 

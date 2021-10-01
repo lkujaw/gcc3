@@ -4823,7 +4823,7 @@ package body Exp_Disp is
       --  Protect this procedure against wrong usage. Required because it will
       --  be used directly from GDB
 
-      if not (Typ in First_Node_Id .. Last_Node_Id)
+      if not (Typ <= Last_Node_Id)
         or else not Is_Tagged_Type (Typ)
       then
          Write_Str ("wrong usage: Write_DT must be used with tagged types");
@@ -4876,7 +4876,7 @@ package body Exp_Disp is
             Write_Int (Int (Alias (Prim)));
 
             --  If the DTC_Entity attribute is already set we can also output
-            --  the name of the interface covered by this primitive (if any)
+            --  the name of the interface covered by this primitive (if any).
 
             if Present (DTC_Entity (Alias (Prim)))
               and then Is_Interface (Scope (DTC_Entity (Alias (Prim))))

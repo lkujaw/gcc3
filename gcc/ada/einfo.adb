@@ -6383,8 +6383,6 @@ package body Einfo is
             end if;
          end loop;
       end if;
-
-      raise Program_Error;
    end Root_Type;
 
    -----------------

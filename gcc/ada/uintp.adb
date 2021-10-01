@@ -1084,7 +1084,9 @@ package body Uintp is
             X_Bigger := True;
          else
             Sum_Length := R_Length + 1;
-            if R_Length > L_Length then Y_Bigger := True; end if;
+            if R_Length > L_Length then
+               Y_Bigger := True;
+            end if;
          end if;
 
          --  Make copies of the absolute values of L_Vec and R_Vec into

@@ -50,12 +50,18 @@ package body System.WCh_Con is
 
    function Get_WC_Encoding_Method (S : String) return WC_Encoding_Method is
    begin
-      if    S = "hex"       then return WCEM_Hex;
-      elsif S = "upper"     then return WCEM_Upper;
-      elsif S = "shift_jis" then return WCEM_Shift_JIS;
-      elsif S = "euc"       then return WCEM_EUC;
-      elsif S = "utf8"      then return WCEM_UTF8;
-      elsif S = "brackets"  then return WCEM_Brackets;
+      if    S = "hex"       then
+         return WCEM_Hex;
+      elsif S = "upper"     then
+         return WCEM_Upper;
+      elsif S = "shift_jis" then
+         return WCEM_Shift_JIS;
+      elsif S = "euc"       then
+         return WCEM_EUC;
+      elsif S = "utf8"      then
+         return WCEM_UTF8;
+      elsif S = "brackets"  then
+         return WCEM_Brackets;
       else
          raise Constraint_Error;
       end if;

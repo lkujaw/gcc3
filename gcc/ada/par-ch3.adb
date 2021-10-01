@@ -32,6 +32,9 @@ with Sinfo.CN; use Sinfo.CN;
 
 separate (Par)
 
+---------
+-- Ch3 --
+---------
 package body Ch3 is
 
    -----------------------
@@ -4352,6 +4355,7 @@ package body Ch3 is
    procedure Skip_Declaration (S : List_Id) is
       Dummy_Done : Boolean;
 
+      pragma Warnings (Off, Dummy_Done);
    begin
       P_Declarative_Items (S, Dummy_Done, False);
    end Skip_Declaration;

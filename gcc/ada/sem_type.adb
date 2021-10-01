@@ -2314,18 +2314,17 @@ package body Sem_Type is
       then
          return False;
 
-      else return
-        Is_Numeric_Type (T)
-          and then not In_Open_Scopes (Scope (T))
-          and then not Is_Potentially_Use_Visible (T)
-          and then not In_Use (T)
-          and then not In_Use (Scope (T))
-          and then
-            (Nkind (Orig_Node) /= N_Function_Call
-              or else Nkind (Name (Orig_Node)) /= N_Expanded_Name
-              or else Entity (Prefix (Name (Orig_Node))) /= Scope (T))
-
-          and then not In_Instance;
+      else
+         return Is_Numeric_Type (T)
+            and then not In_Open_Scopes (Scope (T))
+            and then not Is_Potentially_Use_Visible (T)
+            and then not In_Use (T)
+            and then not In_Use (Scope (T))
+            and then
+              (Nkind (Orig_Node) /= N_Function_Call
+                or else Nkind (Name (Orig_Node)) /= N_Expanded_Name
+                or else Entity (Prefix (Name (Orig_Node))) /= Scope (T))
+            and then not In_Instance;
       end if;
    end Is_Invisible_Operator;
 

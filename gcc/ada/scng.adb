@@ -287,7 +287,8 @@ package body Scng is
            and then Source (Scan_Ptr + 2) = C
          then
             Scan_Ptr := Scan_Ptr + 1;
-            Error_Msg_S ("no space allowed here");
+            Error_Msg_S -- CODEFIX
+              ("no space allowed here");
             Scan_Ptr := Scan_Ptr + 2;
             return True;
 
@@ -477,7 +478,6 @@ package body Scng is
          UI_Int_Value := Uint_0;
          Scale := 0;
          Scan_Integer;
-         Scale := 0;
          Point_Scanned := False;
          UI_Num_Value := UI_Int_Value;
 
@@ -1140,7 +1140,9 @@ package body Scng is
          --  Horizontal tab, just skip past it
 
          when HT =>
-            if Style_Check then Style.Check_HT; end if;
+            if Style_Check then
+               Style.Check_HT;
+            end if;
             Scan_Ptr := Scan_Ptr + 1;
 
          --  End of file character, treated as an end of file only if it is
@@ -1149,7 +1151,9 @@ package body Scng is
          when EOF =>
             if Scan_Ptr = Source_Last (Current_Source_File) then
                Check_End_Of_Line;
-               if Style_Check then Style.Check_EOF; end if;
+               if Style_Check then
+                  Style.Check_EOF;
+               end if;
                Token := Tok_EOF;
                return;
             else
@@ -1162,7 +1166,8 @@ package body Scng is
             Accumulate_Checksum ('&');
 
             if Source (Scan_Ptr + 1) = '&' then
-               Error_Msg_S ("'&'& should be `AND THEN`");
+               Error_Msg_S -- CODEFIX
+                 ("'&'& should be `AND THEN`");
                Scan_Ptr := Scan_Ptr + 2;
                Token := Tok_And;
                return;
@@ -1199,21 +1204,26 @@ package body Scng is
 
             if Double_Char_Token ('=') then
                Token := Tok_Colon_Equal;
-               if Style_Check then Style.Check_Colon_Equal; end if;
+               if Style_Check then
+                  Style.Check_Colon_Equal;
+               end if;
                return;
 
             elsif Source (Scan_Ptr + 1) = '-'
               and then Source (Scan_Ptr + 2) /= '-'
             then
                Token := Tok_Colon_Equal;
-               Error_Msg (":- should be :=", Scan_Ptr);
+               Error_Msg -- CODEFIX
+                 (":- should be :=", Scan_Ptr);
                Scan_Ptr := Scan_Ptr + 2;
                return;
 
             else
                Scan_Ptr := Scan_Ptr + 1;
                Token := Tok_Colon;
-               if Style_Check then Style.Check_Colon; end if;
+               if Style_Check then
+                  Style.Check_Colon;
+               end if;
                return;
             end if;
 
@@ -1223,7 +1233,9 @@ package body Scng is
             Accumulate_Checksum ('(');
             Scan_Ptr := Scan_Ptr + 1;
             Token := Tok_Left_Paren;
-            if Style_Check then Style.Check_Left_Paren; end if;
+            if Style_Check then
+               Style.Check_Left_Paren;
+            end if;
             return;
 
          --  Left bracket
@@ -1253,7 +1265,9 @@ package body Scng is
             Accumulate_Checksum (',');
             Scan_Ptr := Scan_Ptr + 1;
             Token := Tok_Comma;
-            if Style_Check then Style.Check_Comma; end if;
+            if Style_Check then
+               Style.Check_Comma;
+            end if;
             return;
 
          --  Dot, which is either an isolated period, or part of a double dot
@@ -1265,7 +1279,9 @@ package body Scng is
 
             if Double_Char_Token ('.') then
                Token := Tok_Dot_Dot;
-               if Style_Check then Style.Check_Dot_Dot; end if;
+               if Style_Check then
+                  Style.Check_Dot_Dot;
+               end if;
                return;
 
             elsif Source (Scan_Ptr + 1) in '0' .. '9' then
@@ -1286,11 +1302,14 @@ package body Scng is
 
             if Double_Char_Token ('>') then
                Token := Tok_Arrow;
-               if Style_Check then Style.Check_Arrow; end if;
+               if Style_Check then
+                  Style.Check_Arrow;
+               end if;
                return;
 
             elsif Source (Scan_Ptr + 1) = '=' then
-               Error_Msg_S ("== should be =");
+               Error_Msg_S -- CODEFIX
+                 ("== should be =");
                Scan_Ptr := Scan_Ptr + 1;
             end if;
 
@@ -1331,7 +1350,9 @@ package body Scng is
 
             elsif Double_Char_Token ('>') then
                Token := Tok_Box;
-               if Style_Check then Style.Check_Box; end if;
+               if Style_Check then
+                  Style.Check_Box;
+               end if;
                return;
 
             elsif Double_Char_Token ('<') then
@@ -1363,7 +1384,9 @@ package body Scng is
             --  Comment
 
             else -- Source (Scan_Ptr + 1) = '-' then
-               if Style_Check then Style.Check_Comment; end if;
+               if Style_Check then
+                  Style.Check_Comment;
+               end if;
                Scan_Ptr := Scan_Ptr + 2;
 
                --  If we are in preprocessor mode with Replace_In_Comments set,
@@ -1409,7 +1432,9 @@ package body Scng is
                   --  Keep going if horizontal tab
 
                   if Source (Scan_Ptr) = HT then
-                     if Style_Check then Style.Check_HT; end if;
+                     if Style_Check then
+                        Style.Check_HT;
+                     end if;
                      Scan_Ptr := Scan_Ptr + 1;
 
                   --  Terminate scan of comment if line terminator
@@ -1543,7 +1568,9 @@ package body Scng is
                or else Prev_Token in Token_Class_Literal
             then
                Token := Tok_Apostrophe;
-               if Style_Check then Style.Check_Apostrophe; end if;
+               if Style_Check then
+                  Style.Check_Apostrophe;
+               end if;
                return;
 
             --  Otherwise the apostrophe starts a character literal
@@ -1569,7 +1596,7 @@ package body Scng is
 
                   if Err then
                      Error_Illegal_Wide_Character;
-                        Code := Character'Pos (' ');
+                     Code := Character'Pos (' ');
 
                   --  In Ada 95 mode we allow any wide character in a character
                   --  literal, but in Ada 2005, the set of characters allowed
@@ -1578,13 +1605,13 @@ package body Scng is
                   elsif Ada_Version >= Ada_05
                     and then Is_UTF_32_Non_Graphic (UTF_32 (Code))
                   then
-                     Error_Msg
+                     Error_Msg -- CODEFIX????
                        ("(Ada 2005) non-graphic character not permitted " &
                         "in character literal", Wptr);
                   end if;
 
                   if Source (Scan_Ptr) /= ''' then
-                     Error_Msg_S ("missing apostrophe");
+                        Error_Msg_S ("missing apostrophe");
                   else
                      Scan_Ptr := Scan_Ptr + 1;
                   end if;
@@ -1648,7 +1675,9 @@ package body Scng is
             Accumulate_Checksum (')');
             Scan_Ptr := Scan_Ptr + 1;
             Token := Tok_Right_Paren;
-            if Style_Check then Style.Check_Right_Paren; end if;
+            if Style_Check then
+               Style.Check_Right_Paren;
+            end if;
             return;
 
          --  Right bracket or right brace, treated as right paren
@@ -1679,7 +1708,9 @@ package body Scng is
             Accumulate_Checksum (';');
             Scan_Ptr := Scan_Ptr + 1;
             Token := Tok_Semicolon;
-            if Style_Check then Style.Check_Semicolon; end if;
+            if Style_Check then
+               Style.Check_Semicolon;
+            end if;
             return;
 
          --  Vertical bar
@@ -1690,7 +1721,8 @@ package body Scng is
             --  Special check for || to give nice message
 
             if Source (Scan_Ptr + 1) = '|' then
-               Error_Msg_S ("""'|'|"" should be `OR ELSE`");
+               Error_Msg_S -- CODEFIX
+                 ("""'|'|"" should be `OR ELSE`");
                Scan_Ptr := Scan_Ptr + 2;
                Token := Tok_Or;
                return;
@@ -1698,7 +1730,11 @@ package body Scng is
             else
                Scan_Ptr := Scan_Ptr + 1;
                Token := Tok_Vertical_Bar;
-               if Style_Check then Style.Check_Vertical_Bar; end if;
+
+               if Style_Check then
+                  Style.Check_Vertical_Bar;
+               end if;
+
                return;
             end if;
          end Vertical_Bar_Case;
@@ -1717,7 +1753,8 @@ package body Scng is
             end if;
 
             if Source (Scan_Ptr + 1) = '=' then
-               Error_Msg_S ("'!= should be /=");
+               Error_Msg_S -- CODEFIX
+                 ("'!= should be /=");
                Scan_Ptr := Scan_Ptr + 2;
                Token := Tok_Not_Equal;
                return;
@@ -1918,14 +1955,13 @@ package body Scng is
             --  Punctuation is an error (at start of identifier)
 
             elsif Is_UTF_32_Punctuation (Cat) then
-               Error_Msg
-                 ("identifier cannot start with punctuation", Wptr);
+               Error_Msg ("identifier cannot start with punctuation", Wptr);
                Scan_Ptr := Wptr;
                Name_Len := 0;
                Underline_Found := False;
                goto Scan_Identifier;
 
-            --  Mark character is an error (at start of identifer)
+            --  Mark character is an error (at start of identifier)
 
             elsif Is_UTF_32_Mark (Cat) then
                Error_Msg
@@ -1967,7 +2003,7 @@ package body Scng is
 
       --  Routine to scan line terminator. On entry Scan_Ptr points to a
       --  character which is one of FF,LR,CR,VT, or one of the wide characters
-      --  that is treated as a line termiantor.
+      --  that is treated as a line terminator.
 
       <<Scan_Line_Terminator>>
 
@@ -2010,7 +2046,7 @@ package body Scng is
 
       --  Identifier scanning routine. On entry, some initial characters of
       --  the identifier may have already been stored in Name_Buffer. If so,
-      --  Name_Len has the number of characters stored. otherwise Name_Len is
+      --  Name_Len has the number of characters stored, otherwise Name_Len is
       --  set to zero on entry. Underline_Found is also set False on entry.
 
       <<Scan_Identifier>>
@@ -2385,7 +2421,9 @@ package body Scng is
          --  Outer loop keeps going only if a horizontal tab follows
 
          if Source (Scan_Ptr) = HT then
-            if Style_Check then Style.Check_HT; end if;
+            if Style_Check then
+               Style.Check_HT;
+            end if;
             Scan_Ptr := Scan_Ptr + 1;
             Start_Column := (Start_Column / 8) * 8 + 8;
          else

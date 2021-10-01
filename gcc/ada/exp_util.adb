@@ -91,8 +91,8 @@ package body Exp_Util is
        Pos    : out Entity_Id;
        Prefix : Entity_Id;
        Sum    : Node_Id;
-       Decls  : in out List_Id;
-       Stats  : in out List_Id);
+       Decls  : List_Id;
+       Stats  : List_Id);
    --  Common processing for Task_Array_Image and Task_Record_Image.
    --  Create local variables and assign prefix of name to result string.
 
@@ -402,8 +402,8 @@ package body Exp_Util is
       T : Entity_Id;
       --  Entity for name at one index position
 
-      Decls : List_Id := New_List;
-      Stats : List_Id := New_List;
+      Decls : constant List_Id := New_List;
+      Stats : constant List_Id := New_List;
 
    begin
       Pref := Make_Defining_Identifier (Loc, New_Internal_Name ('P'));
@@ -708,8 +708,8 @@ package body Exp_Util is
        Pos    : out Entity_Id;
        Prefix : Entity_Id;
        Sum    : Node_Id;
-       Decls  : in out List_Id;
-       Stats  : in out List_Id)
+       Decls  : List_Id;
+       Stats  : List_Id)
    is
    begin
       Len := Make_Defining_Identifier (Loc, New_Internal_Name ('L'));
@@ -804,8 +804,8 @@ package body Exp_Util is
       Sel : Entity_Id;
       --  Entity for selector name
 
-      Decls : List_Id := New_List;
-      Stats : List_Id := New_List;
+      Decls : constant List_Id := New_List;
+      Stats : constant List_Id := New_List;
 
    begin
       Pref := Make_Defining_Identifier (Loc, New_Internal_Name ('P'));

@@ -1,6 +1,6 @@
 # Top level -*- makefile -*- fragment for GNU Ada (GNAT).
 #   Copyright (C) 1994, 1995, 1996, 1997, 1998, 1999, 2000, 2001, 2002,
-#   2003, 2004 Free Software Foundation, Inc.
+#   2003, 2004, 2005 Free Software Foundation, Inc.
 
 #This file is part of GCC.
 
@@ -16,8 +16,8 @@
 
 #You should have received a copy of the GNU General Public License
 #along with GCC; see the file COPYING.  If not, write to
-#the Free Software Foundation, 59 Temple Place - Suite 330,
-#Boston, MA 02111-1307, USA.
+#the Free Software Foundation, 51 Franklin Street, Fifth Floor,
+#Boston, MA 02110-1301, USA.
 
 # This file provides the language dependent support in the main Makefile.
 # Each language makefile fragment must provide the following targets:
@@ -55,7 +55,7 @@ ALL_ADAFLAGS = $(CFLAGS) $(ALL_ADA_CFLAGS) $(X_ADAFLAGS) $(T_ADAFLAGS) \
 FORCE_DEBUG_ADAFLAGS = -g
 ADA_CFLAGS =
 ALL_ADA_CFLAGS = $(X_ADA_CFLAGS) $(T_ADA_CFLAGS) $(ADA_CFLAGS)
-ADA_INCLUDES = -I- -I. -Iada -I$(srcdir)/ada
+ADA_INCLUDES = -nostdinc -I- -I. -Iada -I$(srcdir)/ada
 GNATLIBFLAGS= -W -Wall -gnatpg
 GNATLIBCFLAGS= -g -O2 $(TCFLAGS)
 ADA_INCLUDE_DIR = $(libsubdir)/adainclude
@@ -325,42 +325,14 @@ cross-gnattools: force
 	   LIBGNAT="" \
 	   gnattools1-re gnattools2 gnattools4
 
-gnatlib: force
+gnatlib gnatlib-sjlj gnatlib-zcx gnatlib-shared: force
 	$(MAKE) -C ada $(FLAGS_TO_PASS)  \
 	   GNATLIBFLAGS="$(GNATLIBFLAGS)" \
 	   GNATLIBCFLAGS="$(GNATLIBCFLAGS)" \
 	   TARGET_LIBGCC2_CFLAGS="$(TARGET_LIBGCC2_CFLAGS)" \
 	   THREAD_KIND="$(THREAD_KIND)" \
 	   TRACE="$(TRACE)" \
-	   gnatlib
-
-gnatlib-sjlj: force
-	$(MAKE) -C ada $(FLAGS_TO_PASS)  \
-	   GNATLIBFLAGS="$(GNATLIBFLAGS)" \
-	   GNATLIBCFLAGS="$(GNATLIBCFLAGS)" \
-	   TARGET_LIBGCC2_CFLAGS="$(TARGET_LIBGCC2_CFLAGS)" \
-	   THREAD_KIND="$(THREAD_KIND)" \
-	   TRACE="$(TRACE)" \
-	   gnatlib-sjlj
-
-gnatlib-zcx: force
-	$(MAKE) -C ada $(FLAGS_TO_PASS)  \
-	   GNATLIBFLAGS="$(GNATLIBFLAGS)" \
-	   GNATLIBCFLAGS="$(GNATLIBCFLAGS)" \
-	   TARGET_LIBGCC2_CFLAGS="$(TARGET_LIBGCC2_CFLAGS)" \
-	   THREAD_KIND="$(THREAD_KIND)" \
-	   TRACE="$(TRACE)" \
-	   gnatlib-zcx
-
-gnatlib-shared: force
-	$(MAKE) -C ada $(FLAGS_TO_PASS)  \
-	   GNATLIBFLAGS="$(GNATLIBFLAGS)" \
-	   GNATLIBCFLAGS="$(GNATLIBCFLAGS)" \
-	   GNATLIBLDFLAGS="$(GNATLIBLDFLAGS)" \
-	   TARGET_LIBGCC2_CFLAGS="$(TARGET_LIBGCC2_CFLAGS)" \
-	   THREAD_KIND="$(THREAD_KIND)" \
-	   TRACE="$(TRACE)" \
-	   gnatlib-shared
+	   $@
 
 # use only for native compiler
 gnatlib_and_tools: gnatlib gnattools
@@ -453,7 +425,11 @@ ada.srcextra:
 ada.srcman:
 
 ada.tags: force
-	cd $(srcdir)/ada; etags *.c *.h *.ads *.adb
+	cd $(srcdir)/ada; etags -o TAGS.sub *.c *.h *.ads *.adb; \
+	etags --include TAGS.sub --include ../TAGS.sub
+
+
+# Generate documentation.
 
 ada.info:
 ada.srcinfo:
@@ -512,7 +488,7 @@ ada.install-common:
 	    if [ -d $(DESTDIR)$(tooldir)/bin/. ] ; then \
 	       rm -f $(DESTDIR)$(tooldir)/bin/gnatchop$(exeext); \
 	       $(INSTALL_PROGRAM) gnatchop-cross$(exeext) $(DESTDIR)$(tooldir)/bin/gnatchop$(exeext); \
-            fi; \
+	    fi ; \
 	  else \
 	    $(RM) $(DESTDIR)$(bindir)/gnatchop$(exeext); \
 	    $(INSTALL_PROGRAM) gnatchop$(exeext) $(DESTDIR)$(bindir)/gnatchop$(exeext); \

@@ -3058,8 +3058,6 @@ package body Sem_Elab is
             Scop := Scope (Scop);
          end if;
       end loop;
-
-      raise Program_Error;
    end Within;
 
    --------------------------
