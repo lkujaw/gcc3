@@ -19,12 +19,6 @@
  * to  the  Free Software Foundation,  51  Franklin  Street,  Fifth  Floor, *
  * Boston, MA 02110-1301, USA.                                              *
  *                                                                          *
---
---
---
---
---
---
  * GNAT was originally developed  by the GNAT team at  New York University. *
  * Extensive contributions were provided by Ada Core Technologies Inc.      *
  *                                                                          *
@@ -144,7 +138,7 @@ unsigned char __gnat_objlist_file_supported = 0;
 unsigned char __gnat_using_gnu_linker = 0;
 const char *__gnat_object_library_extension = ".olb";
 
-#elif defined (sun)
+#elif defined (sco) || defined (sun)
 const char *__gnat_object_file_option = "";
 const char *__gnat_run_path_option = "-Wl,-R";
 char __gnat_shared_libgnat_default = STATIC;

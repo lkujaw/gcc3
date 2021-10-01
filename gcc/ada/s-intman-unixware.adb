@@ -45,7 +45,7 @@ package body System.Interrupt_Management is
    type Interrupt_List is array (Interrupt_ID range <>) of Interrupt_ID;
 
    Exception_Interrupts : constant Interrupt_List :=
-     (SIGFPE, SIGILL, SIGSEGV, SIGBUS);
+     (SIGILL, SIGFPE, SIGBUS, SIGSEGV);
 
    Unreserve_All_Interrupts : Interfaces.C.int;
    pragma Import
@@ -89,8 +89,12 @@ package body System.Interrupt_Management is
       info    : access siginfo_t;
       context : access ucontext_t)
    is
-      pragma Unreferenced (context);
    begin
+      --  Perform the necessary context adjustments prior to a raise
+      --  from a signal handler.
+
+      Adjust_Context_For_Raise (signo, context.all'Address);
+
       --  Check that treatment of exception propagation here
       --  is consistent with treatment of the abort signal in
       --  System.Task_Primitives.Operations.

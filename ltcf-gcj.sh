@@ -526,11 +526,23 @@ else
     hardcode_libdir_separator=:
     ;;
 
-  sco3.2v5*)
-    archive_cmds='$LD -G -h $soname -o $lib $libobjs $deplibs $linker_flags'
+  sco3.2v5* | sco5v6* | svr5* | sysv5* | unixware7* | UnixWare* | OpenUNIX*)
+    no_undefined_flag='${wl}-z,defs'
+    if test "$with_gcc" = yes; then
+      archive_cmds='$CC -shared ${wl}-h,${SCOABSPATH:+${instrpath:-}${instrpath:+/}}$soname -o $lib $libobjs $deplibs $linker_flags'
+      archive_expsym_cmds='$CC -shared ${wl}-Bexport:$export_symbols ${wl}-h,${SCOABSPATH:+${instrpath:-}${instrpath:+/}}$soname -o $lib $libobjs $deplibs $linker_flags'
+    else
+      archive_cmds='$CC -G ${wl}-h,${SCOABSPATH:+${instrpath:-}${instrpath:+/}}$soname -o $lib $libobjs $deplibs $linker_flags'
+      archive_expsym_cmds='$CC -G ${wl}-Bexport:$export_symbols ${wl}-h,${SCOABSPATH:+${instrpath:-}${instrpath:+/}}$soname -o $lib $libobjs $deplibs $linker_flags'
+    fi
+    hardcode_libdir_flag_spec='${wl}-R,$libdir'
+    hardcode_libdir_separator=':'
     hardcode_shlibpath_var=no
+    hardcode_direct=yes
     runpath_var=LD_RUN_PATH
-    hardcode_runpath_var=yes
+    hardcode_runpath_var=no
+    link_all_deplibs=yes
+    export_dynamic_flag_spec='${wl}-Bexport'
     ;;
 
   solaris*)
@@ -575,18 +587,6 @@ else
     export_dynamic_flag_spec='-Bexport'
     ;;
 
-  sysv5*)
-    no_undefined_flag=' -z text'
-    # $CC -shared without GNU ld will not create a library from C++
-    # object files and a static libstdc++, better avoid it by now
-    archive_cmds='$LD -G${allow_undefined_flag} -h $soname -o $lib $libobjs $deplibs $linker_flags'
-    archive_expsym_cmds='$echo "{ global:" > $lib.exp~cat $export_symbols | sed -e "s/\(.*\)/\1;/" >> $lib.exp~$echo "local: *; };" >> $lib.exp~
-		$LD -G${allow_undefined_flag} -M $lib.exp -h $soname -o $lib $libobjs $deplibs $linker_flags~$rm $lib.exp'
-    hardcode_libdir_flag_spec=
-    hardcode_shlibpath_var=no
-    runpath_var='LD_RUN_PATH'
-    ;;
-
   uts4*)
     archive_cmds='$LD -G -h $soname -o $lib $libobjs $deplibs $linker_flags'
     hardcode_libdir_flag_spec='-L$libdir'
@@ -616,17 +616,6 @@ else
     hardcode_shlibpath_var=no
     hardcode_runpath_var=yes
     runpath_var=LD_RUN_PATH
-    ;;
-
-  sysv5uw7* | unixware7*)
-    no_undefined_flag='${wl}-z ${wl}text'
-    if test "$GCC" = yes; then
-      archive_cmds='$CC -shared ${wl}-h ${wl}$soname -o $lib $libobjs $deplibs $compiler_flags'
-    else
-      archive_cmds='$CC -G ${wl}-h ${wl}$soname -o $lib $libobjs $deplibs $compiler_flags'
-    fi
-    runpath_var='LD_RUN_PATH'
-    hardcode_shlibpath_var=no
     ;;
 
   *)

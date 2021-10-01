@@ -129,6 +129,8 @@ package System.OS_Interface is
       --  be kept unmasked.
 
       SIGLWP, SIGWAITING,
+      --  These signals are used internally by the UI Threads library
+      --  and cannot be masked.
 
       SIGTTIN, SIGTTOU, SIGTSTP,
       --  Keep these three signals unmasked so that background processes
@@ -389,7 +391,7 @@ package System.OS_Interface is
 
    function sigwait (set : access sigset_t; sig : access Signal) return int;
    pragma Inline (sigwait);
-   --  UnixWare provides a non standard sigwait
+   --  UnixWare provides the UI Threads sigwait
 
    function thr_kill (thread : thread_t; sig : Signal) return int;
    pragma Import (C, thr_kill);

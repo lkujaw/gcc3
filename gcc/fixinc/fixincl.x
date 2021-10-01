@@ -26,7 +26,8 @@
  *  
  *  You may redistribute it and/or modify it under the terms of the
  *  GNU General Public License, as published by the Free Software
- *  Foundation; either version 2, or (at your option) any later version.
+ *  Foundation; either version 2 of the License, or (at your option)
+ *  any later version.
  *  
  *  inclhack is distributed in the hope that it will be useful,
  *  but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -34,10 +35,10 @@
  *  See the GNU General Public License for more details.
  *  
  *  You should have received a copy of the GNU General Public License
- *  along with inclhack.  See the file "COPYING".  If not,
- *  write to:  The Free Software Foundation, Inc.,
- *             59 Temple Place - Suite 330,
- *             Boston,  MA  02111-1307, USA.
+ *  along with inclhack.  If not, write to:
+ *  	The Free Software Foundation, Inc.,
+ *  	51 Franklin Street, Fifth Floor
+ *  	Boston, MA  02110-1301, USA.
  */
 
 /* * * * * * * * * * * * * * * * * * * * * * * * * *
@@ -4372,24 +4373,27 @@ tSCC zSco_MathList[] =
 /*
  *  Machine/OS name selection pattern
  */
-#define apzSco_MathMachs (const char**)NULL
-
-/*
- *  content selection pattern - do fix if pattern found
- */
-tSCC zSco_MathSelect0[] =
-       "inline double abs";
+tSCC* apzSco_MathMachs[] = {
+        "*-sco3.2v5*",
+        "*-sco5v6*",
+        "*-unixware7*",
+        "*-UnixWare7*",
+        "*-sysv5*",
+        "*-svr5*",
+        (const char*)NULL };
 
 /*
  *  content bypass pattern - skip fix if pattern found
  */
 tSCC zSco_MathBypass0[] =
+       "__GNUC__";
+tSCC zSco_MathBypass1[] =
        "__GNUG__";
 
 #define    SCO_MATH_TEST_CT  2
 static tTestDesc aSco_MathTests[] = {
   { TT_NEGREP,   zSco_MathBypass0, (regex_t*)NULL },
-  { TT_EGREP,    zSco_MathSelect0, (regex_t*)NULL }, };
+  { TT_NEGREP,   zSco_MathBypass1, (regex_t*)NULL }, };
 
 /*
  *  Fix Command Arguments for Sco_Math
@@ -4405,10 +4409,11 @@ static const char* apzSco_MathPatch[] = { "sed",
     __builtin_choose_expr(__builtin_types_compatible_p(typeof(a), float), \\\\\\\n\
       __fpclassifyf(a),__fpclassify(a)))\\\n\
 #endif",
-    "-e", "/extern \"C\\+\\+\"/N;/inline double abs/i\\\n\
+    "-e", "/extern \"C++\"/N;/inline double abs/i\\\n\
 #ifndef __GNUC__\n",
-    "-e", "/inline long double trunc/N;/inline long double trunc.*}.*extern \"C\\+\\+\"/a\\\n\
+    "-e", "/inline long double trunc/N;/inline long double trunc.*}.*extern \"C++\"/a\\\n\
 #endif /* ! __GNUC__ */",
+    "-e", "s/^#define is\\(.*\\)(x, y).*/#define is\\1(x, y) __builtin_is\\1((x),(y))/",
     (char*)NULL };
 
 /* * * * * * * * * * * * * * * * * * * * * * * * * *

@@ -929,6 +929,38 @@ ifeq ($(strip $(filter-out mips sgi irix%,$(targ))),)
   GMEM_LIB = gmemlib
 endif
 
+# sysv5 is SCO UnixWare
+ifeq ($(strip $(filter-out sysv5,$(osys))),)
+  LIBGNAT_TARGET_PAIRS = \
+  a-intnam.ads<a-intnam-unixware.ads \
+  a-numaux.adb<a-numaux-x86.adb \
+  a-numaux.ads<a-numaux-x86.ads \
+  s-inmaop.adb<s-inmaop-posix.adb \
+  s-intman.adb<s-intman-unixware.adb \
+  s-osinte.adb<s-osinte-unixware.adb \
+  s-osinte.ads<s-osinte-unixware.ads \
+  s-osprim.adb<s-osprim-unixware.adb \
+  s-taprop.adb<s-taprop-unixware.adb \
+  s-tasinf.adb<s-tasinf-unixware.adb \
+  s-tasinf.ads<s-tasinf-unixware.ads \
+  s-taspri.ads<s-taspri-unixware.ads \
+  s-tpopsp.adb<s-tpopsp-unixware.adb \
+  g-soccon.ads<g-soccon-unixware.ads \
+  g-soliop.ads<g-soliop-unixware.ads \
+  system.ads<system-unixware.ads
+
+  TOOLS_TARGET_PAIRS=mlib-tgt.adb<mlib-tgt-unixware.adb
+
+  EH_MECHANISM=-gcc
+  THREADSLIB = -lthread
+  MISCLIB = -lnsl -lsocket
+  SO_OPTS = -Wl,-h,
+  GNATLIB_SHARED = gnatlib-shared-dual
+  GMEM_LIB = gmemlib
+  PREFIX_OBJS = $(PREFIX_REAL_OBJS)
+  LIBRARY_VERSION := $(LIB_VERSION)
+endif
+
 ifeq ($(strip $(filter-out hppa% hp hpux10%,$(targ))),)
   LIBGNAT_TARGET_PAIRS = \
   a-excpol.adb<a-excpol-abort.adb \

@@ -19,12 +19,6 @@
  * to  the  Free Software Foundation,  51  Franklin  Street,  Fifth  Floor, *
  * Boston, MA 02110-1301, USA.                                              *
  *                                                                          *
---
---
---
---
---
---
  * GNAT was originally developed  by the GNAT team at  New York University. *
  * Extensive contributions were provided by Ada Core Technologies Inc.      *
  *                                                                          *
@@ -1611,7 +1605,7 @@ __gnat_is_symbolic_link (char *name ATTRIBUTE_UNUSED)
 #endif
 }
 
-#if defined (sun) && defined (__SVR4)
+#if defined(sco) || (defined (sun) && defined (__SVR4))
 /* Using fork on Solaris will duplicate all the threads. fork1, which
    duplicates only the active thread, must be used instead, or spawning
    subprocess from a program with tasking will lead into numerous problems.  */

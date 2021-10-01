@@ -1,0 +1,13 @@
+# We multilib libgcc for -fPIC, to get real PIC code in it.
+# NOTE: We must use -fPIC on crt{begi,end}.o else we get an RTLD error
+# "cant set protections on segment of length blah at 0x8048000".
+CRTSTUFF_T_CFLAGS   = -fPIC -fno-omit-frame-pointer
+
+MULTILIB_OPTIONS    = fPIC pthread
+MULTILIB_DIRNAMES   = pic pthread
+MULTILIB_EXCEPTIONS =
+MULTILIB_MATCHES    = fPIC=fpic
+MULTILIB_EXTRA_OPTS =
+
+LIBGCC=stmp-multilib
+INSTALL_LIBGCC=install-multilib

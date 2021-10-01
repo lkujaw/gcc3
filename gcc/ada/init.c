@@ -952,6 +952,139 @@ __gnat_install_handler (void)
   __gnat_handler_installed = 1;
 }
 
+/********************/
+/* UnixWare Section */
+/********************/
+
+#elif defined (__UNIXWARE__)
+
+#include <signal.h>
+#include <siginfo.h>
+#include <sys/ucontext.h>
+
+static void __gnat_error_handler (int, siginfo_t *, void *);
+
+/* __gnat_adjust_context_for_raise - see comments along with the default
+   version later in this file.  */
+
+#define HAVE_GNAT_ADJUST_CONTEXT_FOR_RAISE
+
+void
+__gnat_adjust_context_for_raise (int signo ATTRIBUTE_UNUSED, void *context)
+{
+  mcontext_t * const mcontext = &((ucontext_t *)context)->uc_mcontext;
+  ++mcontext->gregs[R_EIP];
+}
+
+static void
+__gnat_error_handler (int signo, siginfo_t *info, void *context)
+{
+  mcontext_t * const mcontext = &((ucontext_t *)context)->uc_mcontext;
+  struct Exception_Data *exception;
+  const char *msg;
+
+  /* If this was an explicit signal from a "kill", just resignal it.  */
+  if (SI_FROMUSER (info))
+    {
+      signal (signo, SIG_DFL);
+      kill (getpid(), signo);
+    }
+
+  /* Otherwise, treat it as something we handle.  */
+  switch (signo)
+    {
+    case SIGSEGV:
+      if ((long) info->si_addr == 0)
+	{
+	  exception = &constraint_error;
+	  msg = "SIGSEGV (null dereference)";
+	}
+      /* If the problem was permissions, this is a constraint error.  */
+      else if (info->si_code == SEGV_ACCERR)
+	{
+	  exception = &constraint_error;
+	  msg = "SIGSEGV (memory access violating permissions)";
+	}
+      /* If the failing address is not maximally aligned, this is also
+         a constraint error. */
+      else if ((((long) info->si_addr) & 3) != 0)
+	{
+	  exception = &constraint_error;
+	  msg = "SIGSEGV (memory access violating alignment)";
+	}
+	/* Check if the fault is the result of a stack probe (OR memory 0).
+	   Ideally, it would be possible to forbid such operations outside
+	   of stack probe generation.  */
+      else if (mcontext->gregs[R_EIP] &&
+	     *(unsigned char *)mcontext->gregs[R_EIP] == 0x83 &&
+	 (((*((unsigned char *)mcontext->gregs[R_EIP] + 1) & 0xF8) == 0x08 &&
+	    *((unsigned char *)mcontext->gregs[R_EIP] + 2) == 0) ||
+	   (*((unsigned char *)mcontext->gregs[R_EIP] + 1) == 0x8C &&
+	    *((unsigned char *)mcontext->gregs[R_EIP] + 7) == 0)))
+	{
+	  exception = &storage_error;
+	  msg = "SIGSEGV (stack overflow)";
+	}
+      else
+	{
+	  exception = &constraint_error;
+	  msg = "SIGSEGV (erroneous memory access)";
+	}
+      break;
+
+    case SIGBUS:
+      exception = &program_error;
+      msg = "SIGBUS";
+      break;
+
+    case SIGFPE:
+      exception = &constraint_error;
+      msg = "SIGFPE";
+      break;
+
+    case SIGILL:
+      exception = &constraint_error;
+      msg = "SIGILL";
+      break;
+
+    default:
+      exception = &program_error;
+      msg = "unhandled signal";
+    }
+
+  __gnat_adjust_context_for_raise (signo, context);
+
+  Raise_From_Signal_Handler (exception, msg);
+}
+
+void
+__gnat_install_handler (void)
+{
+  struct sigaction act;
+
+  /* Set up signal handler to map synchronous signals to appropriate
+     exceptions.  Make sure that the handler isn't interrupted by another
+     signal that might cause a scheduling event! */
+
+  act.sa_sigaction = __gnat_error_handler;
+  act.sa_flags = SA_NODEFER | SA_RESTART | SA_SIGINFO;
+  sigemptyset (&act.sa_mask);
+
+  /* Do not install handlers if interrupt state is "System" */
+  if (__gnat_get_interrupt_state (SIGABRT) != 's')
+    sigaction (SIGABRT, &act, NULL);
+  if (__gnat_get_interrupt_state (SIGFPE) != 's')
+    sigaction (SIGFPE,  &act, NULL);
+  if (__gnat_get_interrupt_state (SIGILL) != 's')
+    sigaction (SIGILL,  &act, NULL);
+  if (__gnat_get_interrupt_state (SIGBUS) != 's')
+    sigaction (SIGBUS,  &act, NULL);
+  if (__gnat_get_interrupt_state (SIGSEGV) != 's')
+    sigaction (SIGSEGV, &act, NULL);
+
+  __gnat_handler_installed = 1;
+}
+
 /*******************/
 /* Solaris Section */
 /*******************/

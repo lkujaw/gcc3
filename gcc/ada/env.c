@@ -19,12 +19,6 @@
  * to  the  Free Software Foundation,  51  Franklin  Street,  Fifth  Floor, *
  * Boston, MA 02110-1301, USA.                                              *
  *                                                                          *
---
---
---
---
---
---
  * GNAT was originally developed  by the GNAT team at  New York University. *
  * Extensive contributions were provided by Ada Core Technologies Inc.      *
  *                                                                          *
@@ -215,21 +209,22 @@ void __gnat_unsetenv (char *name) {
 #if defined (VMS)
   /* Not implemented */
   return;
-#elif defined (__hpux__) || defined (sun) \
+#elif defined (__hpux__) || defined (sun) || defined (sco) \
      || (defined (__mips) && defined (__sgi)) \
      || (defined (__vxworks) && ! defined (__RTP__)) \
      || defined (_AIX) || defined (__Lynx__)
 
-  /* On Solaris, HP-UX and IRIX there is no function to clear an environment
-     variable. So we look for the variable in the environ table and delete it
-     by setting the entry to NULL. This can clearly cause some memory leaks
-     but free cannot be used on this context as not all strings in the environ
-     have been allocated using malloc. To avoid this memory leak another
-     method can be used. It consists in forcing the reallocation of all the
-     strings in the environ table using malloc on the first call on the
-     functions related to environment variable management. The disavantage
-     is that if a program makes a direct call to getenv the return string
-     may be deallocated at some point. */
+  /* On Solaris, HP-UX, IRIX, and UnixWare, there is no function to
+     clear an environment variable. So we look for the variable in the
+     environ table and delete it by setting the entry to NULL. This
+     can clearly cause some memory leaks but free cannot be used on
+     this context as not all strings in the environ have been
+     allocated using malloc. To avoid this memory leak another method
+     can be used. It consists in forcing the reallocation of all the
+     strings in the environ table using malloc on the first call on
+     the functions related to environment variable management. The
+     disavantage is that if a program makes a direct call to getenv
+     the return string may be deallocated at some point. */
   /* Note that on AIX, unsetenv is not supported on 5.1 but it is on 5.3.
      As we are still supporting AIX 5.1 we cannot use unsetenv */
   char **env = __gnat_environ ();
@@ -274,8 +269,9 @@ void __gnat_clearenv (void) {
 #if defined (VMS)
   /* not implemented */
   return;
-#elif defined (sun) || (defined (__mips) && defined (__sgi)) \
-   || (defined (__vxworks) && ! defined (__RTP__)) || defined (__Lynx__)
+#elif defined (sun) || defined (sco) || defined (__Lynx__) || \
+   (defined (__mips) && defined (__sgi)) || \
+   (defined (__vxworks) && ! defined (__RTP__))
   /* On Solaris, IRIX, VxWorks (not RTPs), and Lynx there is no system
      call to unset a variable or to clear the environment so set all
      the entries in the environ table to NULL (see comment in

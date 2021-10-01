@@ -2421,7 +2421,13 @@ fix = {
     files    = xpg4plus/math.h;
     files    = ods_30_compat/math.h;
     files    = oldstyle/math.h;
-    select   = "inline double abs";
+    mach     = *-sco3.2v5*;
+    mach     = *-sco5v6*;
+    mach     = *-unixware7*;
+    mach     = *-UnixWare7*;
+    mach     = *-sysv5*;
+    mach     = *-svr5*;
+    bypass   = "__GNUC__";
     bypass   = "__GNUG__";
     sed      = "/#define.*__fp_class(a) \\\\/i\\\n"
 	       "#ifndef __GNUC__\n";
@@ -2435,12 +2441,14 @@ fix = {
 "      __fpclassifyf(a),__fpclassify(a)))\\\n"
 "#endif";
 
-    sed      = "/extern \"C\\+\\+\"/N;"
+    sed      = "/extern \"C\+\+\"/N;"
 	       "/inline double abs/i\\\n"
                "#ifndef __GNUC__\n";
     sed      = "/inline long double trunc/N;"
-	       "/inline long double trunc.*}.*extern \"C\\+\\+\"/a\\\n"
+	       "/inline long double trunc.*}.*extern \"C\+\+\"/a\\\n"
 	       "#endif /* ! __GNUC__ */";
+    sed      = "s/^#define is\\(.*\\)(x, y).*/"
+               "#define is\\1(x, y) __builtin_is\\1((x),(y))/";
 
     test_text =
     "#define __fp_class(a) \\\\\n"

@@ -1032,7 +1032,8 @@ EOF
 		echo ${UNAME_MACHINE}-pc-sysv${UNAME_REL}
 	fi
 	exit 0 ;;
-    i*86:*:5:[78]*)
+    i*86:*:5:[678]*)
+	# Detect OpenServer 6, UnixWare 7, or Open UNIX 8.
 	case `/bin/uname -X | grep "^Machine"` in
 	    *486*)	     UNAME_MACHINE=i486 ;;
 	    *Pentium)	     UNAME_MACHINE=i586 ;;

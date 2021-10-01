@@ -710,20 +710,16 @@ osf3* | osf4* | osf5*)
   lt_cv_deplibs_check_method=pass_all
   ;;
 
-sco3.2v5*)
-  lt_cv_deplibs_check_method=pass_all
-  ;;
-
 solaris*)
   lt_cv_deplibs_check_method=pass_all
   lt_cv_file_magic_test_file=/lib/libc.so
   ;;
 
-[sysv5uw[78]* | sysv4*uw2*)]
+sco3.2v5* | sco5v6* | sysv5* | svr5* | unixware7* | OpenUNIX* | UnixWare*)
   lt_cv_deplibs_check_method=pass_all
   ;;
 
-sysv4 | sysv4.2uw2* | sysv4.3* | sysv5*)
+sysv4 | sysv4.2uw2* | sysv4.3*)
   case $host_vendor in
   ncr)
     lt_cv_deplibs_check_method=pass_all

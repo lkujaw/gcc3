@@ -576,17 +576,23 @@ case $host_os in
     # FIXME: insert proper C++ library support
     ld_shlibs=no
     ;;
-  sco*)
-    case $cc_basename in
-      CC)
-        # FIXME: insert proper C++ library support
-        ld_shlibs=no
-        ;;
-      *)
-        # FIXME: insert proper C++ library support
-        ld_shlibs=no
-        ;;
-    esac
+  sco3.2v5* | sco5v6* | svr5* | sysv5* | unixware7* | UnixWare* | OpenUNIX*)
+    no_undefined_flag='${wl}-z,defs'
+    if test "$with_gcc" = yes; then
+      archive_cmds='$CXX -shared ${wl}-h,${SCOABSPATH:+${instrpath:-}${instrpath:+/}}$soname -o $lib $libobjs $deplibs $linker_flags'
+      archive_expsym_cmds='$CXX -shared ${wl}-Bexport:$export_symbols ${wl}-h,${SCOABSPATH:+${instrpath:-}${instrpath:+/}}$soname -o $lib $libobjs $deplibs $linker_flags'
+    else
+      archive_cmds='$CXX -G ${wl}-h,${SCOABSPATH:+${instrpath:-}${instrpath:+/}}$soname -o $lib $libobjs $deplibs $linker_flags'
+      archive_expsym_cmds='$CXX -G ${wl}-Bexport:$export_symbols ${wl}-h,${SCOABSPATH:+${instrpath:-}${instrpath:+/}}$soname -o $lib $libobjs $deplibs $linker_flags'
+    fi
+    hardcode_libdir_flag_spec='${wl}-R,$libdir'
+    hardcode_libdir_separator=':'
+    hardcode_shlibpath_var=no
+    hardcode_direct=yes
+    runpath_var=LD_RUN_PATH
+    hardcode_runpath_var=no
+    link_all_deplibs=yes
+    export_dynamic_flag_spec='${wl}-Bexport'
     ;;
   sunos4*)
     case $cc_basename in
@@ -695,10 +701,6 @@ case $host_os in
         ld_shlibs=no
         ;;
     esac
-    ;;
-  unixware*)
-    # FIXME: insert proper C++ library support
-    ld_shlibs=no
     ;;
   vxworks*)
     # FIXME: insert proper C++ library support

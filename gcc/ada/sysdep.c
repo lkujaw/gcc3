@@ -320,12 +320,13 @@ __gnat_ttyname (int filedes)
 #endif
 }
 #endif
-
-#if defined (linux) || defined (sun) || defined (sgi) || defined (__EMX__) \
-  || (defined (__osf__) && ! defined (__alpha_vxworks)) || defined (WINNT) \
-  || defined (__MACHTEN__) || defined (__hpux__) || defined (_AIX) \
-  || (defined (__svr4__) && defined (i386)) || defined (__Lynx__) \
-  || defined (__CYGWIN__) || defined (__FreeBSD__)
+
+#if defined (linux) || defined (sco) || defined (sgi) || defined (sun) \
+  || defined (__EMX__) \
+  || (defined (__osf__) && ! defined (__alpha_vxworks)) \
+  || defined (WINNT) || defined (__MACHTEN__) || defined (__hpux__) \
+  || defined (_AIX) || (defined (__svr4__) && defined (i386)) \
+  || defined (__Lynx__) || defined (__CYGWIN__) || defined (__FreeBSD__)
 
 #ifdef __MINGW32__
 #if OLD_MINGW
@@ -378,7 +379,8 @@ getc_immediate_common (FILE *stream,
                        int *avail,
                        int waiting)
 {
-#if defined (linux) || defined (sun) || defined (sgi) || defined (__EMX__) \
+#if defined (linux) || defined (sco) || defined (sgi) || defined (sun) \
+    || defined (__EMX__) \
     || (defined (__osf__) && ! defined (__alpha_vxworks)) \
     || defined (__CYGWIN32__) || defined (__MACHTEN__) || defined (__hpux__) \
     || defined (_AIX) || (defined (__svr4__) && defined (i386)) \
@@ -398,9 +400,10 @@ getc_immediate_common (FILE *stream,
       /* Set RAW mode, with no echo */
       termios_rec.c_lflag = termios_rec.c_lflag & ~ICANON & ~ECHO;
 
-#if defined(linux) || defined (sun) || defined (sgi) || defined (__EMX__) \
-    || defined (__osf__) || defined (__MACHTEN__) || defined (__hpux__) \
-    || defined (_AIX) || (defined (__svr4__) && defined (i386)) \
+#if defined (linux) || defined (sco) || defined (sgi) || defined (sun) \
+    || defined (__EMX__) || defined (__osf__) || defined (__MACHTEN__) \
+    || defined (__hpux__) || defined (_AIX) \
+    || (defined (__svr4__) && defined (i386)) \
     || defined (__Lynx__) || defined (__FreeBSD__)
       eof_ch = termios_rec.c_cc[VEOF];
 

@@ -83,15 +83,13 @@ else
     osf3* | osf4* | osf5*)
       wl='-Wl,'
       ;;
-    sco3.2v5*)
-      ;;
     solaris*)
       wl='-Wl,'
       ;;
     sunos4*)
       wl='-Qoption ld '
       ;;
-    sysv4 | sysv4.2uw2* | sysv4.3* | sysv5*)
+    sco3.2v5* | sco5v6*| sysv4 | sysv4.2uw2* | sysv4.3* | sysv5* | UnixWare* | OpenUNIX* | unixware7*)
       wl='-Wl,'
       ;;
     sysv4*MP*)
@@ -378,7 +376,9 @@ else
       fi
       hardcode_libdir_separator=:
       ;;
-    sco3.2v5*)
+    sco3.2v5* | sco5v6* | sysv5* | OpenUNIX* | UnixWare* | unixware7*)
+      hardcode_libdir_flag_spec='-R $libdir'
+      hardcode_libdir_separator=:
       ;;
     solaris*)
       hardcode_libdir_flag_spec='-R$libdir'
@@ -411,11 +411,6 @@ else
     sysv4.2uw2*)
       hardcode_direct=yes
       hardcode_minus_L=no
-      ;;
-    sysv5OpenUNIX8* | sysv5UnixWare7* |  sysv5uw[78]* | unixware7*)
-      ;;
-    sysv5*)
-      hardcode_libdir_flag_spec=
       ;;
     uts4*)
       hardcode_libdir_flag_spec='-L$libdir'
@@ -500,13 +495,11 @@ case "$host_os" in
     ;;
   osf3* | osf4* | osf5*)
     ;;
-  sco3.2v5*)
-    ;;
   solaris*)
     ;;
   sunos4*)
     ;;
-  sysv4 | sysv4.2uw2* | sysv4.3* | sysv5*)
+  sco3.2v5* | sco5v6* | sysv4 | sysv4.2uw2* | sysv4.3* | sysv5* | OpenUNIX* | UnixWare* | unixware7*)
     ;;
   sysv4*MP*)
     ;;
