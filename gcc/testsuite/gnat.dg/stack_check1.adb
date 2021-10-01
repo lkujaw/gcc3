@@ -5,6 +5,8 @@
 -- through signal frames (typically located in *-unwind.h) to pass.  Feel free
 -- to disable it if this code hasn't been implemented yet.
 
+with Ada.Command_Line;
+
 procedure Stack_Check1 is
 
   type A is Array (1..2048) of Integer;
@@ -23,11 +25,13 @@ procedure Stack_Check1 is
 
   Task body T is
   begin
+    Ada.Command_Line.Set_Exit_Status (Ada.Command_Line.Failure);
     begin
       Consume_Stack (Integer'Last);
       raise Program_Error;
     exception
-      when Storage_Error => null;
+       when Storage_Error =>
+          Ada.Command_Line.Set_Exit_Status (Ada.Command_Line.Success);
     end;
 
     Consume_Stack (128);
