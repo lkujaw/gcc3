@@ -96,8 +96,8 @@ package body Comperr is
          Write_Eol;
       end End_Line;
 
-      Is_GPL_Version : constant Boolean := Get_Gnat_Build_Type = GPL;
-      Is_FSF_Version : constant Boolean := Get_Gnat_Build_Type = FSF;
+      Is_GPL_Version : constant Boolean := Gnatvsn.Build_Type = GPL;
+      Is_FSF_Version : constant Boolean := Gnatvsn.Build_Type = FSF;
 
    --  Start of processing for Compiler_Abort
 
