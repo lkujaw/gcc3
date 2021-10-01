@@ -21,12 +21,6 @@
  * to  the Free Software Foundation,  59 Temple Place - Suite 330,  Boston, *
  * MA 02111-1307, USA.                                                      *
  *                                                                          *
---
---
---
---
---
---
  * GNARL was developed by the GNARL team at Florida State University.       *
  * Extensive contributions were provided by Ada Core Technologies, Inc.     *
  * The  executive  was developed  by the  Real-Time  Systems  Group  at the *

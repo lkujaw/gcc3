@@ -19,12 +19,6 @@
  * to  the  Free Software Foundation,  51  Franklin  Street,  Fifth  Floor, *
  * Boston, MA 02110-1301, USA.                                              *
  *                                                                          *
---
---
---
---
---
---
  * GNAT was originally developed  by the GNAT team at  New York University. *
  * Extensive contributions were provided by Ada Core Technologies Inc.      *
  *                                                                          *
