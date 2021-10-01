@@ -377,7 +377,7 @@ package Opt is
    --  GNAT
    --  Set to True to generate full elaboration warnings (-gnatwl)
 
-   Enable_Overflow_Checks : Boolean := False;
+   Enable_Overflow_Checks : Boolean := True;
    --  GNAT
    --  Set to True if -gnato (enable overflow checks) switch is set,
    --  but not -gnatp.

@@ -65,6 +65,14 @@ private
    Switch_Max_Value : constant := 999_999;
    --  Maximum value permitted in switches that take a value
 
+   procedure Scan_Boolean
+     (Switch_Chars : String;
+      Max          : Integer;
+      Ptr          : in out Integer;
+      Default      : Boolean;
+      Result       : out Boolean;
+      Switch       : Character);
+
    procedure Scan_Nat
      (Switch_Chars : String;
       Max          : Integer;

@@ -615,9 +615,16 @@ package body Switch.C is
             --  Processing for o switch
 
             when 'o' =>
-               Ptr := Ptr + 1;
-               Suppress_Options (Overflow_Check) := False;
-               Opt.Enable_Overflow_Checks := True;
+               declare
+                  Value : Boolean;
+               begin
+                  Ptr := Ptr + 1;
+                  --  True: Assume the user desires overflow checking for
+                  --        backward compatbility.
+                  Scan_Boolean (Switch_Chars, Max, Ptr, True, Value, C);
+                  Suppress_Options (Overflow_Check) := not Value;
+                  Opt.Enable_Overflow_Checks := Value;
+               end;
 
             --  Processing for O switch
 

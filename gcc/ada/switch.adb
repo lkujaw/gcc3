@@ -25,6 +25,7 @@
 ------------------------------------------------------------------------------
 
 with Osint;
+with System.Case_Util;
 
 package body Switch is
 
@@ -67,6 +68,43 @@ package body Switch is
       return Switch_Chars'Length > 1
         and then Switch_Chars (Switch_Chars'First) = '-';
    end Is_Switch;
+
+   procedure Scan_Boolean
+     (Switch_Chars : String;
+      Max          : Integer;
+      Ptr          : in out Integer;
+      Default      : Boolean;
+      Result       : out Boolean;
+      Switch       : Character)
+   is
+      Buffer : String (1 .. 5) := "     ";
+      Index  : Positive := 1;
+   begin
+      if Ptr <= Max and then Switch_Chars (Ptr) = '=' then
+         --  Expecting boolean option
+         loop
+            Ptr := Ptr + 1;
+            exit when Ptr > Max or else Index > Buffer'Last;
+            Buffer (Index) := System.Case_Util.To_Upper (Switch_Chars (Ptr));
+            Index := Index + 1;
+         end loop;
+      end if;
+
+      if
+         Buffer = "TRUE " or else Buffer = "ON   " or else Buffer = "YES  "
+      then
+         Result := True;
+      elsif
+         Buffer = "FALSE" or else Buffer = "OFF  " or else Buffer = "NO   "
+      then
+         Result := False;
+      elsif Buffer = "     " then
+         Result := Default;
+      else
+         Result := Default;
+         Osint.Fail ("invalid boolean value for switch: ", (1 => Switch));
+      end if;
+   end Scan_Boolean;
 
    --------------
    -- Scan_Nat --
