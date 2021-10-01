@@ -29,7 +29,6 @@
 
 -- RJW 3/31/86
 
-with Impdef;
 WITH REPORT; USE REPORT;
 WITH CALENDAR; USE CALENDAR;
 PROCEDURE C97302A IS
@@ -46,7 +45,7 @@ BEGIN
                       "BEFORE THE DELAY EXPRESSION" );
      DECLARE
 
-          WAIT_TIME : DURATION := 3.0 * Impdef.One_Second;
+          WAIT_TIME : DURATION := 3.0;
           
           TYPE SHORT IS RANGE 10 .. 20;
 

@@ -35,7 +35,6 @@
 -- TBN  8/22/86
 -- PWN 01/31/95  REMOVED PRAGMA PRIORITY FOR ADA 9X.
 
-with Impdef;
 WITH REPORT; USE REPORT;
 WITH SYSTEM; USE SYSTEM;
 PROCEDURE C94001B IS
@@ -64,7 +63,7 @@ PROCEDURE C94001B IS
                ACCEPT E (I : INTEGER) DO
                     LOCAL := I;
                END E;
-               DELAY 30.0 * Impdef.One_Second;    -- SINCE THE PARENT UNIT HAS HIGHER
+               DELAY 30.0;    -- SINCE THE PARENT UNIT HAS HIGHER
                               -- PRIORITY AT THIS POINT, IT WILL
                               -- RECEIVE CONTROL AND TERMINATE IF
                               -- THE ERROR IS PRESENT.
@@ -206,7 +205,7 @@ BEGIN
      BEGIN -- (E)
 
           WHILE NOT TSK'TERMINATED AND LOOP_COUNT < CUT_OFF LOOP
-               DELAY 1.0 * Impdef.One_Second;
+               DELAY 1.0;
                LOOP_COUNT := LOOP_COUNT + 1;
           END LOOP;
 
@@ -250,7 +249,7 @@ BEGIN
      BEGIN -- (F)
 
           WHILE NOT TSK'TERMINATED AND LOOP_COUNT < CUT_OFF LOOP
-               DELAY 1.0 * Impdef.One_Second;
+               DELAY 1.0;
                LOOP_COUNT := LOOP_COUNT + 1;
           END LOOP;
 

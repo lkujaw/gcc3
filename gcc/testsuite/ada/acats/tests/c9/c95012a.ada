@@ -31,7 +31,6 @@
 -- SPS 11/21/82
 -- PWN 01/31/95  REMOVED PRAGMA PRIORITY FOR ADA 9X.
 
-with Impdef;
 WITH REPORT; USE REPORT;
 WITH SYSTEM; USE SYSTEM;
 PROCEDURE C95012A IS
@@ -84,7 +83,7 @@ BEGIN
           PACKAGE BODY PKG IS
           BEGIN
                AT2 := NEW T2T;
-               DELAY 60.0 * Impdef.One_Second;
+               DELAY 60.0;
           END PKG;
 
      BEGIN

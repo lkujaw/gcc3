@@ -27,7 +27,6 @@
 
 -- WRG 7/14/86
 
-with Impdef;
 WITH REPORT; USE REPORT;
 PROCEDURE C97307A IS
 
@@ -40,7 +39,7 @@ BEGIN
 
      DECLARE
 
-          DELAY_TIME : CONSTANT DURATION := 2 * 60.0 * Impdef.One_Second;
+          DELAY_TIME : CONSTANT DURATION := 2 * 60.0;
 
           TASK EXPIRED IS
                ENTRY INCREMENT;
@@ -160,7 +159,7 @@ BEGIN
                          EXPIRED.READ (EXPIRED_CALLS);
                     EXIT WHEN E'COUNT >= DESIRED_QUEUE_LENGTH -
                                          EXPIRED_CALLS;
-                         DELAY 2.0 * Impdef.One_Long_Second;
+                         DELAY 2.0;
                     END LOOP;
                EXIT WHEN DESIRED_QUEUE_LENGTH = 5;
                     DISPATCH.READY;
@@ -171,7 +170,7 @@ BEGIN
                -- LET THE TIMED ENTRY CALLS ISSUED BY CALLER1,
                -- CALLER3, AND CALLER5 EXPIRE:
 
-               DELAY DELAY_TIME + 10.0 * Impdef.One_Long_Second;
+               DELAY DELAY_TIME + 10.0;
 
                -- AT THIS POINT, ALL THE TIMED ENTRY CALLS MUST HAVE
                -- EXPIRED AND BEEN REMOVED FROM THE ENTRY QUEUE FOR E,

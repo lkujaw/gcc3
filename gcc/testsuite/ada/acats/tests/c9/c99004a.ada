@@ -34,7 +34,6 @@
 --     RJW 09/16/86 CREATED ORIGINAL TEST.
 --     DHH 10/15/87 CORRECTED HEADER COMMENTS.
 
-with Impdef;
 WITH REPORT; USE REPORT;
 PROCEDURE C99004A IS
 
@@ -113,7 +112,7 @@ BEGIN
           BEGIN
                ACCEPT E (1);
                ABORT PKG1.T1;
-               DELAY 5.0 * Impdef.One_Long_Second;
+               DELAY 5.0;
                D1 := CHECK ("F", F'CALLABLE, FALSE,
                              F'TERMINATED, TRUE, D);
           END MAIN_TASK;
@@ -153,7 +152,7 @@ BEGIN
           BEGIN
                ACCEPT E (1);
                ABORT T2;
-               DELAY 5.0 * Impdef.One_Long_Second;
+               DELAY 5.0;
                D2 := CHECK ("T2", T2'CALLABLE, FALSE,
                              T2'TERMINATED, TRUE, D);
           END MAIN_TASK;

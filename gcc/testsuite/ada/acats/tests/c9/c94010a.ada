@@ -36,7 +36,6 @@
 -- TBN  9/22/86
 -- PWN 11/30/94 REMOVED PRAGMA PRIORITY INSTANCES FOR ADA 9X.
 
-with Impdef;
 WITH REPORT; USE REPORT;
 WITH SYSTEM; USE SYSTEM;
 PROCEDURE C94010A IS
@@ -71,14 +70,14 @@ PROCEDURE C94010A IS
      PACKAGE BODY P IS
           TASK BODY LIM_PRI_TASK IS
           BEGIN
-               DELAY 30.0 * Impdef.One_Second;
+               DELAY 30.0;
                GLOBAL_INT := IDENT_INT (2);
           END LIM_PRI_TASK;
      END P;
 
      TASK BODY TT IS
      BEGIN
-          DELAY 30.0 * Impdef.One_Second;
+          DELAY 30.0;
           GLOBAL_INT := IDENT_INT (1);
      END TT;
 
@@ -135,7 +134,7 @@ BEGIN
           WHEN MY_EXCEPTION =>
                IF GLOBAL_INT = IDENT_INT (0) THEN
                     FAILED ("TASK NOT DEPENDENT ON MASTER - 2");
-                    DELAY 35.0 * Impdef.One_Second;
+                    DELAY 35.0;
                END IF;
           WHEN OTHERS =>
                FAILED ("UNEXPECTED EXCEPTION RAISED - 2");
@@ -153,7 +152,7 @@ BEGIN
           WHEN MY_EXCEPTION =>
                IF GLOBAL_INT = IDENT_INT (0) THEN
                     FAILED ("TASK NOT DEPENDENT ON MASTER - 3");
-                    DELAY 35.0 * Impdef.One_Second;
+                    DELAY 35.0;
                END IF;
           WHEN OTHERS =>
                FAILED ("UNEXPECTED EXCEPTION RAISED - 3");
@@ -168,7 +167,7 @@ BEGIN
           PROC4 (0);
           IF GLOBAL_INT = IDENT_INT (0) THEN
                FAILED ("TASK NOT DEPENDENT ON MASTER - 4");
-               DELAY 35.0 * Impdef.One_Second;
+               DELAY 35.0;
           END IF;
      END;
 
@@ -185,7 +184,7 @@ BEGIN
           WHEN MY_EXCEPTION =>
                IF GLOBAL_INT = IDENT_INT (0) THEN
                     FAILED ("TASK NOT DEPENDENT ON MASTER - 5");
-                    DELAY 35.0 * Impdef.One_Second;
+                    DELAY 35.0;
                END IF;
           WHEN OTHERS =>
                FAILED ("UNEXPECTED EXCEPTION RAISED - 5");
@@ -201,7 +200,7 @@ BEGIN
           A := FUNC2 (0);
           IF GLOBAL_INT = IDENT_INT (0) THEN
                FAILED ("TASK NOT DEPENDENT ON MASTER - 6");
-               DELAY 35.0 * Impdef.One_Second;
+               DELAY 35.0;
           END IF;
      END;
 
@@ -215,7 +214,7 @@ BEGIN
           A := FUNC3 (0);
           IF GLOBAL_INT = IDENT_INT (0) THEN
                FAILED ("TASK NOT DEPENDENT ON MASTER - 7");
-               DELAY 35.0 * Impdef.One_Second;
+               DELAY 35.0;
           END IF;
      END;
 

@@ -32,7 +32,6 @@
 -- JBG 10/24/83
 -- PWN 09/11/94  REMOVED PRAGMA PRIORITY FOR ADA 9X.
 
-with Impdef;
 WITH REPORT; USE REPORT;
 WITH SYSTEM; USE SYSTEM;
 PROCEDURE C97114A IS
@@ -135,7 +134,7 @@ BEGIN
 
                WHILE  E1'COUNT = 0  -- IF  E1  NOT YET CALLED, THEN GIVE
                LOOP                 --     THE MAIN TASK AN OPPORTUNITY
-                    DELAY  10.01 * Impdef.One_Second;   --     TO ISSUE THE CALL.
+                    DELAY  10.01;   --     TO ISSUE THE CALL.
                END LOOP;
 
 
@@ -146,17 +145,17 @@ BEGIN
                OR
 
                     WHEN  6 + F1(7) = 13  =>
-                         DELAY  D1( DUMMY ) * Impdef.One_Second;
+                         DELAY  D1( DUMMY ); 
 
                OR
 
                     WHEN  6 + F2(7) = 13  =>
-                         DELAY  D2( DUMMY ) * Impdef.One_Second;
+                         DELAY  D2( DUMMY ); 
 
                OR
 
                     WHEN  6 + F3(7) = 13  =>
-                         DELAY  D3( DUMMY ) * Impdef.One_Second;
+                         DELAY  D3( DUMMY ); 
 
                END SELECT;
 

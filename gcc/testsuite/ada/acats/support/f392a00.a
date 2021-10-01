@@ -3,22 +3,22 @@
 --                             Grant of Unlimited Rights
 --
 --     Under contracts F33600-87-D-0337, F33600-84-D-0280, MDA903-79-C-0687,
---     F08630-91-C-0015, and DCA100-97-D-0025, the U.S. Government obtained
+--     F08630-91-C-0015, and DCA100-97-D-0025, the U.S. Government obtained 
 --     unlimited rights in the software and documentation contained herein.
---     Unlimited rights are defined in DFAR 252.227-7013(a)(19).  By making
---     this public release, the Government intends to confer upon all
---     recipients unlimited rights  equal to those held by the Government.
---     These rights include rights to use, duplicate, release or disclose the
---     released technical data and computer software in whole or in part, in
---     any manner and for any purpose whatsoever, and to have or permit others
+--     Unlimited rights are defined in DFAR 252.227-7013(a)(19).  By making 
+--     this public release, the Government intends to confer upon all 
+--     recipients unlimited rights  equal to those held by the Government.  
+--     These rights include rights to use, duplicate, release or disclose the 
+--     released technical data and computer software in whole or in part, in 
+--     any manner and for any purpose whatsoever, and to have or permit others 
 --     to do so.
 --
 --                                    DISCLAIMER
 --
 --     ALL MATERIALS OR INFORMATION HEREIN RELEASED, MADE AVAILABLE OR
---     DISCLOSED ARE AS IS.  THE GOVERNMENT MAKES NO EXPRESS OR IMPLIED
+--     DISCLOSED ARE AS IS.  THE GOVERNMENT MAKES NO EXPRESS OR IMPLIED 
 --     WARRANTY AS TO ANY MATTER WHATSOEVER, INCLUDING THE CONDITIONS OF THE
---     SOFTWARE, DOCUMENTATION OR OTHER INFORMATION RELEASED, MADE AVAILABLE
+--     SOFTWARE, DOCUMENTATION OR OTHER INFORMATION RELEASED, MADE AVAILABLE 
 --     OR DISCLOSED, OR THE OWNERSHIP, MERCHANTABILITY, OR FITNESS FOR A
 --     PARTICULAR PURPOSE OF SAID MATERIAL.
 --*
@@ -38,7 +38,7 @@ package F392A00 is          -- package Accounts
    -- Types and subtypes.
    --
 
-   type Dollar_Amount  is new Float;
+   type Dollar_Amount  is new Float; 
    type Interest_Rate  is delta 0.001 range 0.000 .. 1.000;
    type Account_Types  is (Bank, Savings, Preferred, Total);
    type Account_Counter is array (Account_Types) of Integer;
@@ -81,7 +81,7 @@ package F392A00 is          -- package Accounts
    procedure Open                   (Acct : in out Bank_Account);
 
    --
-
+                          
    type Savings_Account is new Bank_Account with
       record
          Rate : Interest_Rate;
@@ -93,7 +93,7 @@ package F392A00 is          -- package Accounts
    procedure Assign_Representative (Acct : in     Savings_Account);
    procedure Increment_Counters    (Acct : in     Savings_Account);
    procedure Open                  (Acct : in out Savings_Account);
-
+                          
    --
 
    type Preferred_Account is new Savings_Account with
@@ -111,7 +111,7 @@ package F392A00 is          -- package Accounts
    -- Function used to verify Open operation for Preferred_Account objects.
    function Verify_Open (Acct : in Preferred_Account) return Boolean;
 
-
+   
 end F392A00;
 
 
@@ -167,12 +167,12 @@ package body F392A00 is
       Acct.Rate := Current_Rate;
       Acct.Balance := 2.0 * Opening_Balance;
    end Open;
-
+     
 
    --
    -- Overridden operation for Preferred_Account type.
    --
-
+                     
    procedure Increment_Counters (Acct : in Preferred_Account) is
    begin
       Number_Of_Accounts (Preferred) := Number_Of_Accounts (Preferred) + 1;
@@ -191,7 +191,7 @@ package body F392A00 is
    --
 
    function Verify_Open (Acct : in Preferred_Account) return Boolean is
-   begin
+   begin                                                    
       return (Acct.Balance         = Preferred_Minimum_Balance and
               Acct.Rate            = Current_Rate              and
               Acct.Minimum_Balance = Preferred_Minimum_Balance);

@@ -41,7 +41,6 @@
 --                  PACKAGE VIA AN EXCEPTION WOULD NOT ABORT TASKS.
 --     PWN 01/31/95 REMOVED PRAGMA PRIORITY FOR ADA 9X.
 
-with Impdef;
 WITH REPORT; USE REPORT;
 WITH SYSTEM; USE SYSTEM;
 PROCEDURE C94007A IS
@@ -58,11 +57,11 @@ PROCEDURE C94007A IS
           ACCEPT ID (C : CHARACTER) DO
                ID_C := C;
           END ID;
-          DELAY 1.0 * Impdef.One_Second;
+          DELAY 1.0;
           SELECT
                ACCEPT OUTER;
           OR
-               DELAY 120.0 * Impdef.One_Second;
+               DELAY 120.0;
                FAILED ("PROBABLY BLOCKED - (" & ID_C & ')');
           END SELECT;
           ACCEPT INNER;
@@ -243,7 +242,7 @@ BEGIN
 
                     TASK BODY T1 IS
                     BEGIN
-                         DELAY 120.0 * Impdef.One_Second;
+                         DELAY 120.0;
                          GLOBAL := IDENT_INT(1);
                     END T1;
 

@@ -33,7 +33,6 @@
 -- SPS 12/13/82
 -- PWN 11/30/94 REMOVED PRAGMA PRIORITY INSTANCES FOR ADA 9X.
 
-with Impdef;
 WITH REPORT;
 WITH SYSTEM;
 USE SYSTEM;
@@ -65,7 +64,7 @@ BEGIN
           BEGIN
 
                WHILE  E2'COUNT <= 0  LOOP
-                    DELAY 1.0 * Impdef.One_Second;
+                    DELAY 1.0 ;
                END LOOP;
 
                SELECT 
@@ -77,7 +76,7 @@ BEGIN
                     GOTO  L123 ;
                     FAILED( "'GOTO' NOT OBEYED (1)" );
                OR
-                    DELAY 10.0 * Impdef.One_Second;
+                    DELAY 10.0 ;
                     FAILED( "DELAY ALTERNATIVE SELECTED (1)" );
                END SELECT;
 
@@ -117,7 +116,7 @@ BEGIN
                          FAILED( " E2  ACCEPTED; NO ENTRY CALL (2)" );
                     END ;
                OR
-                    DELAY 10.0 * Impdef.One_Second;
+                    DELAY 10.0 ;
                     GOTO  L321 ;
                     FAILED( "'GOTO' NOT OBEYED (2)" );
                END SELECT;

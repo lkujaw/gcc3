@@ -36,7 +36,6 @@
 --     RJW 11/13/87  ADDED CODE WHICH ALLOWS TEST TO REPORT "PASSED"
 --                   IF TICK > DURATION'SMALL.
 
-with Impdef;
 WITH CALENDAR;  USE CALENDAR;
 WITH SYSTEM;    USE SYSTEM;
 WITH REPORT;    USE REPORT;
@@ -51,7 +50,7 @@ BEGIN
      ---------------------------------------------
 
      DECLARE   -- (A)
-          X : DURATION := 5.0 * Impdef.One_Second;
+          X : DURATION := 5.0;
           OLD_TIME : TIME;
           LAPSE : DURATION;
      BEGIN     -- (A)
@@ -139,8 +138,8 @@ BEGIN
      ---------------------------------------------
 
      DECLARE   -- (E)
-          INC1 : DURATION := 2.0 * Impdef.One_Second;
-          INC2 : DURATION := 3.0 * Impdef.One_Second;
+          INC1 : DURATION := 2.0;
+          INC2 : DURATION := 3.0;
           OLD_TIME : TIME;
           LAPSE : DURATION;
      BEGIN     -- (E)

@@ -28,7 +28,6 @@
 
 -- WRG 7/11/86
 
-with Impdef;
 WITH REPORT; USE REPORT;
 PROCEDURE C97120B IS
 
@@ -55,7 +54,7 @@ BEGIN
           TASK BODY T IS
           BEGIN
                WHILE E'COUNT = 0 LOOP
-                    DELAY 1.0 * Impdef.One_Second;
+                    DELAY 1.0;
                END LOOP;
 
             A: BEGIN
@@ -63,7 +62,7 @@ BEGIN
                          WHEN IDENT_BOOL (TRUE) =>
                               ACCEPT E;
                     OR
-                         DELAY ZERO * Impdef.One_Second;
+                         DELAY ZERO;
                          FAILED ("ZERO DELAY ALTERNATIVE TAKEN");
                          ACCEPT E;
                     END SELECT;
@@ -73,7 +72,7 @@ BEGIN
                END A;
 
                WHILE E'COUNT = 0 LOOP
-                    DELAY 1.0 * Impdef.One_Second;
+                    DELAY 1.0;
                END LOOP;
 
             B: BEGIN

@@ -30,7 +30,6 @@
 --     WRG 7/10/86  CREATED ORIGINAL TEST.
 --     RJW 5/15/90  REMOVED SHARED VARIABLES.
 
-with Impdef;
 WITH REPORT; USE REPORT;
 PROCEDURE C97116A IS
 
@@ -69,7 +68,7 @@ BEGIN
                     FAILED ("EXECUTED ALTERNATIVE CLOSED BY FALSE " &
                             "GUARD FUNCTION" );
                OR
-                    DELAY SO_LONG * Impdef.One_Second;
+                    DELAY SO_LONG;
                END SELECT;
           EXCEPTION
                WHEN OTHERS =>
@@ -81,7 +80,7 @@ BEGIN
           TASK BODY GET_CPU IS
           BEGIN
                WHILE NOT T'TERMINATED LOOP
-                    DELAY 1.0 * Impdef.One_Second;
+                    DELAY 1.0;
                END LOOP;
 
           END GET_CPU;

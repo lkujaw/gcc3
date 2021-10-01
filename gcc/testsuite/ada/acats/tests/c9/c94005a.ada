@@ -43,7 +43,7 @@ PACKAGE C94005A_PKG IS
 
 END C94005A_PKG;
 
-with Impdef;
+
 WITH REPORT; USE REPORT;
 PACKAGE BODY C94005A_PKG IS
 
@@ -53,7 +53,7 @@ PACKAGE BODY C94005A_PKG IS
           ACCEPT E;
           FOR J IN 1..60 LOOP
                I := IDENT_INT (I);
-               DELAY 1.0 * Impdef.One_Second;
+               DELAY 1.0;
           END LOOP;
           RESULT;   -- FAILURE IF THIS MESSAGE IS NOT WRITTEN.
      END TT;

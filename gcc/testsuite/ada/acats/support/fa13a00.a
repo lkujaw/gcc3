@@ -3,22 +3,22 @@
 --                             Grant of Unlimited Rights
 --
 --     Under contracts F33600-87-D-0337, F33600-84-D-0280, MDA903-79-C-0687,
---     F08630-91-C-0015, and DCA100-97-D-0025, the U.S. Government obtained
+--     F08630-91-C-0015, and DCA100-97-D-0025, the U.S. Government obtained 
 --     unlimited rights in the software and documentation contained herein.
---     Unlimited rights are defined in DFAR 252.227-7013(a)(19).  By making
---     this public release, the Government intends to confer upon all
---     recipients unlimited rights  equal to those held by the Government.
---     These rights include rights to use, duplicate, release or disclose the
---     released technical data and computer software in whole or in part, in
---     any manner and for any purpose whatsoever, and to have or permit others
+--     Unlimited rights are defined in DFAR 252.227-7013(a)(19).  By making 
+--     this public release, the Government intends to confer upon all 
+--     recipients unlimited rights  equal to those held by the Government.  
+--     These rights include rights to use, duplicate, release or disclose the 
+--     released technical data and computer software in whole or in part, in 
+--     any manner and for any purpose whatsoever, and to have or permit others 
 --     to do so.
 --
 --                                    DISCLAIMER
 --
 --     ALL MATERIALS OR INFORMATION HEREIN RELEASED, MADE AVAILABLE OR
---     DISCLOSED ARE AS IS.  THE GOVERNMENT MAKES NO EXPRESS OR IMPLIED
+--     DISCLOSED ARE AS IS.  THE GOVERNMENT MAKES NO EXPRESS OR IMPLIED 
 --     WARRANTY AS TO ANY MATTER WHATSOEVER, INCLUDING THE CONDITIONS OF THE
---     SOFTWARE, DOCUMENTATION OR OTHER INFORMATION RELEASED, MADE AVAILABLE
+--     SOFTWARE, DOCUMENTATION OR OTHER INFORMATION RELEASED, MADE AVAILABLE 
 --     OR DISCLOSED, OR THE OWNERSHIP, MERCHANTABILITY, OR FITNESS FOR A
 --     PARTICULAR PURPOSE OF SAID MATERIAL.
 --*
@@ -29,11 +29,11 @@
 --      Declares a package containing type definitions; package will be
 --      with'ed by the root of the elevator abstraction.
 --
---      Declare an elevator abstraction in a parent root package which manages
---      basic operations.  This package has a private part.  Declare a
---      private child package which calculates the floors for going up or
---      down.  Declare a public child package which provides the actual
---      operations.
+--      Declare an elevator abstraction in a parent root package which manages 
+--      basic operations.  This package has a private part.  Declare a 
+--      private child package which calculates the floors for going up or 
+--      down.  Declare a public child package which provides the actual 
+--      operations.  
 --
 -- CHANGE HISTORY:
 --      06 Dec 94   SAIC    ACVC 2.0
@@ -62,7 +62,7 @@ package FA13A00_1 is                      -- Basic Elevator Operations
    type Floor_No is range Floor'Pos(Floor'First) .. Floor'Pos(Floor'Last);
    Current_Floor : Floor   := Floor1;
 
-   TC_Operation  : boolean := true;
+   TC_Operation  : boolean := true;       
 
    procedure Call (F : in Floor; C : in out Call_Waiting_Type);
    procedure Clear_Calls (C : in out Call_Waiting_Type);
@@ -76,7 +76,7 @@ end FA13A00_1;
 
      --==================================================================--
 
-package body FA13A00_1 is
+package body FA13A00_1 is              
 
    -- Call the elevator.
 
@@ -106,14 +106,14 @@ private package FA13A00_1.FA13A00_2 is    -- Floor Calculation
    -- Other type definitions in real application.
 
    procedure Up (HowMany : in Floor_No);
-
+                 
    procedure Down (HowMany : in Floor_No);
 
 end FA13A00_1.FA13A00_2;
 
      --==================================================================--
 
-package body FA13A00_1.FA13A00_2 is
+package body FA13A00_1.FA13A00_2 is              
 
    -- Go up from the current floor.
 
@@ -138,7 +138,7 @@ end FA13A00_1.FA13A00_2;
 -- Public child package of an elevator application.  This package provides
 -- the actual operation of the elevator.
 
-package FA13A00_1.FA13A00_3 is            -- Move Elevator
+package FA13A00_1.FA13A00_3 is            -- Move Elevator  
 
    -- Other type definitions in real application.
 
@@ -151,7 +151,7 @@ end FA13A00_1.FA13A00_3;
 
 with FA13A00_1.FA13A00_2;                 -- Floor Calculation
 
-package body FA13A00_1.FA13A00_3 is
+package body FA13A00_1.FA13A00_3 is              
 
    -- Going up or down depends on the current floor.
 
