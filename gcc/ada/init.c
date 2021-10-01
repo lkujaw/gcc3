@@ -531,7 +531,7 @@ __gnat_install_handler (void)
   sigaltstack (&stack, NULL);
 
   act.sa_sigaction = __gnat_error_handler;
-  act.sa_flags = SA_NODEFER | SA_RESTART | SA_ONSTACK | SA_SIGINFO;
+  act.sa_flags = SA_NODEFER | SA_RESTART | SA_SIGINFO;
   sigemptyset (&act.sa_mask);
 
   /* Do not install handlers if interrupt state is "System" */
