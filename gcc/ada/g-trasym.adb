@@ -6,79 +6,72 @@
 --                                                                          --
 --                                 B o d y                                  --
 --                                                                          --
---                     Copyright (C) 1999-2005, AdaCore                     --
+--                     Copyright (C) 1999-2011, AdaCore                     --
 --                                                                          --
 -- GNAT is free software;  you can  redistribute it  and/or modify it under --
 -- terms of the  GNU General Public License as published  by the Free Soft- --
--- ware  Foundation;  either version 2,  or (at your option) any later ver- --
+-- ware  Foundation;  either version 3,  or (at your option) any later ver- --
 -- sion.  GNAT is distributed in the hope that it will be useful, but WITH- --
 -- OUT ANY WARRANTY;  without even the  implied warranty of MERCHANTABILITY --
--- or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License --
--- for  more details.  You should have  received  a copy of the GNU General --
--- Public License  distributed with GNAT;  see file COPYING.  If not, write --
--- to  the  Free Software Foundation,  51  Franklin  Street,  Fifth  Floor, --
--- Boston, MA 02110-1301, USA.                                              --
+-- or FITNESS FOR A PARTICULAR PURPOSE.                                     --
 --                                                                          --
---
---
---
---
---
---
---
+-- As a special exception under Section 7 of GPL version 3, you are granted --
+-- additional permissions described in the GCC Runtime Library Exception,   --
+-- version 3.1, as published by the Free Software Foundation.               --
+--                                                                          --
+-- You should have received a copy of the GNU General Public License and    --
+-- a copy of the GCC Runtime Library Exception along with this program;     --
+-- see the files COPYING3 and COPYING.RUNTIME respectively.  If not, see    --
+-- <http://www.gnu.org/licenses/>.                                          --
+--                                                                          --
 -- GNAT was originally developed  by the GNAT team at  New York University. --
 -- Extensive contributions were provided by Ada Core Technologies Inc.      --
 --                                                                          --
 ------------------------------------------------------------------------------
 
---  Run-time symbolic traceback support
+--  This is the default implementation for platforms where the full capability
+--  is not supported. It returns tracebacks as lists of LF separated strings of
+--  the form "0x..." corresponding to the addresses.
 
-with System.Soft_Links;
 with Ada.Exceptions.Traceback; use Ada.Exceptions.Traceback;
+with System.Address_Image;
 
 package body GNAT.Traceback.Symbolic is
-
-   pragma Linker_Options ("-laddr2line");
-   pragma Linker_Options ("-lbfd");
-   pragma Linker_Options ("-liberty");
-
-   package TSL renames System.Soft_Links;
 
    ------------------------
    -- Symbolic_Traceback --
    ------------------------
 
-   function Symbolic_Traceback (Traceback : Tracebacks_Array) return String is
-      procedure convert_addresses
-        (addrs  : System.Address;
-         n_addr : Integer;
-         buf    : System.Address;
-         len    : System.Address);
-      pragma Import (C, convert_addresses, "convert_addresses");
-      --  This is the procedure version of the Ada aware addr2line that will
-      --  use argv[0] as the executable containing the debug information.
-      --  This procedure is provided by libaddr2line on targets that support
-      --  it. A dummy version is in a-adaint.c for other targets so that build
-      --  of shared libraries doesn't generate unresolved symbols.
-      --
-      --  Note that this procedure is *not* thread-safe.
-
-      Res : String (1 .. 256 * Traceback'Length);
-      Len : Integer;
-
+   function Symbolic_Traceback (Traceback : Tracebacks_Array) return String
+   is
    begin
-      if Traceback'Length > 0 then
-         TSL.Lock_Task.all;
-         convert_addresses
-           (Traceback'Address, Traceback'Length, Res (1)'Address, Len'Address);
-         TSL.Unlock_Task.all;
-         return Res (1 .. Len);
-      else
+      if Traceback'Length = 0 then
          return "";
+
+      else
+         declare
+            Img : String := System.Address_Image (Traceback (Traceback'First));
+
+            Result : String (1 .. (Img'Length + 3) * Traceback'Length);
+            Last   : Natural := 0;
+
+         begin
+            for J in Traceback'Range loop
+               Img := System.Address_Image (Traceback (J));
+               Result (Last + 1 .. Last + 2) := "0x";
+               Last := Last + 2;
+               Result (Last + 1 .. Last + Img'Length) := Img;
+               Last := Last + Img'Length + 1;
+               Result (Last) := ASCII.LF;
+            end loop;
+
+            return Result (1 .. Last);
+         end;
       end if;
    end Symbolic_Traceback;
 
-   function Symbolic_Traceback (E : Exception_Occurrence) return String is
+   function Symbolic_Traceback (E : Exception_Occurrence) return String
+   is
    begin
       return Symbolic_Traceback (Tracebacks (E));
    end Symbolic_Traceback;
