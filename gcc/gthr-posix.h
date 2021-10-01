@@ -36,7 +36,7 @@ Software Foundation, 59 Temple Place - Suite 330, Boston, MA
 #define __GTHREADS 1
 
 /* Some implementations of <pthread.h> require this to be defined.  */
-#ifndef _REENTRANT
+#if !defined(_REENTRANT) && defined(__osf__)
 #define _REENTRANT 1
 #endif
 
