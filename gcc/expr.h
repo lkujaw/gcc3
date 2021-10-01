@@ -228,11 +228,6 @@ extern bool default_must_pass_in_stack (enum machine_mode, tree);
 #define STACK_CHECK_PROBE_INTERVAL_EXP 12
 #endif
 
-/* The default is to do a store into the stack.  */
-#ifndef STACK_CHECK_PROBE_LOAD
-#define STACK_CHECK_PROBE_LOAD 0
-#endif
-
 /* The default is not to move the stack pointer.  */
 #ifndef STACK_CHECK_MOVING_SP
 #define STACK_CHECK_MOVING_SP 0
@@ -772,6 +767,9 @@ extern void adjust_stack (rtx);
 
 /* Add some bytes to the stack.  An rtx says how many.  */
 extern void anti_adjust_stack (rtx);
+
+/* Add some bytes to the stack while probing it.  An rtx says how many. */
+extern void anti_adjust_stack_and_probe (rtx, bool);
 
 /* This enum is used for the following two functions.  */
 enum save_level {SAVE_BLOCK, SAVE_FUNCTION, SAVE_NONLOCAL};

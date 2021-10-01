@@ -87,25 +87,25 @@ begin
    --  Common GCC switches not available in JGNAT
 
    if not Hostparm.Java_VM then
-      Write_Switch_Char ("fstack-check ", "");
-      Write_Line ("Generate stack checking code");
+      Write_Switch_Char ("fno-stack-check ", "");
+      Write_Line ("Inhibit the generation of stack checking code");
 
-      Write_Switch_Char ("fno-inline   ", "");
+      Write_Switch_Char ("fno-inline      ", "");
       Write_Line ("Inhibit all inlining (makes executable smaller)");
    end if;
 
    --  Common switches available to both GCC and JGNAT
 
-   Write_Switch_Char ("g            ", "");
+   Write_Switch_Char ("g               ", "");
    Write_Line ("Generate debugging information");
 
-   Write_Switch_Char ("Idir         ", "");
+   Write_Switch_Char ("Idir            ", "");
    Write_Line ("Specify source files search path");
 
-   Write_Switch_Char ("I-           ", "");
+   Write_Switch_Char ("I-              ", "");
    Write_Line ("Do not look for sources in current directory");
 
-   Write_Switch_Char ("O[0123]      ", "");
+   Write_Switch_Char ("O[0123]         ", "");
    Write_Line ("Control the optimization level");
 
    Write_Eol;

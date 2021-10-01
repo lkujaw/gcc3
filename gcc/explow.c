@@ -41,7 +41,6 @@ Software Foundation, 59 Temple Place - Suite 330, Boston, MA
 
 static rtx break_out_memory_refs (rtx);
 static void emit_stack_probe (rtx);
-static void anti_adjust_stack_and_probe (rtx);
 
 
 /* Truncate and perhaps sign-extend C as appropriate for MODE.  */
@@ -1444,7 +1443,7 @@ allocate_dynamic_stack_space (rtx size, rtx target, int known_align,
 	}
 
       if (flag_stack_check && STACK_CHECK_MOVING_SP)
-       anti_adjust_stack_and_probe (size);
+       anti_adjust_stack_and_probe (size, false);
       else
        anti_adjust_stack (size);
 
@@ -1507,9 +1506,6 @@ emit_stack_probe (rtx address)
     emit_insn (gen_probe_stack (memref));
   else
 #endif
-  if (STACK_CHECK_PROBE_LOAD)
-    emit_move_insn (gen_reg_rtx (word_mode), memref);
-  else
     emit_move_insn (memref, const0_rtx);
 }
 
@@ -1552,7 +1548,7 @@ probe_stack_range (HOST_WIDE_INT first, rtx size)
 					         stack_pointer_rtx,
 					         plus_constant (size, first)));
       emit_library_call (stack_check_libfunc, LCT_MAY_THROW, VOIDmode, 1,
-                         addr);
+                         addr, Pmode);
     }
 
   /* Next see if we have an insn to check the stack.  */
@@ -1608,12 +1604,12 @@ probe_stack_range (HOST_WIDE_INT first, rtx size)
       rtx loop_lab = gen_label_rtx ();
       rtx end_lab = gen_label_rtx ();
 
+
       /* Step 1: round SIZE to the previous multiple of the interval.  */
 
       /* ROUNDED_SIZE = SIZE & -PROBE_INTERVAL  */
-      rounded_size = simplify_gen_binary (AND, Pmode,
-					  size,
-					  GEN_INT (-PROBE_INTERVAL));
+      rounded_size
+	= simplify_gen_binary (AND, Pmode, size, GEN_INT (-PROBE_INTERVAL));
       rounded_size_op = force_operand (rounded_size, NULL_RTX);
 
 
@@ -1622,14 +1618,12 @@ probe_stack_range (HOST_WIDE_INT first, rtx size)
       /* TEST_ADDR = SP + FIRST.  */
       test_addr = force_operand (gen_rtx_fmt_ee (STACK_GROW_OP, Pmode,
 						 stack_pointer_rtx,
-						 GEN_INT (first)),
-				 NULL_RTX);
+						 GEN_INT (first)), NULL_RTX);
 
       /* LAST_ADDR = SP + FIRST + ROUNDED_SIZE.  */
       last_addr = force_operand (gen_rtx_fmt_ee (STACK_GROW_OP, Pmode,
 						 test_addr,
-						 rounded_size_op),
-				 NULL_RTX);
+						 rounded_size_op), NULL_RTX);
 
 
       /* Step 3: the loop
@@ -1643,15 +1637,11 @@ probe_stack_range (HOST_WIDE_INT first, rtx size)
 	 probes at FIRST + N * PROBE_INTERVAL for values of N from 1
 	 until it exceeds ROUNDED_SIZE.  */
 
-      emit_note (NOTE_INSN_LOOP_BEG);
-      emit_note (NOTE_INSN_LOOP_CONT);
       emit_label (loop_lab);
 
       /* Jump to END_LAB if TEST_ADDR == LAST_ADDR.  */
-      emit_cmp_and_jump_insns (test_addr, last_addr, EQ,
-			       NULL_RTX, Pmode, 1, end_lab);
-
-      emit_note (NOTE_INSN_LOOP_END_TOP_COND);
+      emit_cmp_and_jump_insns (test_addr, last_addr, EQ, NULL_RTX, Pmode, 1,
+			       end_lab);
 
       /* TEST_ADDR = TEST_ADDR + PROBE_INTERVAL.  */
       temp = expand_binop (Pmode, STACK_GROW_OPTAB, test_addr,
@@ -1667,7 +1657,7 @@ probe_stack_range (HOST_WIDE_INT first, rtx size)
       emit_jump (loop_lab);
 
       emit_label (end_lab);
-      emit_note (NOTE_INSN_LOOP_END);
+
 
       /* Step 4: probe at FIRST + SIZE if we cannot assert at compile-time
 	 that SIZE is equal to ROUNDED_SIZE.  */
@@ -1700,13 +1690,17 @@ probe_stack_range (HOST_WIDE_INT first, rtx size)
     }
 }
 
-/* Adjust the stack by SIZE bytes while probing it.  Note that we skip the
-   probe for the first interval + a small dope of 4 words and instead probe
-   that many bytes past the specified size to maintain a protection area.  */
+/* Adjust the stack pointer by minus SIZE (an rtx for a number of bytes)
+   while probing it.  This pushes when SIZE is positive.  SIZE need not
+   be constant.  If ADJUST_BACK is true, adjust back the stack pointer
+   by plus SIZE at the end.  */
 
-static void
-anti_adjust_stack_and_probe (rtx size)
+void
+anti_adjust_stack_and_probe (rtx size, bool adjust_back)
 {
+  /* We skip the probe for the first interval + a small dope of 4 words and
+     probe that many bytes past the specified size to maintain a protection
+     area at the botton of the stack.  */
   const int dope = 4 * UNITS_PER_WORD;
 
   /* First ensure SIZE is Pmode.  */
@@ -1815,8 +1809,11 @@ anti_adjust_stack_and_probe (rtx size)
 	}
     }
 
-  /* Adjust back to account for the additional first interval.  */
-  adjust_stack (GEN_INT (PROBE_INTERVAL + dope));
+  /* Adjust back and account for the additional first interval.  */
+  if (adjust_back)
+    adjust_stack (plus_constant (size, PROBE_INTERVAL + dope));
+  else
+    adjust_stack (GEN_INT (PROBE_INTERVAL + dope));
 }
 
 /* Return an rtx representing the register or memory location

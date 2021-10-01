@@ -456,6 +456,9 @@ __gnat_machine_state_length (void)
 #include <signal.h>
 #include <sys/ucontext.h>
 
+/* This must be in keeping with System.OS_Interface.Alternate_Stack_Size.  */
+char __gnat_alternate_stack[SIGSTKSZ*2];
+
 static void
 __gnat_error_handler (int sig, siginfo_t *siginfo, void *ucontext);
 #if defined (__hppa__)
@@ -524,16 +527,10 @@ __gnat_install_handler (void)
      handled properly, avoiding a SEGV generation from stack usage by the
      handler itself. */
 
-  static char handler_stack[SIGSTKSZ*2];
-  /* SIGSTKSZ appeared to be "short" for the needs in some contexts
-     (e.g. experiments with GCC ZCX exceptions).  */
-
   stack_t stack;
-
-  stack.ss_sp    = handler_stack;
-  stack.ss_size  = sizeof (handler_stack);
+  stack.ss_sp = __gnat_alternate_stack;
+  stack.ss_size = sizeof (__gnat_alternate_stack);
   stack.ss_flags = 0;
-
   sigaltstack (&stack, NULL);
 
   act.sa_sigaction = __gnat_error_handler;
@@ -547,10 +544,11 @@ __gnat_install_handler (void)
     sigaction (SIGFPE,  &act, NULL);
   if (__gnat_get_interrupt_state (SIGILL) != 's')
     sigaction (SIGILL,  &act, NULL);
-  if (__gnat_get_interrupt_state (SIGSEGV) != 's')
-    sigaction (SIGSEGV, &act, NULL);
   if (__gnat_get_interrupt_state (SIGBUS) != 's')
     sigaction (SIGBUS,  &act, NULL);
+  act.sa_flags |= SA_ONSTACK;
+  if (__gnat_get_interrupt_state (SIGSEGV) != 's')
+    sigaction (SIGSEGV, &act, NULL);
 
   __gnat_handler_installed = 1;
 }
@@ -559,8 +557,9 @@ __gnat_install_handler (void)
 /* GNU/Linux Section */
 /*********************/
 
-#elif defined (linux) && (defined (i386) || defined (__x86_64__) \
-                          || defined (__ia64__))
+#elif defined (linux) && \
+  (defined (i386) || defined (__powerpc__) || defined (__x86_64__) || \
+   defined (__ia64__))
 
 #define __USE_GNU 1 /* required to get REG_EIP/RIP from glibc's ucontext.h */
 /* signal.h may include ucontext.h, so we need to define __USE_GNU first.  */
@@ -574,6 +573,9 @@ __gnat_install_handler (void)
 #define NULL ((void *) 0)
 #endif
 
+/* This must be in keeping with System.OS_Interface.Alternate_Stack_Size.  */
+char __gnat_alternate_stack[SIGSTKSZ*2];
+
 static void __gnat_error_handler (int, siginfo_t *siginfo, void *ucontext);
 
 /* __gnat_adjust_context_for_raise - see comments along with the default
@@ -586,11 +588,36 @@ __gnat_adjust_context_for_raise (int signo ATTRIBUTE_UNUSED, void *ucontext)
 {
   mcontext_t *mcontext = &((ucontext_t *) ucontext)->uc_mcontext;
 
+  /* On the i386 and x86-64 architectures, stack checking is performed by
+     means of probes with moving stack pointer, that is to say the probed
+     address is always the value of the stack pointer.  Upon hitting the
+     guard page, the stack pointer therefore points to an inaccessible
+     address and an alternate signal stack is needed to run the handler.
+     But there is an additional twist: on these architectures, the EH
+     return code writes the address of the handler at the target CFA's
+     value on the stack before doing the jump.  As a consequence, if
+     there is an active handler in the frame whose stack has overflowed,
+     the stack pointer must nevertheless point to an accessible address
+     by the time the EH return is executed.
+
+     We therefore adjust the saved value of the stack pointer by the size
+     of one page + a small dope of 4 words, in order to make sure that it
+     points to an accessible address in case it's used as the target CFA.
+     The stack checking code guarantees that this address is unused by the
+     time this happens.  */
+
 #if defined (i386)
-  mcontext->gregs[REG_EIP]++;
+  unsigned long *pc = (unsigned long *)mcontext->gregs[REG_EIP];
+  /* The pattern is "orl $0x0,(%esp)" for a probe in 32-bit mode.  */
+  if (signo == SIGSEGV && pc && *pc == 0x00240c83)
+    mcontext->gregs[REG_ESP] += 4096 + 4 * sizeof (unsigned long);
 #elif defined (__x86_64__)
-  mcontext->gregs[REG_RIP]++;
+  unsigned long *pc = (unsigned long *)mcontext->gregs[REG_RIP];
+  /* The pattern is "orq $0x0,(%rsp)" for a probe in 64-bit mode.  */
+  if (signo == SIGSEGV && pc && (*pc & 0xffffffffff) == 0x00240c8348)
+    mcontext->gregs[REG_RSP] += 4096 + 4 * sizeof (unsigned long);
 #elif defined (__ia64__)
+  /* ??? The IA-64 unwinder doesn't compensate for signals.  */
   mcontext->sc_ip++;
 #endif
 }
@@ -678,23 +705,37 @@ __gnat_install_handler (void)
 
   /* Set up signal handler to map synchronous signals to appropriate
      exceptions.  Make sure that the handler isn't interrupted by another
-     signal that might cause a scheduling event! */
+     signal that might cause a scheduling event!  Also setup an alternate
+     stack region for the handler execution so that stack overflows can be
+     handled properly, avoiding a SEGV generation from stack usage by the
+     handler itself.  */
+
+#if defined (i386) || defined (__x86_64__) || defined (__powerpc__)
+  stack_t stack;
+  stack.ss_sp = __gnat_alternate_stack;
+  stack.ss_size = sizeof (__gnat_alternate_stack);
+  stack.ss_flags = 0;
+  sigaltstack (&stack, NULL);
+#endif
 
   act.sa_sigaction = __gnat_error_handler;
   act.sa_flags = SA_NODEFER | SA_RESTART | SA_SIGINFO;
   sigemptyset (&act.sa_mask);
 
-  /* Do not install handlers if interrupt state is "System" */
+  /* Do not install handlers if interrupt state is "System".  */
   if (__gnat_get_interrupt_state (SIGABRT) != 's')
     sigaction (SIGABRT, &act, NULL);
   if (__gnat_get_interrupt_state (SIGFPE) != 's')
     sigaction (SIGFPE,  &act, NULL);
   if (__gnat_get_interrupt_state (SIGILL) != 's')
     sigaction (SIGILL,  &act, NULL);
-  if (__gnat_get_interrupt_state (SIGSEGV) != 's')
-    sigaction (SIGSEGV, &act, NULL);
   if (__gnat_get_interrupt_state (SIGBUS) != 's')
     sigaction (SIGBUS,  &act, NULL);
+#if defined (i386) || defined (__x86_64__) || defined (__powerpc__)
+  act.sa_flags |= SA_ONSTACK;
+#endif
+  if (__gnat_get_interrupt_state (SIGSEGV) != 's')
+    sigaction (SIGSEGV, &act, NULL);
 
   __gnat_handler_installed = 1;
 }

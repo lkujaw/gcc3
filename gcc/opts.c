@@ -1350,21 +1350,11 @@ common_handle_option (size_t scode, const char *arg,
       flag_single_precision_constant = value;
       break;
 
-    case OPT_fold_stack_check:
-      flag_stack_check = value
-			 ? STACK_CHECK_BUILTIN
-			   ? 3 /* full back-end stack checking */
-			   : 1 /* full middle-end stack checking */
-			 : 0; /* no stack checking */
-      break;
-
     case OPT_fstack_check:
       flag_stack_check = value
 			 ? STACK_CHECK_BUILTIN
 			   ? 3 /* full back-end stack checking */
-			   : STACK_CHECK_STATIC_BUILTIN
-			     ? 2 /* static back-end stack checking */
-			     : 1 /* full middle-end stack checking */
+			   : 1 /* full middle-end stack checking */
 			 : 0; /* no stack checking */
       break;
 

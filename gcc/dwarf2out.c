@@ -875,25 +875,6 @@ dwarf2out_window_save (const char *label)
   add_fde_cfi (label, cfi);
 }
 
-/* Add a CFI to update the running total of the size of arguments
-   pushed onto the stack.  */
-
-void
-dwarf2out_args_size (const char *label, HOST_WIDE_INT size)
-{
-  dw_cfi_ref cfi;
-
-  if (size == old_args_size)
-    return;
-
-  old_args_size = size;
-
-  cfi = new_cfi ();
-  cfi->dw_cfi_opc = DW_CFA_GNU_args_size;
-  cfi->dw_cfi_oprnd1.dw_cfi_offset = size;
-  add_fde_cfi (label, cfi);
-}
-
 /* Entry point for saving a register to the stack.  REG is the GCC register
    number.  LABEL and OFFSET are passed to reg_save.  */
 
@@ -1054,6 +1035,25 @@ stack_adjust_offset (rtx pattern)
     return 0;
 
   return offset;
+}
+
+/* Add a CFI to update the running total of the size of arguments
+   pushed onto the stack.  */
+
+static void
+dwarf2out_args_size (const char *label, HOST_WIDE_INT size)
+{
+  dw_cfi_ref cfi;
+
+  if (size == old_args_size)
+    return;
+
+  old_args_size = size;
+
+  cfi = new_cfi ();
+  cfi->dw_cfi_opc = DW_CFA_GNU_args_size;
+  cfi->dw_cfi_oprnd1.dw_cfi_offset = size;
+  add_fde_cfi (label, cfi);
 }
 
 /* Check INSN to see if it looks like a push or a stack adjustment, and

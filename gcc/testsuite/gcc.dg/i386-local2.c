@@ -1,5 +1,5 @@
 /* { dg-do compile { target i?86-*-* x86_64-*-* } } */
-/* { dg-options "-O2 -funit-at-a-time -fomit-frame-pointer" } */
+/* { dg-options "-O2 -funit-at-a-time -fomit-frame-pointer -fno-stack-check" } */
 /* { dg-skip-if "PR 25214" { ilp32 } { "-fpic" "-fPIC" } { "" } } */
 /* { dg-final { scan-assembler-not "sub\[^\\n\]*sp" } } */
 

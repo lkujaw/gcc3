@@ -905,7 +905,11 @@ int flag_pack_struct = 0;
    3 full back-end stack checking.
    Full middle-end stack checking causes large objects to be allocated
    dynamically.  That is not the case with either (2) or (3).  */
-int flag_stack_check;
+#if STACK_CHECK_BUILTIN
+int flag_stack_check = 3;
+#else
+int flag_stack_check = 1;
+#endif
 
 /* When non-NULL, indicates that whenever space is allocated on the
    stack, the resulting stack pointer must not pass this

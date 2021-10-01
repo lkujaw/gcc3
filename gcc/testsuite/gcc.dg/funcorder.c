@@ -1,5 +1,5 @@
 /* { dg-do compile } */
-/* { dg-options "-O2 -funit-at-a-time" } */
+/* { dg-options "-O2 -funit-at-a-time -fno-stack-check" } */
 /* { dg-final { if [ istarget hppa*-*-* ] { scan-assembler-not "link_error,%r" { xfail hppa*64*-*-* } } else { scan-assembler-not "link_error" } } } */
 /*  In unit-at-time the functions should be assembled in order
     e q t main, so we realize that they are pure.  The test is

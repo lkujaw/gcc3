@@ -1,6 +1,6 @@
 /* warn_unused_result attribute tests.  */
 /* { dg-do compile } */
-/* { dg-options "-O" } */
+/* { dg-options "-O -fno-stack-check" } */
 
 #define WUR __attribute__((warn_unused_result))
 #define WURAI __attribute__((warn_unused_result, always_inline)) inline
