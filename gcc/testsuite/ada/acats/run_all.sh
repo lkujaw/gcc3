@@ -131,6 +131,7 @@ sed -e "s,ACATS4GNATDIR,$dir,g" \
 
 cp $testdir/tests/cd/*.c $dir/support
 cp $testdir/tests/cxb/*.c $dir/support
+cp $testdir/tests/cxb/*.ftn $dir/support
 grep -v '^#' $testdir/norun.lst | sort > $dir/support/norun.lst
 
 rm -rf $dir/run
@@ -176,6 +177,12 @@ display_noeol "Compiling support files..."
 target_gcc -c *.c
 if [ $? -ne 0 ]; then
    display "**** Failed to compile C code"
+   exit 1
+fi
+
+target_gcc -c -x f77 *.ftn
+if [ $? -ne 0 ]; then
+   display "**** Failed to compile Fortran code"
    exit 1
 fi
 
