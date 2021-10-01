@@ -220,7 +220,7 @@ for chapter in $chapters; do
       continue
    fi
 
-   cd $dir/tests/$chapter
+   cd $dir/tests/$chapter || exit 1
    ls *.a *.ada *.adt *.am *.dep 2> /dev/null | sed -e 's/\(.*\)\..*/\1/g' | \
    cut -c1-7 | sort | uniq | comm -23 - $dir/support/norun.lst \
      > $dir/tests/$chapter/${chapter}.lst
@@ -278,17 +278,27 @@ for chapter in $chapters; do
 
       echo "RUN $binmain" >> "$dir/acats.log"
       cd "$dir/run" || exit 1
-      if [ ! -x $dir/tests/$chapter/$i/$binmain ]; then
+      if [ ! -x "$dir/tests/$chapter/$i/$binmain" ]; then
          sync
       fi
-      target_run $dir/tests/$chapter/$i/$binmain > $dir/tests/$chapter/$i/${i}.log 2>&1
+      target_run "$dir/tests/$chapter/$i/$binmain" > "$dir/tests/$chapter/$i/${i}.log" 2>&1
       cd "$dir/tests/$chapter/$i" || exit 1
       cat ${i}.log >> $dir/acats.log
       egrep -e '(==== |\+\+\+\+ |\!\!\!\! )' ${i}.log > /dev/null 2>&1
-      if [ $? -ne 0 ]; then
+      test_result=$?
+      # To pass the ACATS, these tests MUST fail.
+      # TODO: Verify the text output.
+      if grep "$i" "$testdir/xfail.lst" >/dev/null 2>&1; then
+          if [ $test_result -ne 0 ]; then
+              test_result=0
+          else
+              test_result=1
+          fi
+      fi
+      if [ $test_result -ne 0 ]; then
          grep 'tasking not implemented' ${i}.log > /dev/null 2>&1
 
-         if [ $? -ne 0 ]; then
+         if [ $test_result -ne 0 ]; then
             display "FAIL:	$i"
             failed="${failed}${i} "
          else
