@@ -743,7 +743,7 @@ package body System.Interrupts is
          if not Blocked (Interrupt) then
 
             --  Mask this task for the given Interrupt so that all tasks
-            --  are masked for the Interrupt and the actuall delivery of the
+            --  are masked for the Interrupt and the actual delivery of the
             --  Interrupt will be caught using "sigwait" by the
             --  corresponding Server_Task.
 

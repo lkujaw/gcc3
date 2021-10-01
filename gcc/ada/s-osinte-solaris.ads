@@ -126,7 +126,7 @@ package System.OS_Interface is
    Unmasked : constant Signal_Set := (SIGTRAP, SIGLWP, SIGPROF);
 
    --  Following signals should not be disturbed.
-   --  See c-posix-signals.c in FLORIST
+   --  See c-posix-signals.c in FLORIST.
 
    Reserved : constant Signal_Set :=
      (SIGKILL, SIGSTOP, SIGWAITING, SIGCANCEL, SIGTRAP, SIGSEGV);

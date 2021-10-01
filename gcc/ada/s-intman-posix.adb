@@ -44,7 +44,7 @@
 --  This file assumes that:
 
 --    SIGFPE, SIGILL, SIGSEGV and SIGBUS exist. They are mapped as follows:
---      SIGPFE  => Constraint_Error
+--      SIGFPE  => Constraint_Error
 --      SIGILL  => Program_Error
 --      SIGSEGV => Storage_Error
 --      SIGBUS  => Storage_Error

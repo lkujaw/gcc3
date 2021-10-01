@@ -28,7 +28,7 @@
 --  This package provides a set of target dependent routines to build
 --  static, dynamic and shared libraries.
 
---  This is the GNU/Linux version of the body
+--  This is the GNU/Linux version of the body.
 
 with MLib.Fil;
 with MLib.Utl;
