@@ -285,7 +285,7 @@ extern int pwait PARAMS ((int, int *, int));
 extern int asprintf PARAMS ((char **, const char *, ...)) ATTRIBUTE_PRINTF_2;
 #endif
 
-#if !HAVE_DECL_VASPRINTF
+#if defined (HAVE_DECL_VASPRINTF) && !HAVE_DECL_VASPRINTF
 /* Like vsprintf but provides a pointer to malloc'd storage, which
    must be freed by the caller.  */
 
