@@ -802,6 +802,7 @@ ifeq ($(strip $(filter-out %86 solaris2%,$(arch) $(osys))),)
 
   TOOLS_TARGET_PAIRS=mlib-tgt.adb<mlib-tgt-solaris.adb
 
+  EH_MECHANISM=-gcc
   THREADSLIB = -lposix4 -lthread
   MISCLIB = -lposix4 -lnsl -lsocket
   SO_OPTS = -Wl,-h,
@@ -1386,7 +1387,7 @@ ifneq ($(EH_MECHANISM),)
 endif
 
 # Use the Ada 2005 version of Ada.Exceptions by default, unless specified
-# explicitely already. The base files (a-except.ad?) are used only for building
+# explicitly already. The base files (a-except.ad?) are used only for building
 # the compiler and other basic tools.
 # These base versions lack Ada 2005 additions which would cause bootstrap
 # problems if included in the compiler and other basic tools.

@@ -87,7 +87,7 @@ package System.OS_Interface is
    SIGILL     : constant := 4; --  illegal instruction (not reset)
    SIGTRAP    : constant := 5; --  trace trap (not reset)
    SIGIOT     : constant := 6; --  IOT instruction
-   SIGABRT    : constant := 6; --  used by abort, replace SIGIOT in the  future
+   SIGABRT    : constant := 6; --  used by abort, replace SIGIOT in the future
    SIGEMT     : constant := 7; --  EMT instruction
    SIGFPE     : constant := 8; --  floating point exception
    SIGKILL    : constant := 9; --  kill (cannot be caught or ignored)
@@ -258,7 +258,8 @@ package System.OS_Interface is
    CLOCK_REALTIME : constant clockid_t;
 
    function clock_gettime
-     (clock_id : clockid_t; tp : access timespec) return int;
+     (clock_id : clockid_t;
+      tp       : access timespec) return int;
    pragma Import (C, clock_gettime, "clock_gettime");
 
    function clock_getres
@@ -473,7 +474,7 @@ package System.OS_Interface is
       id_type : int;
       id      : lwpid_t;
       cmd     : int;
-      arg     : System.Address) return Interfaces.C.long;
+      arg     : System.Address) return long;
    pragma Import (C, priocntl, "__priocntl");
 
    function lwp_self return lwpid_t;
@@ -512,7 +513,8 @@ package System.OS_Interface is
    pragma Import (C, processor_bind, "processor_bind");
 
    procedure pthread_init;
-   --  dummy procedure to share s-intman.adb with other Solaris targets.
+   --  This is a dummy procedure to share s-intman.adb with other
+   --  Solaris targets.
 
 private
 

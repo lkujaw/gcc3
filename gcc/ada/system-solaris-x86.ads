@@ -24,13 +24,13 @@
 -- to  the  Free Software Foundation,  51  Franklin  Street,  Fifth  Floor, --
 -- Boston, MA 02110-1301, USA.                                              --
 --                                                                          --
---
---
---
---
---
---
---
+-- As a special exception,  if other files  instantiate  generics from this --
+-- unit, or you link  this unit with other files  to produce an executable, --
+-- this  unit  does not  by itself cause  the resulting  executable  to  be --
+-- covered  by the  GNU  General  Public  License.  This exception does not --
+-- however invalidate  any other reasons why  the executable file  might be --
+-- covered by the  GNU Public License.                                      --
+--                                                                          --
 -- GNAT was originally developed  by the GNAT team at  New York University. --
 -- Extensive contributions were provided by Ada Core Technologies Inc.      --
 --                                                                          --
@@ -142,9 +142,9 @@ private
    Support_Long_Shifts       : constant Boolean := True;
    Suppress_Standard_Library : constant Boolean := False;
    Use_Ada_Main_Program_Name : constant Boolean := False;
-   ZCX_By_Default            : constant Boolean := False;
-   GCC_ZCX_Support           : constant Boolean := False;
-   Front_End_ZCX_Support     : constant Boolean := True;
+   ZCX_By_Default            : constant Boolean := True;
+   GCC_ZCX_Support           : constant Boolean := True;
+   Front_End_ZCX_Support     : constant Boolean := False;
 
    --  Obsolete entries, to be removed eventually (bootstrap issues!)
 

@@ -20,19 +20,19 @@
 -- to  the  Free Software Foundation,  51  Franklin  Street,  Fifth  Floor, --
 -- Boston, MA 02110-1301, USA.                                              --
 --                                                                          --
---
---
---
---
---
---
---
+-- As a special exception,  if other files  instantiate  generics from this --
+-- unit, or you link  this unit with other files  to produce an executable, --
+-- this  unit  does not  by itself cause  the resulting  executable  to  be --
+-- covered  by the  GNU  General  Public  License.  This exception does not --
+-- however invalidate  any other reasons why  the executable file  might be --
+-- covered by the  GNU Public License.                                      --
+--                                                                          --
 -- GNARL was developed by the GNARL team at Florida State University.       --
 -- Extensive contributions were provided by Ada Core Technologies, Inc.     --
 --                                                                          --
 ------------------------------------------------------------------------------
 
---  This is a Solaris version of this package.
+--  This is the Solaris version of this package.
 
 --  This package encapsulates all direct interfaces to OS services
 --  that are needed by children of System.
@@ -42,6 +42,7 @@ pragma Polling (Off);
 --  tasking operations. It causes infinite loops and other problems.
 
 with Interfaces.C; use Interfaces.C;
+
 package body System.OS_Interface is
 
    -----------------
@@ -51,6 +52,11 @@ package body System.OS_Interface is
    function To_Duration (TS : timespec) return Duration is
    begin
       return Duration (TS.tv_sec) + Duration (TS.tv_nsec) / 10#1#E9;
+   end To_Duration;
+
+   function To_Duration (TV : struct_timeval) return Duration is
+   begin
+      return Duration (TV.tv_sec) + Duration (TV.tv_usec) / 10#1#E6;
    end To_Duration;
 
    -----------------
@@ -66,15 +72,19 @@ package body System.OS_Interface is
 
       --  If F has negative value due to a round-up, adjust for positive F
       --  value.
-      if F < 0.0 then S := S - 1; F := F + 1.0; end if;
+
+      if F < 0.0 then
+         S := S - 1;
+         F := F + 1.0;
+      end if;
+
       return timespec'(tv_sec  => S,
                        tv_nsec => long (Long_Long_Integer (F * 10#1#E9)));
    end To_Timespec;
 
-   function To_Duration (TV : struct_timeval) return Duration is
-   begin
-      return Duration (TV.tv_sec) + Duration (TV.tv_usec) / 10#1#E6;
-   end To_Duration;
+   ----------------
+   -- To_Timeval --
+   ----------------
 
    function To_Timeval (D : Duration) return struct_timeval is
       S : long;
@@ -85,7 +95,11 @@ package body System.OS_Interface is
 
       --  If F has negative value due to a round-up, adjust for positive F
       --  value.
-      if F < 0.0 then S := S - 1; F := F + 1.0; end if;
+      if F < 0.0 then
+         S := S - 1;
+         F := F + 1.0;
+      end if;
+
       return
         struct_timeval'
           (tv_sec  => S,

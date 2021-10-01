@@ -79,3 +79,147 @@ Boston, MA 02111-1307, USA.  */
 	fprintf ((FILE), "\n");				\
       }							\
   } while (0)
+
+#ifdef IN_LIBGCC2
+#include <ucontext.h>
+
+#define MD_FALLBACK_FRAME_STATE_FOR(CONTEXT, FS, SUCCESS)		\
+  do {									\
+  unsigned char *pc_ = (CONTEXT)->ra;                                   \
+  mcontext_t *mctx_;                                                    \
+  long new_cfa_;                                                        \
+                                                                        \
+  if (/* Solaris 8 - single-threaded                                    \
+	----------------------------                                    \
+	<sigacthandler+17>:  mov    0x10(%ebp),%esi                     \
+	<sigacthandler+20>:  push   %esi                                \
+	<sigacthandler+21>:  pushl  0xc(%ebp)                           \
+	<sigacthandler+24>:  mov    0x8(%ebp),%ecx 2                    \
+	<sigacthandler+27>:  push   %ecx                                \
+	<sigacthandler+28>:  mov    offset(%ebx),%eax                   \
+	<sigacthandler+34>:  call   *(%eax,%ecx,4)                      \
+	<sigacthandler+37>:  add    $0xc,%esp        <--- PC            \
+	<sigacthandler+40>:  push   %esi ... */                         \
+      (*(unsigned long *)(pc_ - 20) == 0x5610758b                       \
+       && *(unsigned long *)(pc_ - 16) == 0x8b0c75ff                    \
+       && *(unsigned long *)(pc_ - 12) == 0x8b51084d                    \
+       && *(unsigned char *)(pc_ - 8)  == 0x83                          \
+       && *(unsigned long *)(pc_ - 4)  == 0x8814ff00                    \
+       && *(unsigned long *)(pc_ - 0)  == 0x560cc483)                   \
+      || /* Solaris 8 - multi-threaded                                  \
+	   ---------------------------                                  \
+	   <__sighndlr+0>:      push   %ebp                             \
+	   <__sighndlr+1>:      mov    %esp,%ebp                        \
+	   <__sighndlr+3>:      pushl  0x10(%ebp)                       \
+	   <__sighndlr+6>:      pushl  0xc(%ebp)                        \
+	   <__sighndlr+9>:      pushl  0x8(%ebp)                        \
+	   <__sighndlr+12>:     call   *0x14(%ebp)                      \
+	   <__sighndlr+15>:     leave               <--- PC  */         \
+	 (*(unsigned long *)(pc_ - 15) == 0xffec8b55                    \
+	  && *(unsigned long *)(pc_ - 11) == 0x75ff1075                 \
+	  && *(unsigned long *)(pc_ - 7)  == 0x0875ff0c                 \
+	  && *(unsigned long *)(pc_ - 3)  == 0xc91455ff)                \
+      || /* Solaris 9 - single-threaded                                 \
+	   ----------------------------                                 \
+	   <sigacthandler+16>:    mov    0x244(%ebx),%ecx               \
+	   <sigacthandler+22>:    mov    0x8(%ebp),%eax                 \
+	   <sigacthandler+25>:    mov    (%ecx,%eax,4),%ecx             \
+	   <sigacthandler+28>:    pushl  0x10(%ebp)                     \
+	   <sigacthandler+31>:    pushl  0xc(%ebp)                      \
+	   <sigacthandler+34>:    push   %eax                           \
+	   <sigacthandler+35>:    call   *%ecx                          \
+	   <sigacthandler+37>:    add    $0xc,%esp	<--- PC         \
+	   <sigacthandler+40>:    pushl  0x10(%ebp) */                  \
+	 (*(unsigned long *)(pc_ - 21) == 0x2448b8b                     \
+	  && *(unsigned long *)(pc_ - 17) == 0x458b0000                 \
+	  && *(unsigned long *)(pc_ - 13) == 0x810c8b08                 \
+	  && *(unsigned long *)(pc_ - 9)  == 0xff1075ff                 \
+	  && *(unsigned long *)(pc_ - 5)  == 0xff500c75                 \
+	  && *(unsigned long *)(pc_ - 1)  == 0xcc483d1)                 \
+      || /* Solaris 9 - multi-threaded, Solaris 10                      \
+	   ---------------------------------------                      \
+	   <__sighndlr+0>:      push   %ebp                             \
+	   <__sighndlr+1>:      mov    %esp,%ebp                        \
+	   <__sighndlr+3>:      pushl  0x10(%ebp)                       \
+	   <__sighndlr+6>:      pushl  0xc(%ebp)                        \
+	   <__sighndlr+9>:      pushl  0x8(%ebp)                        \
+	   <__sighndlr+12>:     call   *0x14(%ebp)                      \
+	   <__sighndlr+15>:     add    $0xc,%esp     <--- PC            \
+	   <__sighndlr+18>:     leave                                   \
+	   <__sighndlr+19>:     ret  */                                 \
+	 (*(unsigned long *)(pc_ - 15) == 0xffec8b55                    \
+	  && *(unsigned long *)(pc_ - 11) == 0x75ff1075                 \
+	  && *(unsigned long *)(pc_ - 7)  == 0x0875ff0c                 \
+	  && *(unsigned long *)(pc_ - 3)  == 0x831455ff                 \
+	  && *(unsigned long *)(pc_ + 1)  == 0xc3c90cc4)                \
+      || /* Solaris 11 before snv_125                                   \
+	  --------------------------                                    \
+	  <__sighndlr+0>        push   %ebp                             \
+	  <__sighndlr+1>        mov    %esp,%ebp                        \
+	  <__sighndlr+4>        pushl  0x10(%ebp)                       \
+	  <__sighndlr+6>        pushl  0xc(%ebp)                        \
+	  <__sighndlr+9>        pushl  0x8(%ebp)                        \
+	  <__sighndlr+12>       call   *0x14(%ebp)                      \
+	  <__sighndlr+15>	add    $0xc,%esp                        \
+	  <__sighndlr+18>       leave                <--- PC            \
+	  <__sighndlr+19>       ret  */                                 \
+	 (*(unsigned long *)(pc_ - 18) == 0xffec8b55                    \
+	  && *(unsigned long *)(pc_ - 14) == 0x7fff107f                 \
+	  && *(unsigned long *)(pc_ - 10)  == 0x0875ff0c                \
+	  && *(unsigned long *)(pc_ - 6)  == 0x83145fff                 \
+	  && *(unsigned long *)(pc_ - 1)  == 0xc3c90cc4)                \
+      || /* Solaris 11 since snv_125                                    \
+	  -------------------------                                     \
+	  <__sighndlr+0>        push   %ebp                             \
+	  <__sighndlr+1>        mov    %esp,%ebp                        \
+	  <__sighndlr+3>        and    $0xfffffff0,%esp                 \
+	  <__sighndlr+6>        sub    $0x4,%esp                        \
+	  <__sighndlr+9>        pushl  0x10(%ebp)                       \
+	  <__sighndlr+12>       pushl  0xc(%ebp)                        \
+	  <__sighndlr+15>       pushl  0x8(%ebp)                        \
+	  <__sighndlr+18>       call   *0x14(%ebp)                      \
+	  <__sighndlr+21>       leave                <--- PC            \
+	  <__sighndlr+22>       ret  */                                 \
+	 (*(unsigned long *)(pc_ - 21) == 0x83ec8b55                    \
+	  && *(unsigned long *)(pc_ - 17) == 0xec83f0e4                 \
+	  && *(unsigned long *)(pc_ - 13)  == 0x1075ff04                \
+	  && *(unsigned long *)(pc_ - 9)  == 0xff0c75ff                 \
+	  && *(unsigned long *)(pc_ - 5)  == 0x55ff0875                 \
+	  && (*(unsigned long *)(pc_ - 1) & 0x00ffffff) == 0x00c3c914)) \
+  {                                                                     \
+      struct handler_args {                                             \
+          int signo;                                                    \
+          siginfo_t *sip;                                               \
+          ucontext_t *ucontext;                                         \
+      } *handler_args_ = (CONTEXT)->cfa;                                \
+      mctx_ = &handler_args_->ucontext->uc_mcontext;                    \
+  }                                                                     \
+  else                                                                  \
+      break;                                                            \
+                                                                        \
+  new_cfa_ = mctx_->gregs[UESP];                                        \
+  (FS)->cfa_how = CFA_REG_OFFSET;                                       \
+  (FS)->cfa_reg = 4;                                                    \
+  (FS)->cfa_offset = new_cfa_ - (long) (CONTEXT)->cfa;                  \
+                                                                        \
+  /* The SVR4 register numbering macros aren't usable in libgcc.  */    \
+  (FS)->regs.reg[0].how = REG_SAVED_OFFSET;                             \
+  (FS)->regs.reg[0].loc.offset = (long)&mctx_->gregs[EAX] - new_cfa_;   \
+  (FS)->regs.reg[3].how = REG_SAVED_OFFSET;                             \
+  (FS)->regs.reg[3].loc.offset = (long)&mctx_->gregs[EBX] - new_cfa_;   \
+  (FS)->regs.reg[1].how = REG_SAVED_OFFSET;                             \
+  (FS)->regs.reg[1].loc.offset = (long)&mctx_->gregs[ECX] - new_cfa_;   \
+  (FS)->regs.reg[2].how = REG_SAVED_OFFSET;                             \
+  (FS)->regs.reg[2].loc.offset = (long)&mctx_->gregs[EDX] - new_cfa_;   \
+  (FS)->regs.reg[6].how = REG_SAVED_OFFSET;                             \
+  (FS)->regs.reg[6].loc.offset = (long)&mctx_->gregs[ESI] - new_cfa_;   \
+  (FS)->regs.reg[7].how = REG_SAVED_OFFSET;                             \
+  (FS)->regs.reg[7].loc.offset = (long)&mctx_->gregs[EDI] - new_cfa_;   \
+  (FS)->regs.reg[5].how = REG_SAVED_OFFSET;                             \
+  (FS)->regs.reg[5].loc.offset = (long)&mctx_->gregs[EBP] - new_cfa_;   \
+  (FS)->regs.reg[8].how = REG_SAVED_OFFSET;                             \
+  (FS)->regs.reg[8].loc.offset = (long)&mctx_->gregs[EIP] - new_cfa_;   \
+  (FS)->retaddr_column = 8;                                             \
+  goto SUCCESS;                                                         \
+} while (0)
+#endif /* IN_LIBGCC2 */
