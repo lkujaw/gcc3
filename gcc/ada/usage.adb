@@ -481,17 +481,21 @@ begin
    --  Line for -gnat83 switch
 
    Write_Switch_Char ("83");
-   Write_Line ("Enforce Ada 83 restrictions");
+   Write_Line ("Alias for -gnat87");
+
+   --  Line for -gnat87 switch
+
+   Write_Switch_Char ("87");
+   Write_Line ("Ada 87 (ISO/IEC 8652:1987) compliance mode");
 
    --  Line for -gnat95 switch
 
    Write_Switch_Char ("95");
-
+   Write_Str ("Ada 95 (ISO/IEC 8652:1995) compliance mode");
    if Ada_Version_Default = Ada_95 then
-      Write_Line ("Ada 95 mode (default)");
-   else
-      Write_Line ("Enforce Ada 95 restrictions");
+      Write_Str (" (default)");
    end if;
+   Write_Eol;
 
    --  Line for -gnat05 switch
 

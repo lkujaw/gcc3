@@ -934,7 +934,7 @@ package body Switch.C is
                Osint.Fail
                  ("-gnatZ is no longer supported: consider using --RTS=zcx");
 
-            --  Processing for 83 switch
+            --  Processing for 83/87 switch
 
             when '8' =>
                if Ptr = Max then
@@ -943,7 +943,9 @@ package body Switch.C is
 
                Ptr := Ptr + 1;
 
-               if Switch_Chars (Ptr) /= '3' then
+               if
+                  Switch_Chars (Ptr) /= '3' and then Switch_Chars (Ptr) /= '7'
+               then
                   Bad_Switch (C);
                else
                   Ptr := Ptr + 1;
