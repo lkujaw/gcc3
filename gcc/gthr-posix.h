@@ -90,10 +90,14 @@ typedef pthread_mutex_t __gthread_mutex_t;
 #endif /* _POSIX_THREAD_PRIORITY_SCHEDULING */
 #endif /* _LIBOBJC || _LIBOBJC_WEAK */
 
+#ifndef PTHREAD_ACTIVE_FUNCTION
+#define PTHREAD_ACTIVE_FUNCTION pthread_create
+#endif
+
 static inline int
 __gthread_active_p (void)
 {
-  static void *const __gthread_active_ptr = (void *) &pthread_create;
+  static void *const __gthread_active_ptr = (void *) &PTHREAD_ACTIVE_FUNCTION;
   return __gthread_active_ptr != 0;
 }
 

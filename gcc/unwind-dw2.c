@@ -1002,6 +1002,21 @@ execute_cfa_program (const unsigned char *insn_ptr,
     }
 }
 
+/* If a target specific source file contains a function to support the
+   MD_FALLBACK_FRAME_STATE_FOR macro implementation, use it.  */
+
+#ifdef MD_FALLBACK_FRAME_STATE_FOR_SOURCE
+
+#include MD_FALLBACK_FRAME_STATE_FOR_SOURCE
+
+#define MD_FALLBACK_FRAME_STATE_FOR(CONTEXT, FS, SUCCESS) \
+do {                                                      \
+ if (md_fallback_frame_state_for ((CONTEXT), (FS)))       \
+    goto SUCCESS;                                         \
+} while (0)
+
+#endif
+
 /* Given the _Unwind_Context CONTEXT for a stack frame, look up the FDE for
    its caller and decode it into FS.  This function also sets the
    args_size and lsda members of CONTEXT, as they are really information

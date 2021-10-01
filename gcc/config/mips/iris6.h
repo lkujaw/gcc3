@@ -27,10 +27,18 @@ Boston, MA 02111-1307, USA.  */
 #undef MULTILIB_DEFAULTS
 #define MULTILIB_DEFAULTS { "mabi=n32" }
 
+/* Force -mxgot by default.  Expected not to hurt performance too much,
+   reversible with explicit -mno-xgot, and avoids potentially hard to track
+   GOT overflows.  */
+#undef TARGET_DEFAULT
+#define TARGET_DEFAULT (MASK_XGOT)
+   
 /* The IRIX 6 O32 assembler cannot calculate label differences, while both
    the N32/N64 assembler and gas can.  Override setting in iris5.h file.  */
 #undef DWARF2_UNWIND_INFO
 #define DWARF2_UNWIND_INFO !TARGET_SGI_O32_AS
+
+#define MD_FALLBACK_FRAME_STATE_FOR_SOURCE "config/mips/irix6-ehfb.inc"
 
 /* The IRIX 6 assembler will sometimes assign labels to the wrong
    section unless the labels are within .ent/.end blocks.  Therefore,
@@ -156,6 +164,11 @@ Boston, MA 02111-1307, USA.  */
 /* Force the generation of dwarf .debug_frame sections even if not
    compiling -g.  This guarantees that we can unwind the stack.  */
 #define DWARF2_FRAME_INFO !TARGET_SGI_O32_AS
+
+/* The system unwinder in libexc requires a specific dwarf return address
+   column to work.  */
+#undef  DWARF_FRAME_RETURN_COLUMN
+#define DWARF_FRAME_RETURN_COLUMN (FP_REG_LAST + 1)
 
 /* The size in bytes of a DWARF field indicating an offset or length
    relative to a debug info section, specified to be 4 bytes in the DWARF-2
@@ -466,7 +479,7 @@ while (0)
 %{!shared: %{!non_shared: %{!call_shared:%{!r: -call_shared -no_unresolved}}}} \
 %{rpath} %{!mabi=32: -init __do_global_ctors -fini __do_global_dtors} \
 %{shared:-hidden_symbol __do_global_ctors,__do_global_ctors_1,__do_global_dtors} \
--_SYSTYPE_SVR4 -woff 131 \
+-_SYSTYPE_SVR4 -w \
 %{mabi=32: -32}%{mabi=n32: -n32}%{mabi=64: -64}%{!mabi*: -n32}"
 
 /* We need to disable collecting for the N32 and N64 ABIs.  */
@@ -479,3 +492,14 @@ do {								\
 } while (0)
 
 #define MIPS_TFMODE_FORMAT mips_extended_format
+
+/* The IRIX 6 libc includes stub versions of some of the pthread functions,
+   but lacks several necessary ones.  If the default PTHREAD_ACTIVE_FUNCTION,
+   pthread_created, were used to detect if a given program uses threads,
+   it would always appear to do so, but later attempts to invoke any of the
+   missing functions only finds the weak definition in gthr-posix.h and
+   causes rld to terminate the process.  */
+#define PTHREAD_ACTIVE_FUNCTION pthread_once
+
+/* Define this to be nonzero if static stack checking is supported.  */
+#define STACK_CHECK_STATIC_BUILTIN 1

@@ -367,6 +367,7 @@ struct lang_hooks
   /* Called to print language-dependent parts of a class 'd', class
      't', and IDENTIFIER_NODE nodes.  */
   lang_print_tree_hook print_decl;
+  lang_print_tree_hook print_decl_source_location;
   lang_print_tree_hook print_type;
   lang_print_tree_hook print_identifier;
 
@@ -390,9 +391,17 @@ struct lang_hooks
      semantics in cases that it doesn't want to handle specially.  */
   tree (*expr_size) (tree);
 
+  /* Called from assign_temp to return the maximum size, if there is one,
+     for a type.  */
+  tree (*type_max_size) (tree);
+
   /* Called from uninitialized_vars_warning to find out if a variable is
      uninitialized based on DECL_INITIAL.  */
   bool (*decl_uninit) (tree);
+
+  /* Called from layout_decl on a packed bit-field to find out whether it
+     can be promoted to a greater alignment than the minimal one.  */
+  bool (*can_promote_packed_bit_field_p) (tree, unsigned);
 
   /* Pointers to machine-independent attribute tables, for front ends
      using attribs.c.  If one is NULL, it is ignored.  Respectively, a

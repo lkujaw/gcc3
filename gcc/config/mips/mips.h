@@ -1095,11 +1095,16 @@ extern const struct mips_cpu_info *mips_tune_info;
 #define SUBTARGET_ASM_SPEC ""
 #endif
 
-/* ASM_SPEC is the set of arguments to pass to the assembler.  Note: we
-   pass -mgp32, -mgp64, -march, -mabi=eabi and -meabi=o64 regardless of
-   whether we're using GAS.  These options can only be used properly
-   with GAS, and it is better to get an error from a non-GAS assembler
-   than to silently generate bad code.  */
+/* ASM_SPEC is the set of arguments to pass to the assembler.
+
+   Note: we pass -mgp32, -mgp64, -march, -mabi=eabi and -meabi=o64 regardless
+   of whether we're using GAS.  These options can only be used properly with
+   GAS, and it is better to get an error from a non-GAS assembler than to
+   silently generate bad code.
+
+   We also pass -xgot by default to avoid hard to track potential GOT overflow
+   problems with the IRIX linker, which is still reversible with -mno-xgot if
+   need be.  */
 
 #undef ASM_SPEC
 #define ASM_SPEC "\
@@ -1111,7 +1116,7 @@ extern const struct mips_cpu_info *mips_tune_info;
 %{membedded-pic} \
 %{mabi=32:-32}%{mabi=n32:-n32}%{mabi=64:-64}%{mabi=n64:-64} \
 %{mabi=eabi} %{mabi=o64} %{!mabi*: %(asm_abi_default_spec)} \
-%{mgp32} %{mgp64} %{march=*} %{mxgot:-xgot} \
+%{mgp32} %{mgp64} %{march=*} %{!mno-xgot:-xgot} \
 %(target_asm_spec) \
 %(subtarget_asm_spec)"
 
@@ -1259,9 +1264,15 @@ extern const struct mips_cpu_info *mips_tune_info;
 #define EH_RETURN_STACKADJ_RTX  gen_rtx_REG (Pmode, GP_REG_FIRST + 3)
 
 /* Offsets recorded in opcodes are a multiple of this alignment factor.
-   The default for this in 64-bit mode is 8, which causes problems with
-   SFmode register saves.  */
-#define DWARF_CIE_DATA_ALIGNMENT 4
+   The default for this in 64-bit mode is -8 which causes problems with
+   SFmode register saves.
+
+   Keeping the value negative is important to avoid the sign of negative CFA
+   offsets to be conveyed via extended_sf operations.  These are not dwarf v2
+   compliant and are thus not understood by some system libraries, e.g. libexc
+   on IRIX.  The macro documentation states the value should be negative for
+   STACK_GROWS_DOWNWARD targets anyway.  */
+#define DWARF_CIE_DATA_ALIGNMENT -4
 
 /* Correct the offset of automatic variables and arguments.  Note that
    the MIPS debug format wants all automatic variables and arguments
@@ -1297,6 +1308,11 @@ extern const struct mips_cpu_info *mips_tune_info;
 
 /* For MIPS, width of a floating point register.  */
 #define UNITS_PER_FPREG (TARGET_FLOAT64 ? 8 : 4)
+
+/* The widest floating point format supported by the hardware.  Note that
+   setting this influences Long_Long_Float'Size for Ada, and is currently
+   required for GNAT to operate properly.  */
+#define WIDEST_HARDWARE_FP_SIZE 64
 
 /* If register $f0 holds a floating-point value, $f(0 + FP_INC) is
    the next available register.  */

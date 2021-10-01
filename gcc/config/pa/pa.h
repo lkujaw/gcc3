@@ -534,9 +534,12 @@ typedef struct machine_function GTY(())
 /* Base register for access to local variables of the function.  */
 #define FRAME_POINTER_REGNUM 3
 
-/* Value should be nonzero if functions must have frame pointers.  */
-#define FRAME_POINTER_REQUIRED \
-  (current_function_calls_alloca)
+/* Value should be nonzero if functions must have frame pointers.
+
+   ??? Currently forced to 1 to ease backtrace computations using the hpux
+   unwinding library, only device able to backtrace through non GCC code
+   properly.  */
+#define FRAME_POINTER_REQUIRED 1
 
 /* C statement to store the difference between the frame pointer
    and the stack pointer values immediately after the function prologue.

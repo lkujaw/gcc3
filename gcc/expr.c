@@ -1453,6 +1453,7 @@ emit_block_move_via_movstr (rtx x, rtx y, rtx size, unsigned int align)
 {
   rtx opalign = GEN_INT (align / BITS_PER_UNIT);
   enum machine_mode mode;
+  int save_volatile_ok = volatile_ok;
 
   /* Since this is a move insn, we don't care about volatility.  */
   volatile_ok = 1;
@@ -1501,7 +1502,7 @@ emit_block_move_via_movstr (rtx x, rtx y, rtx size, unsigned int align)
 	  if (pat)
 	    {
 	      emit_insn (pat);
-	      volatile_ok = 0;
+	      volatile_ok = save_volatile_ok;
 	      return true;
 	    }
 	  else
@@ -1509,7 +1510,7 @@ emit_block_move_via_movstr (rtx x, rtx y, rtx size, unsigned int align)
 	}
     }
 
-  volatile_ok = 0;
+  volatile_ok = save_volatile_ok;
   return false;
 }
 
@@ -3852,8 +3853,12 @@ expand_assignment (tree to, tree from, int want_value)
 	  MEM_VOLATILE_P (to_rtx) = 1;
 	}
 
-      if (TREE_CODE (to) == COMPONENT_REF
-	  && TREE_READONLY (TREE_OPERAND (to, 1))
+      if (((TREE_CODE (to) == COMPONENT_REF
+	    && TREE_READONLY (TREE_OPERAND (to, 1)))
+	   || (DECL_P (to)
+	       && TREE_READONLY (to)
+	       /* Do not set the flag twice on MEMs.  */
+	       && REG_P (to_rtx)))
 	  /* We can't assert that a MEM won't be set more than once
 	     if the component is not addressable because another
 	     non-addressable component may be referenced by the same MEM.  */
@@ -4495,7 +4500,10 @@ store_constructor_field (rtx target, unsigned HOST_WIDE_INT bitsize,
 			 tree exp, tree type, int cleared, int alias_set)
 {
   if (TREE_CODE (exp) == CONSTRUCTOR
+      /* We can only call store_constructor recursively if the size and
+	 bit position are on a byte boundary.  */
       && bitpos % BITS_PER_UNIT == 0
+      && (bitsize > 0 && bitsize % BITS_PER_UNIT == 0)
       /* If we have a nonzero bitpos for a register target, then we just
 	 let store_field do the bitfield handling.  This is unlikely to
 	 generate unnecessary clear instructions anyways.  */
@@ -5660,7 +5668,11 @@ force_operand (rtx value, rtx target)
 
   /* Check for a PIC address load.  */
   if ((code == PLUS || code == MINUS)
-      && XEXP (value, 0) == pic_offset_table_rtx
+      && (XEXP (value, 0) == pic_offset_table_rtx
+#ifdef TOC_REGISTER_P
+	  || TOC_REGISTER_P (XEXP (value, 0))
+#endif
+	 )
       && (GET_CODE (XEXP (value, 1)) == SYMBOL_REF
 	  || GET_CODE (XEXP (value, 1)) == LABEL_REF
 	  || GET_CODE (XEXP (value, 1)) == CONST))
@@ -6645,9 +6657,12 @@ expand_expr_real (tree exp, rtx target, enum machine_mode tmode,
 	  if (mode == VOIDmode)
 	    temp = const0_rtx;
 	  else
-	    temp = assign_temp (build_qualified_type (type,
-						      (TYPE_QUALS (type)
-						       | TYPE_QUAL_CONST)),
+	    /* If we will be taking the address of this SAVE_EXPR, use the
+	       original type.  Otherwise, we can make this readonly.  */
+	    temp = assign_temp (TREE_ADDRESSABLE (exp) ? type
+				: build_qualified_type (type,
+							(TYPE_QUALS (type)
+							 | TYPE_QUAL_CONST)),
 				3, 0, 0);
 
 	  SAVE_EXPR_RTL (exp) = temp;
@@ -7106,25 +7121,30 @@ expand_expr_real (tree exp, rtx target, enum machine_mode tmode,
 			  || modifier == EXPAND_STACK_PARM)
 			 ? modifier : EXPAND_NORMAL);
 
-	/* If this is a constant, put it into a register if it is a
-	   legitimate constant and OFFSET is 0 and memory if it isn't.  */
+	/* If this is a constant, put it into a register if it is a legitimate
+	   constant, OFFSET is 0, and we won't try to extract outside the
+	   register (in case we were passed a partially uninitialized object
+	   or a view_conversion to a larger size).  Force the constant to
+	   memory otherwise.  */
 	if (CONSTANT_P (op0))
 	  {
 	    enum machine_mode mode = TYPE_MODE (TREE_TYPE (tem));
 	    if (mode != BLKmode && LEGITIMATE_CONSTANT_P (op0)
-		&& offset == 0)
+		&& offset == 0
+		&& bitpos + bitsize <= GET_MODE_BITSIZE (mode))
 	      op0 = force_reg (mode, op0);
 	    else
 	      op0 = validize_mem (force_const_mem (mode, op0));
 	  }
 
  	/* Otherwise, if this object not in memory and we either have an
- 	   offset or a BLKmode result, put it there.  This case can't occur in
- 	   C, but can in Ada if we have unchecked conversion of an expression
- 	   from a scalar type to an array or record type or for an
- 	   ARRAY_RANGE_REF whose type is BLKmode.  */
+ 	   offset, a BLKmode result, or a reference outside the object, put it
+ 	   there.  Such cases can occur in Ada if we have unchecked conversion
+ 	   of an expression from a scalar type to an array or record type or
+ 	   for an ARRAY_RANGE_REF whose type is BLKmode.  */
 	else if (GET_CODE (op0) != MEM
 		 && (offset != 0
+		     || (bitpos + bitsize > GET_MODE_BITSIZE (GET_MODE (op0)))
 		     || (code == ARRAY_RANGE_REF && mode == BLKmode)))
 	  {
 	    /* If the operand is a SAVE_EXPR, we can deal with this by
@@ -7296,13 +7316,20 @@ expand_expr_real (tree exp, rtx target, enum machine_mode tmode,
 				  size_int (GET_MODE_BITSIZE (GET_MODE (op0))
 					    - bitsize),
 				  op0, 1);
-
+	    
+	    /* If the result type is BLKmode, store the data into a temporary
+	       of the appropriate type, but with the mode corresponding to the
+	       mode for the data we have (op0's mode).  It's tempting to make
+	       this a constant type, since we know it's only being stored once,
+	       but that can cause problems if we are taking the address of this
+	       COMPONENT_REF because the MEM of any reference via that address
+	       will have flags corresponding to the type, which will not
+	       necessarily be constant.  */
 	    if (mode == BLKmode)
 	      {
-		rtx new = assign_temp (build_qualified_type
-				       ((*lang_hooks.types.type_for_mode)
-					(ext_mode, 0),
-					TYPE_QUAL_CONST), 0, 1, 1);
+		rtx new
+		  = assign_stack_temp_for_type
+		    (ext_mode, GET_MODE_BITSIZE (ext_mode), 0, type);
 
 		emit_move_insn (new, op0);
 		op0 = copy_rtx (new);
@@ -7639,16 +7666,15 @@ expand_expr_real (tree exp, rtx target, enum machine_mode tmode,
       op0 = expand_expr (TREE_OPERAND (exp, 0), NULL_RTX, mode, modifier);
 
       /* If the input and output modes are both the same, we are done.
-	 Otherwise, if neither mode is BLKmode and both are integral and within
+	 Otherwise, if neither mode is BLKmode, the size is the same and within
 	 a word, we can use gen_lowpart.  If neither is true, make sure the
-	 operand is in memory and convert the MEM to the new mode.  */
+	 operand is in memory and ultimately convert the MEM to the new mode.  */
       if (TYPE_MODE (type) == GET_MODE (op0))
 	;
       else if (TYPE_MODE (type) != BLKmode && GET_MODE (op0) != BLKmode
-	       && GET_MODE_CLASS (GET_MODE (op0)) == MODE_INT
-	       && GET_MODE_CLASS (TYPE_MODE (type)) == MODE_INT
-	       && GET_MODE_SIZE (TYPE_MODE (type)) <= UNITS_PER_WORD
-	       && GET_MODE_SIZE (GET_MODE (op0)) <= UNITS_PER_WORD)
+	       && GET_MODE_SIZE (GET_MODE (op0))
+		    == GET_MODE_SIZE (TYPE_MODE (type))
+	       && GET_MODE_SIZE (TYPE_MODE (type)) <= UNITS_PER_WORD)
 	op0 = gen_lowpart (TYPE_MODE (type), op0);
       else if (GET_CODE (op0) != MEM)
 	{
@@ -7671,14 +7697,16 @@ expand_expr_real (tree exp, rtx target, enum machine_mode tmode,
 	  op0 = target;
 	}
 
-      /* At this point, OP0 is in the correct mode.  If the output type is such
-	 that the operand is known to be aligned, indicate that it is.
-	 Otherwise, we need only be concerned about alignment for non-BLKmode
-	 results.  */
+      /* At this point, either OP0 is in the correct mode or now a MEM in
+	 the original mode.  In both cases we need to adjust the alignment
+	 and, in the latter case, the mode.  */
       if (GET_CODE (op0) == MEM)
 	{
 	  op0 = copy_rtx (op0);
 
+	 /* If the output type is such that the operand is known to be
+	    aligned, indicate that it is.  Otherwise, we need only be
+	    concerned about alignment for non-BLKmode results.  */
 	  if (TYPE_ALIGN_OK (type))
 	    set_mem_align (op0, MAX (MEM_ALIGN (op0), TYPE_ALIGN (type)));
 	  else if (TYPE_MODE (type) != BLKmode && STRICT_ALIGNMENT
@@ -7706,6 +7734,7 @@ expand_expr_real (tree exp, rtx target, enum machine_mode tmode,
 	      op0 = new;
 	    }
 
+	  /* Finally adjust the mode.  */
 	  op0 = adjust_address (op0, TYPE_MODE (type), 0);
 	}
 
@@ -8844,8 +8873,14 @@ expand_expr_real (tree exp, rtx target, enum machine_mode tmode,
 	      else
 		{
 		  /* If this object is in a register, it can't be BLKmode.  */
-		  tree inner_type = TREE_TYPE (TREE_OPERAND (exp, 0));
-		  rtx memloc = assign_temp (inner_type, 1, 1, 1);
+		  tree inner_op = TREE_OPERAND (exp, 0);
+		  tree inner_type = TREE_TYPE (inner_op);
+		  tree nt
+		    = build_qualified_type (inner_type,
+					    TYPE_QUALS (inner_type)
+					    | (TREE_READONLY (inner_op)
+					       ? TYPE_QUAL_CONST : 0));
+		  rtx memloc = assign_temp (nt, 1, 1, 1);
 
 		  if (GET_CODE (op0) == PARALLEL)
 		    /* Handle calls that pass values in multiple

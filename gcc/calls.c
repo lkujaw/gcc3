@@ -149,7 +149,6 @@ static int check_sibcall_argument_overlap (rtx, struct arg_data *, int);
 static int combine_pending_stack_adjustment_and_call (int, struct args_size *,
 						      int);
 static tree fix_unsafe_tree (tree);
-static bool shift_returned_value (tree, rtx *);
 
 #ifdef REG_PARM_STACK_SPACE
 static rtx save_fixed_argument_area (int, rtx, int *, int *);
@@ -1161,9 +1160,9 @@ initialize_argument_information (int num_actuals ATTRIBUTE_UNUSED,
 
 	      if (!COMPLETE_TYPE_P (type)
 		  || TREE_CODE (TYPE_SIZE (type)) != INTEGER_CST
-		  || (flag_stack_check && ! STACK_CHECK_BUILTIN
-		      && (0 < compare_tree_int (TYPE_SIZE_UNIT (type),
-						STACK_CHECK_MAX_VAR_SIZE))))
+		  || (flag_stack_check == 1
+		      && compare_tree_int (TYPE_SIZE_UNIT (type),
+					   STACK_CHECK_MAX_VAR_SIZE) > 0))
 		{
 		  /* This is a variable-sized object.  Make space on the stack
 		     for it.  */
@@ -1176,9 +1175,13 @@ initialize_argument_information (int num_actuals ATTRIBUTE_UNUSED,
 		      pending_stack_adjust = 0;
 		    }
 
+		  /* We can pass TRUE as the 4th argument because we just
+		     saved the stack pointer and will restore it right after
+		     the call.  */
 		  copy = gen_rtx_MEM (BLKmode,
 				      allocate_dynamic_stack_space
-				      (size_rtx, NULL_RTX, TYPE_ALIGN (type)));
+				      (size_rtx, NULL_RTX,
+				       TYPE_ALIGN (type), TRUE));
 		  set_mem_attributes (copy, type, 1);
 		}
 	      else
@@ -1417,7 +1420,7 @@ precompute_arguments (int flags, int num_actuals, struct arg_data *args)
 	    args[i].value
 	      = convert_modes (args[i].mode, mode,
 			       args[i].value, args[i].unsignedp);
-#ifdef PROMOTE_FOR_CALL_ONLY
+#if defined(PROMOTE_FUNCTION_MODE) && !defined(PROMOTE_MODE)
 	    /* CSE will replace this only if it contains args[i].value
 	       pseudo, so convert it down to the declared mode using
 	       a SUBREG.  */
@@ -1811,8 +1814,11 @@ try_to_integrate (tree fndecl, tree actparms, rtx target, int ignore,
 
 		  start_sequence ();
 		  emit_stack_save (SAVE_BLOCK, &old_stack_level, NULL_RTX);
-		  allocate_dynamic_stack_space (GEN_INT (adjust),
-						NULL_RTX, BITS_PER_UNIT);
+		  /* We can pass TRUE as the 4th argument because we just
+		     saved the stack pointer and will restore it right after
+		     the inlined body.  */
+		  allocate_dynamic_stack_space (GEN_INT (adjust), NULL_RTX,
+						BITS_PER_UNIT, TRUE);
 		  seq = get_insns ();
 		  end_sequence ();
 		  emit_insn_before (seq, first_insn);
@@ -2032,7 +2038,7 @@ fix_unsafe_tree (tree t)
    TYPE is the type of the function's return value, which is known not
    to have mode BLKmode.  */
 
-static bool
+bool
 shift_returned_value (tree type, rtx *value)
 {
   if (targetm.calls.return_in_msb (type))
@@ -2043,9 +2049,17 @@ shift_returned_value (tree type, rtx *value)
 	       - BITS_PER_UNIT * int_size_in_bytes (type));
       if (shift > 0)
 	{
+	  /* Shift the value into the low part of the register.  */
 	  *value = expand_binop (GET_MODE (*value), lshr_optab, *value,
 				 GEN_INT (shift), 0, 1, OPTAB_WIDEN);
-	  *value = convert_to_mode (TYPE_MODE (type), *value, 0);
+
+	  /* Truncate it to the type's mode, or its integer equivalent.
+	     This is subject to TRULY_NOOP_TRUNCATION.  */
+	  *value = convert_to_mode (int_mode_for_mode (TYPE_MODE (type)),
+				    *value, 0);
+
+	  /* Now convert it to the final form.  */
+	  *value = gen_lowpart (TYPE_MODE (type), *value);
 	  return true;
 	}
     }
@@ -2340,7 +2354,11 @@ expand_call (tree exp, rtx target, int ignore)
 				   ignore, TREE_TYPE (exp),
 				   structure_value_addr);
       if (temp != (rtx) (size_t) - 1)
-	return temp;
+	{
+	  if (flag_callgraph_info && ! lang_hooks.callgraph.expand_function)
+	    cgraph_merge_calls (fndecl, current_function_decl);
+	  return temp;
+	}
     }
 
   /* Figure out the amount to which the stack should be aligned.  */
@@ -2350,7 +2368,11 @@ expand_call (tree exp, rtx target, int ignore)
       struct cgraph_rtl_info *i = cgraph_rtl_info (fndecl);
       if (i && i->preferred_incoming_stack_boundary)
 	preferred_stack_boundary = i->preferred_incoming_stack_boundary;
+      if (flag_callgraph_info && ! lang_hooks.callgraph.expand_function)
+	cgraph_record_call (current_function_decl, fndecl);
     }
+  else if (flag_callgraph_info && ! lang_hooks.callgraph.expand_function)
+    cgraph_rtl_info (current_function_decl)->indirect_calls++;
 
   /* Operand 0 is a pointer-to-function; get the type of the function.  */
   funtype = TREE_TYPE (addr);
@@ -2805,6 +2827,7 @@ expand_call (tree exp, rtx target, int ignore)
 	      stack_arg_under_construction = 0;
 	    }
 	  argblock = push_block (ARGS_SIZE_RTX (adjusted_args_size), 0, 0);
+	  current_function_has_unbounded_dynamic_stack_size = 1;
 	}
       else
 	{
@@ -2963,8 +2986,11 @@ expand_call (tree exp, rtx target, int ignore)
 		  memset (stack_usage_map, 0, highest_outgoing_arg_in_use);
 		  highest_outgoing_arg_in_use = 0;
 		}
+	      /* We can pass TRUE as the 4th argument because we just
+		 saved the stack pointer and will restore it right after
+		 the call.  */
 	      allocate_dynamic_stack_space (push_size, NULL_RTX,
-					    BITS_PER_UNIT);
+					    BITS_PER_UNIT, TRUE);
 	    }
 
 	  /* If argument evaluation might modify the stack pointer,
@@ -3004,6 +3030,18 @@ expand_call (tree exp, rtx target, int ignore)
       /* Now that the stack is properly aligned, pops can't safely
 	 be deferred during the evaluation of the arguments.  */
       NO_DEFER_POP;
+
+      if (!ACCUMULATE_OUTGOING_ARGS && pass && adjusted_args_size.var == 0)
+	{
+	  int needed = adjusted_args_size.constant + pending_stack_adjust;
+
+	  /* Record the maximum pushed stack space size.  We need to
+	     delay it this far to take into account the optimization
+	     done by combine_pending_stack_adjustment_and_call.  */
+
+	  if (needed > current_function_pushed_stack_size)
+	    current_function_pushed_stack_size = needed;
+	}
 
       funexp = rtx_for_function_call (fndecl, addr);
 
@@ -3768,6 +3806,9 @@ emit_library_call_value_1 (int retval, rtx orgfun, rtx value,
     case LCT_THROW:
       flags = ECF_NORETURN;
       break;
+    case LCT_MAY_THROW:
+      flags &= ~ECF_NOTHROW;
+      break;
     case LCT_ALWAYS_RETURN:
       flags = ECF_ALWAYS_RETURN;
       break;
@@ -4015,8 +4056,23 @@ emit_library_call_value_1 (int retval, rtx orgfun, rtx value,
   args_size.constant -= reg_parm_stack_space;
 #endif
 
-  if (args_size.constant > current_function_outgoing_args_size)
-    current_function_outgoing_args_size = args_size.constant;
+  {
+    int needed = args_size.constant;
+
+    /* Store the maximum argument space used.  It will be pushed by
+       the prologue (if ACCUMULATE_OUTGOING_ARGS, or stack overflow
+       checking).  */
+
+    if (needed > current_function_outgoing_args_size)
+      current_function_outgoing_args_size = needed;
+
+    if (!ACCUMULATE_OUTGOING_ARGS)
+      {
+	needed += pending_stack_adjust;
+	if (needed  > current_function_pushed_stack_size)
+	  current_function_pushed_stack_size = needed;
+      }
+  }
 
   if (ACCUMULATE_OUTGOING_ARGS)
     {

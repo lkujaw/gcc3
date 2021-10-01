@@ -2223,6 +2223,17 @@ record_temp_file (const char *filename, int always_delete, int fail_delete)
 
 /* Delete all the temporary files whose names we previously recorded.  */
 
+#ifndef DELETE_IF_ORDINARY
+#define DELETE_IF_ORDINARY(NAME,ST,VERBOSE_FLAG)        \
+do                                                      \
+  {                                                     \
+    if (stat (NAME, &ST) >= 0 && S_ISREG (ST.st_mode))  \
+      if (unlink (NAME) < 0)                            \
+	if (VERBOSE_FLAG)                               \
+	  perror_with_name (NAME);                      \
+  } while (0)
+#endif
+
 static void
 delete_if_ordinary (const char *name)
 {
@@ -2239,10 +2250,7 @@ delete_if_ordinary (const char *name)
 
   if (i == 'y' || i == 'Y')
 #endif /* DEBUG */
-    if (stat (name, &st) >= 0 && S_ISREG (st.st_mode))
-      if (unlink (name) < 0)
-	if (verbose_flag)
-	  perror_with_name (name);
+  DELETE_IF_ORDINARY (name, st, verbose_flag);
 }
 
 static void
@@ -2838,8 +2846,9 @@ execute (void)
 #endif
 		    fatal ("\
 Internal error: %s (program %s)\n\
-Please submit a full bug report.\n\
-See %s for instructions.",
+Please submit a full bug report to\n\
+%s\n\
+with preprocessed source if appropriate.",
 			   strsignal (WTERMSIG (status)), commands[j].prog,
 			   bug_report_url);
 		  signal_count++;
@@ -6258,7 +6267,9 @@ main (int argc, const char **argv)
 
       if (! verbose_flag)
 	{
-	  printf (_("\nFor bug reporting instructions, please see:\n"));
+	  printf (_("\nPlease submit a full bug report,\n\
+with preprocessed source if appropriate, \n\
+to:\n"));
 	  printf ("%s.\n", bug_report_url);
 
 	  return (0);
@@ -6461,8 +6472,10 @@ main (int argc, const char **argv)
 
   if (print_help_list)
     {
-      printf (("\nFor bug reporting instructions, please see:\n"));
-      printf ("%s\n", bug_report_url);
+	  printf (_("\nPlease submit a full bug report,\n\
+with preprocessed source if appropriate, \n\
+to:\n"));
+	  printf ("%s.\n", bug_report_url);
     }
 
   return (signal_count != 0 ? 2

@@ -163,6 +163,8 @@ extern int ia64_tls_size;
 #define TARGET_HPUX		0
 #define TARGET_HPUX_LD		0
 
+#define TARGET_ABI_OPEN_VMS 0
+
 #ifndef HAVE_AS_LTOFFX_LDXMOV_RELOCS
 #define HAVE_AS_LTOFFX_LDXMOV_RELOCS 0
 #endif
@@ -272,7 +274,11 @@ extern const char *ia64_tune_string;
       N_("Specify bit size of immediate TLS offsets"), 0},		\
   { "tune=",		&ia64_tune_string,				\
       N_("Schedule code for given CPU"), 0},				\
+  SUBTARGET_OPTIONS 							\
 }
+
+/* This is meant to be redefined in target specific files.  */
+#define SUBTARGET_OPTIONS
 
 /* Sometimes certain combinations of command options do not make sense on a
    particular target machine.  You can define a macro `OVERRIDE_OPTIONS' to
@@ -448,7 +454,8 @@ while (0)
 #define DOUBLE_TYPE_SIZE 64
 
 /* long double is XFmode normally, TFmode for HPUX.  */
-#define LONG_DOUBLE_TYPE_SIZE (TARGET_HPUX ? 128 : 96)
+#define LONG_DOUBLE_TYPE_SIZE \
+  (TARGET_HPUX ? 128 : (TARGET_ABI_OPEN_VMS ? 64 : 96))
 
 /* We always want the XFmode operations from libgcc2.c.  */
 #define LIBGCC2_LONG_DOUBLE_TYPE_SIZE 96
@@ -1351,12 +1358,15 @@ enum reg_class
    `FUNCTION_ARG' and other related values.  For some target machines, the type
    `int' suffices and can hold the number of bytes of argument so far.  */
 
+enum ivms_arg_type {I64, FF, FD, FG, FS, FT};
+
 typedef struct ia64_args
 {
   int words;			/* # words of arguments so far  */
   int int_regs;			/* # GR registers used so far  */
   int fp_regs;			/* # FR registers used so far  */
   int prototype;		/* whether function prototyped  */
+  enum ivms_arg_type atypes[8];
 } CUMULATIVE_ARGS;
 
 /* A C statement (sans semicolon) for initializing the variable CUM for the
@@ -1368,6 +1378,9 @@ do {									\
   (CUM).int_regs = 0;							\
   (CUM).fp_regs = 0;							\
   (CUM).prototype = ((FNTYPE) && TYPE_ARG_TYPES (FNTYPE)) || (LIBNAME);	\
+  (CUM).atypes[0] = (CUM).atypes[1] = (CUM).atypes[2] = I64;	        \
+  (CUM).atypes[3] = (CUM).atypes[4] = (CUM).atypes[5] = I64;            \
+  (CUM).atypes[6] = (CUM).atypes[7] = I64;                              \
 } while (0)
 
 /* Like `INIT_CUMULATIVE_ARGS' but overrides it for the purposes of finding the
@@ -1382,6 +1395,9 @@ do {									\
   (CUM).int_regs = 0;							\
   (CUM).fp_regs = 0;							\
   (CUM).prototype = 1;							\
+  (CUM).atypes[0] = (CUM).atypes[1] = (CUM).atypes[2] = I64;	        \
+  (CUM).atypes[3] = (CUM).atypes[4] = (CUM).atypes[5] = I64;            \
+  (CUM).atypes[6] = (CUM).atypes[7] = I64;                              \
 } while (0)
 
 /* A C statement (sans semicolon) to update the summarizer variable CUM to
@@ -1512,24 +1528,11 @@ do {									\
    call the profiling subroutine `mcount'.  */
 
 #undef FUNCTION_PROFILER
-#define FUNCTION_PROFILER(FILE, LABELNO)				\
-do {									\
-  char buf[20];								\
-  ASM_GENERATE_INTERNAL_LABEL (buf, "LP", LABELNO);			\
-  fputs ("\talloc out0 = ar.pfs, 8, 0, 4, 0\n", FILE);			\
-  if (TARGET_AUTO_PIC)							\
-    fputs ("\tmovl out3 = @gprel(", FILE);				\
-  else									\
-    fputs ("\taddl out3 = @ltoff(", FILE);				\
-  assemble_name (FILE, buf);						\
-  if (TARGET_AUTO_PIC)							\
-    fputs (");;\n", FILE);						\
-  else									\
-    fputs ("), r1;;\n", FILE);						\
-  fputs ("\tmov out1 = r1\n", FILE);					\
-  fputs ("\tmov out2 = b0\n", FILE);					\
-  fputs ("\tbr.call.sptk.many b0 = _mcount;;\n", FILE);			\
-} while (0)
+#define FUNCTION_PROFILER(FILE, LABELNO) \
+  ia64_output_function_profiler(FILE, LABELNO)
+
+/* Neither HP-UX nor Linux use profile counters.  */
+#define NO_PROFILE_COUNTERS 1
 
 /* Implementing the Varargs Macros.  */
 
@@ -1828,7 +1831,7 @@ do {									\
 
 #define ASM_GENERATE_INTERNAL_LABEL(LABEL, PREFIX, NUM) \
 do {									\
-  sprintf (LABEL, "*.%s%d", PREFIX, NUM);				\
+  sprintf (LABEL, (TARGET_GNU_AS ? "*.%s%d" : "*?%s%d"), PREFIX, NUM);	\
 } while (0)
 
 /* ??? Not sure if using a ? in the name for Intel as is safe.  */
@@ -1842,8 +1845,11 @@ do {									\
 do {									\
   assemble_name (STREAM, NAME);						\
   fputs (" = ", STREAM);						\
+  if (ISDIGIT (*VALUE))							\
+    ia64_asm_output_label = 1;						\
   assemble_name (STREAM, VALUE);					\
   fputc ('\n', STREAM);							\
+  ia64_asm_output_label = 0;						\
 } while (0)
 
 
@@ -2046,7 +2052,7 @@ do {									\
    `%I' options of `asm_fprintf' (see `final.c').  */
 
 #define REGISTER_PREFIX ""
-#define LOCAL_LABEL_PREFIX "."
+#define LOCAL_LABEL_PREFIX (TARGET_GNU_AS ? "." : "?")
 #define USER_LABEL_PREFIX ""
 #define IMMEDIATE_PREFIX ""
 
@@ -2061,9 +2067,17 @@ do {									\
 #define ASM_OUTPUT_ADDR_DIFF_ELT(STREAM, BODY, VALUE, REL)	\
   do {								\
   if (TARGET_ILP32)						\
-    fprintf (STREAM, "\tdata4 @pcrel(.L%d)\n", VALUE);		\
+    {                                                           \
+      fprintf (STREAM, "\tdata4 @pcrel(");                      \
+      fprintf (STREAM, "%s", LOCAL_LABEL_PREFIX);               \
+      fprintf (STREAM, "L%d)\n", VALUE);		        \
+    }                                                           \
   else								\
-    fprintf (STREAM, "\tdata8 @pcrel(.L%d)\n", VALUE);		\
+    {                                                           \
+      fprintf (STREAM, "\tdata8 @pcrel(");                      \
+      fprintf (STREAM, "%s", LOCAL_LABEL_PREFIX);               \
+      fprintf (STREAM, "L%d)\n", VALUE);		        \
+    }                                                           \
   } while (0)
 
 /* This is how to output an element of a case-vector that is absolute.
@@ -2167,7 +2181,7 @@ do {									\
    add brackets around the label.  */
 
 #define ASM_OUTPUT_DEBUG_LABEL(FILE, PREFIX, NUM) \
-  fprintf (FILE, TARGET_GNU_AS ? "[.%s%d:]\n" : ".%s%d:\n", PREFIX, NUM)
+  fprintf (FILE, TARGET_GNU_AS ? "[.%s%d:]\n" : "?%s%d:\n", PREFIX, NUM)
 
 /* Use section-relative relocations for debugging offsets.  Unlike other
    targets that fake this by putting the section VMA at 0, IA-64 has
@@ -2217,6 +2231,7 @@ do {									\
 { "small_addr_symbolic_operand", {SYMBOL_REF}},				\
 { "symbolic_operand", {SYMBOL_REF, CONST, LABEL_REF}},			\
 { "function_operand", {SYMBOL_REF}},					\
+{ "trampoline_operand", {SYMBOL_REF}},					\
 { "setjmp_operand", {SYMBOL_REF}},					\
 { "destination_operand", {SUBREG, REG, MEM}},				\
 { "not_postinc_memory_operand", {MEM}},					\
@@ -2261,7 +2276,7 @@ do {									\
 /* An alias for a machine mode name.  This is the machine mode that elements of
    a jump-table should have.  */
 
-#define CASE_VECTOR_MODE ptr_mode
+#define CASE_VECTOR_MODE Pmode
 
 /* Define as C expression which evaluates to nonzero if the tablejump
    instruction expects the table to contain offsets from the address of the

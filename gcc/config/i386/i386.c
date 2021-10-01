@@ -875,6 +875,7 @@ static int ix86_fp_comparison_cost (enum rtx_code code);
 static unsigned int ix86_select_alt_pic_regnum (void);
 static int ix86_save_reg (unsigned int, int);
 static void ix86_compute_frame_layout (struct ix86_frame *);
+static HOST_WIDE_INT ix86_get_static_stack_usage (void);
 static int ix86_comp_type_attributes (tree, tree);
 static int ix86_function_regparm (tree, tree);
 const struct attribute_spec ix86_attribute_table[];
@@ -1029,6 +1030,9 @@ static void init_ext_80387_constants (void);
 
 #undef TARGET_BUILD_BUILTIN_VA_LIST
 #define TARGET_BUILD_BUILTIN_VA_LIST ix86_build_builtin_va_list
+
+#undef TARGET_GET_STATIC_STACK_USAGE
+#define TARGET_GET_STATIC_STACK_USAGE ix86_get_static_stack_usage
 
 struct gcc_target targetm = TARGET_INITIALIZER;
 
@@ -1543,6 +1547,22 @@ const struct attribute_spec ix86_attribute_table[] =
   { "gcc_struct", 0, 0, false, false,  false, ix86_handle_struct_attribute },
   { NULL,        0, 0, false, false, false, NULL }
 };
+
+
+/* Decide whether we must probe the stack before any space allocation
+   on this target.  It's essentially TARGET_STACK_PROBE except when
+   -fstack-check causes the stack to be already probed differently.  */
+
+bool
+ix86_target_stack_probe (void)
+{
+  /* Do not probe the stack twice if static back-end
+     stack checking is enabled and done with probes.  */
+  if (flag_stack_check == 2 && !stack_check_libfunc)
+    return false;
+
+  return TARGET_STACK_PROBE != 0;
+}
 
 /* Decide whether we can make a sibling call to a function.  DECL is the
    declaration of the function being targeted by the call and EXP is the
@@ -5169,6 +5189,301 @@ ix86_compute_frame_layout (struct ix86_frame *frame)
 #endif
 }
 
+/* Return the maximum static stack usage for the current function.  */
+
+static HOST_WIDE_INT
+ix86_get_static_stack_usage (void)
+{
+  struct ix86_frame frame;
+
+  ix86_compute_frame_layout (&frame);
+
+  /* We start at the ARG_POINTER register's address.  */
+  return (UNITS_PER_WORD /* return address */
+	  + (frame_pointer_needed ? UNITS_PER_WORD : 0) /* saved fp */
+	  + frame.nregs * UNITS_PER_WORD /* saved regs */
+	  + frame.to_allocate); /* static frame */
+}
+
+/* Emit code to probe a range of stack addresses from FIRST to FIRST+SIZE,
+   inclusive.  These are offsets from the current stack pointer.  */
+
+static void
+ix86_emit_probe_stack_range (HOST_WIDE_INT first, HOST_WIDE_INT size)
+{
+  if (stack_check_libfunc)
+    {
+      rtx fnaddr = gen_rtx_MEM (QImode, stack_check_libfunc);
+      rtx real_pic_offset_table_rtx = NULL_RTX, insn;
+
+      /* We must end up aligned on PREFERRED_STACK_BOUNDARY immediately
+	 before the call:
+                                       __________
+	   saved pc                                ^
+	   saved static chain pointer              |
+	   saved PIC register                      |  n*STACK_SLOT_SIZE
+	   padding                                 |       bytes
+	   allocated space (64-bit)                |
+	   pushed eax (32-bit)         __________  V
+       */
+
+      int static_chain = (current_function_needs_context != 0);
+      int pic = (pic_offset_table_rtx != NULL_RTX);
+      int n_saved = static_chain + pic;
+      int n_alloced = (TARGET_64BIT ? current_function_args_info.regno : 0);
+      int n_pushed = !TARGET_64BIT;
+
+      const int stack_slot_size = PREFERRED_STACK_BOUNDARY / BITS_PER_UNIT;
+      const int pc = 1;
+      int used = (pc + n_saved + n_alloced + n_pushed) * UNITS_PER_WORD;
+      int n_slots = (used + stack_slot_size - 1) / stack_slot_size;
+      int padding = n_slots * stack_slot_size - used;
+      int total = padding + (n_saved + n_alloced + n_pushed) * UNITS_PER_WORD;
+
+      /* Save the static chain register if necessary.  */
+      if (static_chain)
+        {
+	  insn = emit_insn (gen_push (static_chain_rtx));
+	  RTX_FRAME_RELATED_P (insn) = 1;
+	}
+
+      /* Load the PIC register after saving it if necessary  */
+      if (pic)
+	{
+	  /* Beware that pic_offset_table_rtx may not be the canonical
+	     PIC register under certain circumstances.  */
+	  real_pic_offset_table_rtx
+	    = gen_raw_REG (Pmode, REAL_PIC_OFFSET_TABLE_REGNUM);
+	  insn = emit_insn (gen_push (real_pic_offset_table_rtx));
+	  RTX_FRAME_RELATED_P (insn) = 1;
+	  emit_insn (gen_set_got (real_pic_offset_table_rtx));
+
+	  /* Make sure the call is not scheduled before the above code.  */
+	  emit_insn (gen_blockage (real_pic_offset_table_rtx));
+	}
+
+      /* Allocate space and/or maintain the stack alignment.  */
+      if (n_alloced || padding)
+        {
+	  rtx dec = GEN_INT (padding + n_alloced * UNITS_PER_WORD);
+	  insn = emit_insn (gen_sub2_insn (stack_pointer_rtx, dec));
+	  RTX_FRAME_RELATED_P (insn) = 1;
+	}
+
+      if (TARGET_64BIT)
+        {
+	  rtx reg, mem, edi = gen_rtx_REG (Pmode, 5);
+	  rtx disp, call, use = NULL_RTX;
+	  int i;
+
+	  /* Save parameter registers used by the current function.  */
+	  for (i = 0; i < current_function_args_info.regno; i++)
+	    {
+	      reg = gen_rtx_REG (Pmode, x86_64_int_parameter_registers[i]);
+	      mem = gen_rtx_MEM (Pmode,
+				 plus_constant (stack_pointer_rtx,
+					        i * UNITS_PER_WORD));
+	      emit_move_insn (mem, reg);
+	    }
+
+	  /* Pass the bottom of the range to the checking function.  */
+	  disp = GEN_INT (-(first + size));
+	  if (x86_64_immediate_operand (disp, DImode))
+	    emit_insn (gen_add3_insn (edi, stack_pointer_rtx, disp));
+	  else
+	    {
+	      emit_move_insn (edi, disp);
+	      emit_insn (gen_add2_insn (edi, stack_pointer_rtx));
+	    }
+
+	  call = emit_call_insn (gen_call (fnaddr, const0_rtx, constm1_rtx));
+	  use_reg (&use, edi);
+	  CALL_INSN_FUNCTION_USAGE (call) = use;
+
+	  /* Restore parameter registers previously saved.  */
+	  for (i = 0; i < current_function_args_info.regno; i++)
+	    {
+	      reg = gen_rtx_REG (Pmode, x86_64_int_parameter_registers[i]);
+	      mem = gen_rtx_MEM (Pmode,
+				 plus_constant (stack_pointer_rtx,
+					        i * UNITS_PER_WORD));
+	      insn = emit_move_insn (reg, mem);
+	      /* The register may be dead in the end.  */
+	      REG_NOTES (insn) = gen_rtx_EXPR_LIST (REG_MAYBE_DEAD,
+						    reg,
+						    REG_NOTES (insn));
+	    }
+	}
+      else
+	{
+	  rtx eax = gen_rtx_REG (Pmode, 0);
+	  /* Pass the bottom of the range to the checking function.  */
+	  emit_move_insn (eax,
+			  plus_constant (stack_pointer_rtx, -(first + size)));
+	  /* The stack pointer is still the CFA register so mark the insn.
+	     Beware that EAX is a call-clobbered EH_RETURN_DATA_REGNO, so
+	     cannot be advertised as having been saved because that would
+	     cause it to be restored before returning to the handler.  */
+	  insn = emit_insn (gen_push (eax));
+	  RTX_FRAME_RELATED_P (insn) = 1;
+	  REG_NOTES (insn) =
+	    gen_rtx_EXPR_LIST (REG_FRAME_RELATED_EXPR,
+			       gen_rtx_SET (VOIDmode,
+					    stack_pointer_rtx,
+					    plus_constant (stack_pointer_rtx,
+							   - UNITS_PER_WORD)),
+			       REG_NOTES (insn));
+
+	  emit_call_insn (gen_call (fnaddr, GEN_INT (UNITS_PER_WORD), 0));
+	}
+
+      /* Restore the PIC register if necessary.  */
+      if (pic)
+	{
+	  rtx mem = gen_rtx_MEM (Pmode,
+				 plus_constant (stack_pointer_rtx,
+					        total - n_saved * UNITS_PER_WORD));
+	  insn = emit_move_insn (real_pic_offset_table_rtx, mem);
+	  /* The register may be dead in the end.  */
+	  REG_NOTES (insn) = gen_rtx_EXPR_LIST (REG_MAYBE_DEAD,
+						real_pic_offset_table_rtx,
+						REG_NOTES (insn));
+	}
+
+      /* Restore the static chain register if necessary.  */
+      if (static_chain)
+	{
+	  rtx mem = gen_rtx_MEM (Pmode,
+				 plus_constant (stack_pointer_rtx,
+					        total - UNITS_PER_WORD));
+	  insn = emit_move_insn (static_chain_rtx, mem);
+	  /* The register may be dead in the end.  */
+	  REG_NOTES (insn) = gen_rtx_EXPR_LIST (REG_MAYBE_DEAD,
+						static_chain_rtx,
+						REG_NOTES (insn));
+	}
+
+      /* Restore the stack pointer.  Phew!  */
+      insn = emit_insn (gen_add2_insn (stack_pointer_rtx, GEN_INT (total)));
+      RTX_FRAME_RELATED_P (insn) = 1;
+
+      /* Make sure nothing is scheduled before we are done.  */
+      emit_insn (gen_blockage (const0_rtx));
+    }
+
+  else if (TARGET_64BIT)
+    ; /* Not yet implemented, but do not abort as we'll get there when
+	 compiling C code.  Doing nothing is not worse than emitting
+	 useless probes.  */
+
+  else
+    emit_insn (gen_probe_stack_range (GEN_INT (first), GEN_INT (size)));
+}
+
+/* Probe a range of stack addresses from FIRST to FIRST+SIZE, inclusive.
+   These are offsets from the current stack pointer.  */
+
+#define PROBE_INTERVAL (1 << STACK_CHECK_PROBE_INTERVAL_EXP)
+
+const char *
+output_probe_stack_range (rtx first_rtx, rtx size_rtx)
+{
+  static int labelno = 0;
+  HOST_WIDE_INT first = INTVAL (first_rtx);
+  HOST_WIDE_INT size = INTVAL (size_rtx);
+  HOST_WIDE_INT rounded_size;
+  char loop_lab[32], end_lab[32];
+
+  if (TARGET_64BIT)
+    abort (); /* Not yet implemented.  */
+
+  /* See if we have a constant small number of them to generate.  If so,
+     that's the easy case.
+     The run-time loop is made up of 8 insns in the generic case while this
+     compile-time loop is made up of n insns for n # of intervals.  */
+  if (size <= 8 * PROBE_INTERVAL)
+    {
+      HOST_WIDE_INT i;
+
+      /* Probe at FIRST + N * PROBE_INTERVAL for values of N from 1 until
+	 it exceeds SIZE.  If only one probe is needed, this will not
+	 generate any code.  Then probe at SIZE.  */
+      for (i = PROBE_INTERVAL; i < size; i += PROBE_INTERVAL)
+	fprintf (asm_out_file, "\torl\t$0, -"HOST_WIDE_INT_PRINT_DEC"(%%esp)\n",
+		 first + i);
+
+      fprintf (asm_out_file, "\torl\t$0, -"HOST_WIDE_INT_PRINT_DEC"(%%esp)\n",
+	       first + size);
+    }
+
+  /* Otherwise, do the same as above, but in a loop.  Note that we must be
+     extra careful with variables wrapping around because we might be at
+     the very top (or the very bottom) of the address space and we have
+     to be able to handle this case properly; in particular, we use an
+     equality test for the loop condition.  */
+  else
+    {
+      /* Step 1: round SIZE to the previous multiple of the interval.  */
+
+      rounded_size = size & -PROBE_INTERVAL;
+
+
+      /* Step 2: compute initial and final value of the loop counter.  */
+      if (first)
+	/* TEST_ADDR = SP + FIRST.  */
+	fprintf (asm_out_file, "\tleal\t-"HOST_WIDE_INT_PRINT_DEC"(%%esp), %%eax\n",
+		 first);
+      else
+	fputs ("\tmovl\t%esp, %eax\n", asm_out_file);
+
+      /* LAST_ADDR = SP + FIRST + ROUNDED_SIZE.  */
+      fprintf (asm_out_file, "\tleal\t-"HOST_WIDE_INT_PRINT_DEC"(%%eax), %%edx\n",
+	       rounded_size);
+
+
+      /* Step 3: the loop
+
+        while (TEST_ADDR != LAST_ADDR)
+	  {
+	    TEST_ADDR = TEST_ADDR + PROBE_INTERVAL
+	    probe at TEST_ADDR
+	  }
+
+        probes at FIRST + N * PROBE_INTERVAL for values of N from 1
+        until it exceeds ROUNDED_SIZE.  */
+
+      ASM_GENERATE_INTERNAL_LABEL (loop_lab, "LPSRL", labelno);
+      ASM_OUTPUT_LABEL (asm_out_file, loop_lab);
+
+       /* Jump to END_LAB if TEST_ADDR == LAST_ADDR.  */
+      fputs ("\tcmpl\t%eax, %edx\n", asm_out_file);
+      ASM_GENERATE_INTERNAL_LABEL (end_lab, "LPSRE", labelno++);
+      fputs ("\tje\t", asm_out_file); assemble_name (asm_out_file, end_lab);
+      fputc ('\n', asm_out_file);
+ 
+      /* TEST_ADDR = TEST_ADDR + PROBE_INTERVAL.  */
+      fprintf (asm_out_file, "\tsubl\t$%d, %%eax\n", PROBE_INTERVAL);
+  
+      /* Probe at TEST_ADDR and branch.  */
+      fputs ("\torl\t$0, (%eax)\n", asm_out_file);
+      fprintf (asm_out_file, "\tjmp\t"); assemble_name (asm_out_file, loop_lab);
+      fputc ('\n', asm_out_file);
+
+      ASM_OUTPUT_LABEL (asm_out_file, end_lab);
+
+
+      /* Step 4: probe at SIZE if we cannot assert at compile-time that
+	 it is equal to ROUNDED_SIZE.  */
+
+      /* TEMP = SIZE - ROUNDED_SIZE.  */
+      if (size != rounded_size)
+	fprintf (asm_out_file, "\torl\t$0, -"HOST_WIDE_INT_PRINT_DEC"(%%edx)\n",
+		 size - rounded_size);
+    }
+
+  return "";
+}
+
 /* Emit code to save registers in the prologue.  */
 
 static void
@@ -5251,6 +5566,25 @@ ix86_expand_prologue (void)
 
   ix86_compute_frame_layout (&frame);
 
+  /* The stack has already been decremented by the instruction calling us
+     so we need to probe unconditionally to preserve the protection area.  */
+  if (flag_stack_check == 2)
+    {
+      HOST_WIDE_INT probed = UNITS_PER_WORD 
+			     + (frame_pointer_needed ? UNITS_PER_WORD : 0)
+			     + frame.to_allocate
+			     + frame.nregs * UNITS_PER_WORD;
+
+      /* If CHECK_STACK_LIMIT is positive, the target may expect unconditional
+	 probing from the first allocated byte to grow the stack of threads.
+	 It's the case on Windows.  If ix86_target_stack_probe returns false,
+	 the builtin support has been disabled to avoid probing twice.  */
+      if (CHECK_STACK_LIMIT > 0 && !ix86_target_stack_probe ())
+	ix86_emit_probe_stack_range (0, probed + STACK_CHECK_PROTECT);
+      else
+	ix86_emit_probe_stack_range (STACK_CHECK_PROTECT, probed);
+    }
+
   /* Note: AT&T enter does NOT have reversed args.  Enter is probably
      slower on all targets.  Also sdb doesn't like it.  */
 
@@ -5279,7 +5613,7 @@ ix86_expand_prologue (void)
 
   if (allocate == 0)
     ;
-  else if (! TARGET_STACK_PROBE || allocate < CHECK_STACK_LIMIT)
+  else if (! ix86_target_stack_probe () || allocate < CHECK_STACK_LIMIT)
     pro_epilogue_adjust_stack (stack_pointer_rtx, stack_pointer_rtx,
 			       GEN_INT (-allocate), -1);
   else
@@ -5287,6 +5621,7 @@ ix86_expand_prologue (void)
       /* Only valid for Win32.  */
       rtx eax = gen_rtx_REG (SImode, 0);
       bool eax_live = ix86_eax_live_at_start_p ();
+      rtx t;
 
       if (TARGET_64BIT)
         abort ();
@@ -5297,15 +5632,24 @@ ix86_expand_prologue (void)
 	  allocate -= 4;
 	}
 
-      insn = emit_move_insn (eax, GEN_INT (allocate));
-      RTX_FRAME_RELATED_P (insn) = 1;
+      emit_move_insn (eax, GEN_INT (allocate));
 
       insn = emit_insn (gen_allocate_stack_worker (eax));
       RTX_FRAME_RELATED_P (insn) = 1;
+      t = gen_rtx_PLUS (Pmode, stack_pointer_rtx, GEN_INT (-allocate));
+      t = gen_rtx_SET (VOIDmode, stack_pointer_rtx, t);
+      REG_NOTES (insn) = gen_rtx_EXPR_LIST (REG_FRAME_RELATED_EXPR,
+					    t, REG_NOTES (insn));
 
       if (eax_live)
 	{
-	  rtx t = plus_constant (stack_pointer_rtx, allocate);
+	  if (frame_pointer_needed)
+	    t = plus_constant (hard_frame_pointer_rtx,
+			       allocate
+			       - frame.to_allocate
+			       - frame.nregs * UNITS_PER_WORD);
+	  else
+	    t = plus_constant (stack_pointer_rtx, allocate);
 	  emit_move_insn (eax, gen_rtx_MEM (SImode, t));
 	}
     }

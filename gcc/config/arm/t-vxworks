@@ -8,3 +8,8 @@ MULTILIB_DIRNAMES = \
   ARMARCH5gnu ARMARCH5gnube ARMARCH5_Tgnu ARMARCH5_Tgnube \
   XSCALEgnu XSCALEgnube
 
+# Build libgcc with -mlong-calls, to ensure references to kernel symbols like
+# 'abort' never trigger unsolvable relocation requests in modules to be loaded
+# dynamically..
+
+TARGET_LIBGCC2_CFLAGS += -mlong-calls

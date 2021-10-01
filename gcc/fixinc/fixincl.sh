@@ -75,7 +75,7 @@ fi
 #
 if test -z "${target_canonical}" ; then
   if test -x ./config.guess ; then
-    target_canonical="`config.guess`" ; fi
+    target_canonical="`./config.guess`" ; fi
   test -z "${target_canonical}" && target_canonical=unknown
 fi
 export target_canonical

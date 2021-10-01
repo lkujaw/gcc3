@@ -374,7 +374,11 @@ extern const char *alpha_tls_size_string; /* For -mtls-size= */
    N_("Tune expected memory latency"), 0},		\
   {"tls-size=",		&alpha_tls_size_string,		\
    N_("Specify bit size of immediate TLS offsets"), 0},	\
+  SUBTARGET_OPTIONS 					\
 }
+
+/* This is meant to be redefined in target specific files.  */
+#define SUBTARGET_OPTIONS
 
 /* Support for a compile-time default CPU, et cetera.  The rules are:
    --with-cpu is ignored if -mcpu is specified.
@@ -1185,6 +1189,12 @@ do {						\
    the COUNT-1 frame if RETURN_ADDR_IN_PREVIOUS_FRAME is defined.  */
 
 #define RETURN_ADDR_RTX  alpha_return_addr
+
+/* Provide a definition of DWARF_FRAME_REGNUM here so that fallback unwinders
+   may use DWARF_ALT_FRAME_RETURN_COLUMN defined below.  This is just the same
+   as the default definition in dwarf2out.c  */
+#undef  DWARF_FRAME_REGNUM
+#define DWARF_FRAME_REGNUM(REG) DBX_REGISTER_NUMBER (REG)
 
 /* Before the prologue, RA lives in $26.  */
 #define INCOMING_RETURN_ADDR_RTX  gen_rtx_REG (Pmode, 26)

@@ -398,6 +398,12 @@ struct cpp_callbacks
   void (*read_pch) (cpp_reader *, const char *, int, const char *);
 };
 
+#ifdef VMS
+#define INO_CPP ino[3]
+#else
+#define INO_CPP ino
+#endif
+
 /* Chain of directories to look for include files in.  */
 struct cpp_dir
 {
@@ -418,7 +424,7 @@ struct cpp_dir
 
   /* The C front end uses these to recognize duplicated
      directories in the search path.  */
-  ino_t ino;
+  ino_t INO_CPP;
   dev_t dev;
 };
 

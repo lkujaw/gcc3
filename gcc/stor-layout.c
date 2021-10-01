@@ -398,6 +398,7 @@ layout_decl (tree decl, unsigned int known_align)
     /* For fields, it's a bit more complicated...  */
     {
       bool old_user_align = DECL_USER_ALIGN (decl);
+      bool force_minimal_alignment_for_packed_field = false;
 
       if (DECL_BIT_FIELD (decl))
 	{
@@ -422,27 +423,6 @@ layout_decl (tree decl, unsigned int known_align)
 		      DECL_USER_ALIGN (decl) = 0;
 		    }
 #endif
-		}
-	    }
-
-	  /* See if we can use an ordinary integer mode for a bit-field.
-	     Conditions are: a fixed size that is correct for another mode
-	     and occupying a complete byte or bytes on proper boundary.  */
-	  if (TYPE_SIZE (type) != 0
-	      && TREE_CODE (TYPE_SIZE (type)) == INTEGER_CST
-	      && GET_MODE_CLASS (TYPE_MODE (type)) == MODE_INT)
-	    {
-	      enum machine_mode xmode
-		= mode_for_size_tree (DECL_SIZE (decl), MODE_INT, 1);
-
-	      if (xmode != BLKmode 
-		  && (known_align == 0
-		      || known_align >= GET_MODE_ALIGNMENT (xmode)))
-		{
-		  DECL_ALIGN (decl) = MAX (GET_MODE_ALIGNMENT (xmode),
-					   DECL_ALIGN (decl));
-		  DECL_MODE (decl) = xmode;
-		  DECL_BIT_FIELD (decl) = 0;
 		}
 	    }
 
@@ -472,7 +452,38 @@ layout_decl (tree decl, unsigned int known_align)
 	  && (DECL_NONADDRESSABLE_P (decl)
 	      || DECL_SIZE_UNIT (decl) == 0
 	      || TREE_CODE (DECL_SIZE_UNIT (decl)) == INTEGER_CST))
-	DECL_ALIGN (decl) = MIN (DECL_ALIGN (decl), BITS_PER_UNIT);
+	{
+	  DECL_ALIGN (decl) = MIN (DECL_ALIGN (decl), BITS_PER_UNIT);
+	  force_minimal_alignment_for_packed_field = true;
+	}
+
+      /* See if we can use an ordinary integer mode for a bit-field.
+	 Conditions are:
+	   - a fixed size that is correct for another mode, and
+	   - occupying a complete byte or bytes on proper boundary, and
+	   - the minimal alignment was not previously requested, or
+	   - the language specifically allows the alignment promotion.  */
+      if (DECL_BIT_FIELD (decl)
+	  && TYPE_SIZE (type) != 0
+	  && TREE_CODE (TYPE_SIZE (type)) == INTEGER_CST
+	  && GET_MODE_CLASS (TYPE_MODE (type)) == MODE_INT)
+	{
+	  enum machine_mode xmode
+	    = mode_for_size_tree (DECL_SIZE (decl), MODE_INT, 1);
+
+	  if (xmode != BLKmode 
+	      && (known_align == 0
+		  || known_align >= GET_MODE_ALIGNMENT (xmode))
+	      && (!force_minimal_alignment_for_packed_field
+	          || lang_hooks.can_promote_packed_bit_field_p
+		       (decl, GET_MODE_ALIGNMENT (xmode))))
+	    {
+	      DECL_ALIGN (decl) = MAX (GET_MODE_ALIGNMENT (xmode),
+				       DECL_ALIGN (decl));
+	      DECL_MODE (decl) = xmode;
+	      DECL_BIT_FIELD (decl) = 0;
+	    }
+	}
 
       /* Should this be controlled by DECL_USER_ALIGN, too?  */
       if (maximum_field_alignment != 0)
@@ -529,17 +540,6 @@ layout_decl (tree decl, unsigned int known_align)
     }
 }
 
-/* Hook for a front-end function that can modify the record layout as needed
-   immediately before it is finalized.  */
-
-void (*lang_adjust_rli) (record_layout_info) = 0;
-
-void
-set_lang_adjust_rli (void (*f) (record_layout_info))
-{
-  lang_adjust_rli = f;
-}
-
 /* Begin laying out type T, which may be a RECORD_TYPE, UNION_TYPE, or
    QUAL_UNION_TYPE.  Return a pointer to a struct record_layout_info which
    is to be passed to all other layout functions for this record.  It is the
@@ -1183,8 +1183,8 @@ place_field (record_layout_info rli, tree field)
      is printed in finish_struct.  */
   if (DECL_SIZE (field) == 0)
     /* Do nothing.  */;
-  else if (TREE_CODE (DECL_SIZE_UNIT (field)) != INTEGER_CST
-	   || TREE_CONSTANT_OVERFLOW (DECL_SIZE_UNIT (field)))
+  else if (TREE_CODE (DECL_SIZE (field)) != INTEGER_CST
+	   || TREE_CONSTANT_OVERFLOW (DECL_SIZE (field)))
     {
       rli->offset
 	= size_binop (PLUS_EXPR, rli->offset,
@@ -1336,9 +1336,12 @@ compute_record_mode (tree type)
 #endif /* MEMBER_TYPE_FORCES_BLK  */
     }
 
-  /* If we only have one real field; use its mode.  This only applies to
-     RECORD_TYPE.  This does not apply to unions.  */
-  if (TREE_CODE (type) == RECORD_TYPE && mode != VOIDmode)
+  /* If we only have one real field; use its mode if that mode's size
+     matches the type's size.  This only applies to RECORD_TYPE.  This
+     does not apply to unions.  */
+  if (TREE_CODE (type) == RECORD_TYPE && mode != VOIDmode
+      && host_integerp (TYPE_SIZE (type), 1)
+      && GET_MODE_BITSIZE (mode) == TREE_INT_CST_LOW (TYPE_SIZE (type)))
     TYPE_MODE (type) = mode;
   else
     TYPE_MODE (type) = mode_for_size_tree (TYPE_SIZE (type), MODE_INT, 1);
@@ -1744,9 +1747,6 @@ layout_type (tree type)
 
 	if (TREE_CODE (type) == QUAL_UNION_TYPE)
 	  TYPE_FIELDS (type) = nreverse (TYPE_FIELDS (type));
-
-	if (lang_adjust_rli)
-	  (*lang_adjust_rli) (rli);
 
 	/* Finish laying out the record.  */
 	finish_record_layout (rli, /*free_p=*/true);

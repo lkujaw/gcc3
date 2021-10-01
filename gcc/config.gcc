@@ -317,6 +317,9 @@ sparc64*-*-*)
 sparc*-*-*)
 	cpu_type=sparc
 	;;
+erc32-*-*)
+	cpu_type=sparc
+	;;
 s390*-*-*)
 	need_64bit_hwint=yes
 	;;
@@ -357,6 +360,12 @@ esac
 # Common parts for widely ported systems.
 case ${target} in
 *-*-darwin*)
+  case ${target} in
+    *-darwin1[0-9]*) tm_file="${tm_file} darwin8.h" ;;
+    *-darwin[0-6]*) ;;
+    *-darwin7*) tm_file="${tm_file} darwin7.h" ;;
+    *) tm_file="${tm_file} darwin8.h" ;;
+  esac
   tm_file="${tm_file} darwin.h"
   tm_p_file="${tm_p_file} darwin-protos.h"
   tmake_file="t-darwin"
@@ -633,17 +642,11 @@ alpha*-dec-osf[45]*)
 	;;
 alpha64-dec-*vms*)
 	tm_file="${tm_file} alpha/vms.h alpha/vms64.h"
-	xm_file="alpha/xm-vms.h"
-	tmake_file="alpha/t-alpha alpha/t-vms alpha/t-vms64 alpha/t-ieee"
-	prefix=/gnu
-	local_prefix=/gnu
-	;;
-alpha*-dec-*vms*)
-	tm_file="${tm_file} alpha/vms.h"
-	xm_file=alpha/xm-vms.h
-	tmake_file="alpha/t-alpha alpha/t-vms alpha/t-ieee"
-	prefix=/gnu
-	local_prefix=/gnu
+	xm_file="vms/xm-vms.h vms/xm-vms64.h"
+	tmake_file="alpha/t-alpha vms/t-vms vms/t-vms64 alpha/t-vms alpha/t-ieee"
+	xmake_file=vms/x-vms
+	exeext=.exe
+	install_headers_dir=install-headers-cp
 	;;
 arc-*-elf*)
 	tm_file="dbxelf.h elfos.h svr4.h ${tm_file}"
@@ -1158,7 +1161,7 @@ i386-*-vsta)			# Intel 80386's running VSTa kernel
 	tm_file="${tm_file} i386/unix.h i386/bsd.h i386/gas.h i386/vsta.h"
 	use_fixproto=yes
 	;;
-i[4567]86-wrs-vxworks)
+i[4567]86-wrs-vxworks*)
 	tm_file="${tm_file} i386/sysv4.h i386/unix.h i386/vxworks.h"
 	tmake_file="${tmake_file} i386/t-vxworks"
 	;;
@@ -1179,6 +1182,7 @@ i[34567]86-*-mingw32*)
 	xm_file=i386/xm-mingw32.h
 	tmake_file="i386/t-cygming i386/t-mingw32"
 	extra_objs=winnt.o
+	extra_parts="crtbegin.o crtend.o"
 	if test x$enable_threads = xyes; then
 		thread_file='win32'
 	fi
@@ -1295,6 +1299,21 @@ ia64*-*-hpux*)
 	# If we decide to run fixproto we should define FIXPROTO_DEFINES
 	# in ia64/t-hpux, and also fix the definition of putenv in
 	# sys-protos.h (const char not char).
+	;;
+ia64-hp-*vms*)
+	tm_file="${tm_file} elfos.h ia64/sysv4.h ia64/elf.h ia64/vms.h ia64/vms64.h"
+	xm_file="vms/xm-vms.h vms/xm-vms64.h"
+	tmake_file="vms/t-vms vms/t-vms64 ia64/t-vms"
+	xmake_file=vms/x-vms
+	target_cpu_default="0"
+	if test x$gas = xyes
+	then
+		target_cpu_default="${target_cpu_default}|MASK_GNU_AS"
+	fi
+	exeext=.exe
+	install_headers_dir=install-headers-cp
+#	prefix=/gnu
+#	local_prefix=/gnu/local
 	;;
 ip2k-*-elf)
 	tm_file="elfos.h ${tm_file}"
@@ -1811,8 +1830,14 @@ powerpc-wrs-vxworks*)
 	# means we have to redo the tm_file list from scratch.
 	tm_file="rs6000/rs6000.h elfos.h svr4.h freebsd-spec.h rs6000/sysv4.h"
 	tm_file="${tm_file} vxworks.h rs6000/vxworks.h"
-	tmake_file="${tmake_file} rs6000/t-fprules rs6000/t-ppccomm rs6000/t-vxworks"
+	case ${target} in
+	  *-wrs-vxworksae)
+		tm_file="${tm_file} rs6000/vxworksae.h"
+		;;
+	esac
+	tmake_file="${tmake_file} rs6000/t-fprules rs6000/t-ppccomm rs6000/t-vxworks rs6000/t-longcall"
 	extra_headers=ppc-asm.h
+	extra_parts="crtbegin.o crtbeginS.o crtend.o crtendS.o"
 	;;
 powerpc-wrs-windiss*)	# Instruction-level simulator for VxWorks.
 	tm_file="${tm_file} elfos.h svr4.h freebsd-spec.h rs6000/sysv4.h rs6000/windiss.h"
@@ -2046,7 +2071,7 @@ sparc-*-rtems*)
 	extra_parts="crti.o crtn.o crtbegin.o crtend.o"
 	;;
 sparc64-*-solaris2* | sparcv9-*-solaris2*)
-	tm_file="sparc/biarch64.h ${tm_file} dbxelf.h elfos.h svr4.h sparc/sysv4.h sol2.h sparc/sol2.h sparc/sol2-64.h sparc/sol2-bi.h"
+	tm_file="sparc/biarch64.h ${tm_file} dbxelf.h elfos.h svr4.h sparc/sysv4.h sol2.h sparc/sol2.h sparc/sol2-64.h sparc/sol2-bi.h sparc/sol2-ehfb.h"
 	if test x$gnu_ld = xyes; then
 		tm_file="${tm_file} sparc/sol2-gld.h sparc/sol2-gld-bi.h"
 	fi
@@ -2076,7 +2101,7 @@ sparc64-*-solaris2* | sparcv9-*-solaris2*)
 	need_64bit_hwint=yes
 	;;
 sparc-*-solaris2*)
-	tm_file="${tm_file} dbxelf.h elfos.h svr4.h sparc/sysv4.h sol2.h sparc/sol2.h"
+	tm_file="${tm_file} dbxelf.h elfos.h svr4.h sparc/sysv4.h sol2.h sparc/sol2.h sparc/sol2-ehfb.h"
 	if test x$gnu_ld = xyes; then
 		tm_file="${tm_file} sparc/sol2-gld.h"
 	fi
@@ -2169,6 +2194,13 @@ sparc64-*-netbsd*)
 	tmake_file="${tmake_file} sparc/t-netbsd64"
 	tm_file="sparc/biarch64.h ${tm_file}"
 	tm_file="${tm_file} dbxelf.h elfos.h svr4.h sparc/sysv4.h netbsd.h netbsd-elf.h sparc/netbsd-elf.h"
+	;;
+erc32-*-elf*)
+	target_cpu_default="TARGET_CPU_sparc"
+	tm_file="${tm_file} dbxelf.h elfos.h svr4.h sparc/sysv4.h sol2.h sparc/sol2.h sparc/elf.h sparc/erc32.h"
+	tmake_file="sparc/t-elf sparc/t-crtfm"
+	extra_parts="crti.o crtn.o crtbegin.o crtend.o"
+	use_fixproto=yes
 	;;
 strongarm-*-elf*)
 	tm_file="arm/strongarm-elf.h dbxelf.h elfos.h arm/unknown-elf.h arm/elf.h arm/aout.h arm/arm.h"
@@ -2512,6 +2544,33 @@ case "${target}" in
 		fi
 		;;
 
+	erc32-*-*)
+		supported_defaults="cpu float tune"
+
+		for which in cpu tune; do
+			eval "val=\$with_$which"
+			case ${val} in
+			"" | v7 | cypress)
+				# OK
+				;;
+			*)
+				echo "Unknown cpu used in --with-$which=$val" 1>&2
+				exit 1
+				;;
+			esac
+		done
+
+		case ${with_float} in
+		"" | soft | hard)
+			# OK
+			;;
+		*)
+			echo "Unknown floating point type used in --with-float=$with_float" 1>&2
+			exit 1
+			;;
+		esac
+		;;
+
 	hppa*-*-* | parisc*-*-*)
 		supported_defaults="arch schedule"
 
@@ -2782,6 +2841,9 @@ case ${target} in
 
 		# The Sparc port checks this value at compile-time.
 		target_cpu_default2="TARGET_CPU_$with_cpu"
+		;;
+	erc32-*-*)
+		with_cpu=cypress
 		;;
 	v850*-*-*)
 		# FIXME: The v850 is "special" in that it does not support

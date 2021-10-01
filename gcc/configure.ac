@@ -1168,7 +1168,7 @@ else
 	# To prevent recursion we set host and build for the new
 	# invocation of configure to the build for this invocation
 	# of configure. 
-	tempdir=build.$$
+	tempdir=build_$$
 	rm -rf $tempdir
 	mkdir $tempdir
 	cd $tempdir
@@ -1564,14 +1564,15 @@ gcc_cv_gas_minor_version=
 gcc_cv_as_gas_srcdir=`echo $srcdir | sed -e 's,/gcc$,,'`/gas
 if test -x "$DEFAULT_ASSEMBLER"; then
 	gcc_cv_as="$DEFAULT_ASSEMBLER"
-elif test -x "$AS"; then
-	gcc_cv_as="$AS"
 elif test -x as$host_exeext; then
 	# Build using assembler in the current directory.
 	gcc_cv_as=./as$host_exeext
 elif test -f $gcc_cv_as_gas_srcdir/configure.in \
-     && test -f ../gas/Makefile; then
-  # Single tree build which includes gas.
+     && test -f ../gas/Makefile \
+     && test x$build = x$host; then
+  # Single tree build which includes gas.  We want to prefer it
+  # over whatever linker top-level may have detected, since
+  # we'll use what we're building after installation anyway.
   in_tree_gas=yes
   _gcc_COMPUTE_GAS_VERSION
   rm -f as$host_exeext
@@ -1583,6 +1584,11 @@ elif test -f $gcc_cv_as_gas_srcdir/configure.in \
   then
     in_tree_gas_is_elf=yes
   fi
+m4_pattern_allow([AS_FOR_TARGET])dnl
+elif test -x "$AS_FOR_TARGET"; then
+        gcc_cv_as="$AS_FOR_TARGET"
+elif test -x "$AS" && test x$host = x$target; then
+	gcc_cv_as="$AS"
 fi
 
 if test "x$gcc_cv_as" = x; then
@@ -1669,14 +1675,15 @@ gcc_cv_ld_gld_srcdir=`echo $srcdir | sed -e 's,/gcc$,,'`/ld
 gcc_cv_ld_bfd_srcdir=`echo $srcdir | sed -e 's,/gcc$,,'`/bfd
 if test -x "$DEFAULT_LINKER"; then
 	gcc_cv_ld="$DEFAULT_LINKER"
-elif test -x "$LD"; then
-	gcc_cv_ld="$LD"
 elif test -x collect-ld$host_exeext; then
 	# Build using linker in the current directory.
 	gcc_cv_ld=./collect-ld$host_exeext
 elif test -f $gcc_cv_ld_gld_srcdir/configure.in \
-     && test -f ../ld/Makefile; then
-	# Single tree build which includes ld.
+     && test -f ../ld/Makefile \
+     && test x$build = x$host; then
+	# Single tree build which includes ld.  We want to prefer it
+	# over whatever linker top-level may have detected, since
+	# we'll use what we're building after installation anyway.
 	in_tree_ld=yes
 	in_tree_ld_is_elf=no
 	if (grep 'EMUL = .*elf' ../ld/Makefile \
@@ -1699,6 +1706,10 @@ changequote([,])dnl
 	rm -f collect-ld$host_exeext
 	$symbolic_link ../ld/ld-new$host_exeext collect-ld$host_exeext \
 		2>/dev/null
+elif test -x "$LD_FOR_TARGET"; then
+        gcc_cv_ld="$LD_FOR_TARGET"
+elif test -x "$LD" && test x$host = x$target; then
+	gcc_cv_ld="$LD"
 fi
 
 if test "x$gcc_cv_ld" = x; then
@@ -2033,7 +2044,21 @@ fi
 
 gcc_GAS_CHECK_FEATURE(section merging support, gcc_cv_as_shf_merge,
  [elf,2,12,0], [--fatal-warnings],
- [.section .rodata.str, "aMS", @progbits, 1])
+ [.section .rodata.str, "aMS", @progbits, 1],
+[gcc_cv_as_shf_merge=no
+if test $in_tree_ld = yes ; then
+  gcc_cv_as_shf_merge=yes
+elif test x$gcc_cv_ld != x -a x$gcc_cv_objdump != x ; then
+  # Check that the linker can merge marked and non-marked sections.
+  echo '.section .my_str, "aMS", @progbits, 1' > conftest1.s
+  echo '.section .my_str, "a", @progbits' > conftest2.s
+  if $gcc_cv_as -o conftest1.o conftest1.s > /dev/null 2>&1 \
+     && $gcc_cv_as -o conftest2.o conftest2.s > /dev/null 2>&1 \
+     && $gcc_cv_ld -o conftest conftest1.o conftest2.o > /dev/null 2>&1 \
+     && $gcc_cv_objdump -h conftest | grep my_str | wc -l | grep 1 > /dev/null; then
+    gcc_cv_as_shf_merge=yes
+  fi
+fi])
 AC_DEFINE_UNQUOTED(HAVE_GAS_SHF_MERGE,
   [`if test $gcc_cv_as_shf_merge = yes; then echo 1; else echo 0; fi`],
 [Define 0/1 if your assembler supports marking sections with SHF_MERGE flag.])
@@ -2232,7 +2257,7 @@ foo:	.long	25
 	tls_first_minor=13
 	tls_as_opt=--fatal-warnings
 	;;
-  sparc*-*-*)
+  sparc*-*-* | erc32-*-*)
     case "$target" in
       sparc*-sun-solaris2.*)
 	on_solaris=yes
@@ -2345,7 +2370,7 @@ case "$target" in
 		[Define if your assembler supports the -no-mul-bug-abort option.])])
     ;;
 
-  sparc*-*-*)
+  sparc*-*-* | erc32-*-*)
     gcc_GAS_CHECK_FEATURE([.register], gcc_cv_as_sparc_register_op,,,
       [.register %g2, #scratch],,
       [AC_DEFINE(HAVE_AS_REGISTER_PSEUDO_OP, 1,
@@ -2493,9 +2518,9 @@ esac
 # ??? Once 2.11 is released, probably need to add first known working
 # version to the per-target configury.
 case "$target" in
-  i?86*-*-* | mips*-*-* | alpha*-*-* | powerpc*-*-* | sparc*-*-* | m68*-*-* \
-  | x86_64*-*-* | hppa*-*-* | arm*-*-* | strongarm*-*-* | xscale*-*-* \
-  | xstormy16*-*-* | cris-*-* | xtensa-*-*)
+  i?86*-*-* | mips*-*-* | alpha*-*-* | powerpc*-*-* | sparc*-*-* | erc32-*-* \
+  | m68*-*-* | x86_64*-*-* | hppa*-*-* | arm*-*-* | strongarm*-*-* \
+  | xscale*-*-* | xstormy16*-*-* | cris-*-* | xtensa-*-*)
     insn="nop"
     ;;
   ia64*-*-* | s390*-*-*)
@@ -2651,7 +2676,7 @@ fi
 AC_MSG_RESULT($gcc_cv_ld_static_dynamic)
 
 case "$target" in
-  *-*-linux*)
+  do-not-match-any-platform)
     AC_CACHE_CHECK(linker --as-needed support,
     gcc_cv_ld_as_needed,
     [gcc_cv_ld_as_needed=no
@@ -2673,6 +2698,35 @@ case "$target" in
     fi
     ;;
 esac
+
+AC_MSG_CHECKING(linker EH-compatible garbage collection of sections)
+gcc_cv_ld_eh_gc_sections=no
+if test $in_tree_ld = yes ; then
+  if test "$gcc_cv_gld_major_version" -eq 2 -a "$gcc_cv_gld_minor_version" -ge 16 -o "$gcc_cv_gld_major_version" -gt 2 \
+     && test $in_tree_ld_is_elf = yes; then
+    gcc_cv_ld_eh_gc_sections=yes
+  fi
+elif test x$gcc_cv_as != x -a x$gcc_cv_ld != x -a x$gcc_cv_objdump != x ; then
+  echo '.section .gcc_except_table.foo, "a"' > conftest.s
+  echo '.byte 0' >> conftest.s
+  if $gcc_cv_as -o conftest.o conftest.s > /dev/null 2>&1 \
+     && $gcc_cv_ld -shared -o conftest.so conftest.o > /dev/null 2>&1; then
+    if $gcc_cv_objdump -h conftest.so | grep .gcc_except_table.foo > /dev/null; then
+      gcc_cv_ld_eh_gc_sections=no
+    else
+      gcc_cv_ld_eh_gc_sections=yes
+    fi
+  fi
+changequote(,)dnl
+  rm -f conftest.*
+changequote([,])dnl
+fi
+if test x$gcc_cv_ld_eh_gc_sections = xyes; then
+	AC_DEFINE(HAVE_LD_EH_GC_SECTIONS, 1,
+  [Define if your linker supports garbage collection of
+   sections in presence of EH frames.])
+fi
+AC_MSG_RESULT($gcc_cv_ld_eh_gc_sections)
 
 if test x$with_sysroot = x && test x$host = x$target \
    && test "$prefix" != "/usr" && test "x$prefix" != "x$local_prefix" ; then

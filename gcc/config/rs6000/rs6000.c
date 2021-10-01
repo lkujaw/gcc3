@@ -64,6 +64,25 @@
 #define EASY_VECTOR_15_ADD_SELF(n) ((n) >= 0x10 && (n) <= 0x1e \
                                           && !((n) & 1))
 
+/* Define a default value for INTERRUPTS_CLOBBER_STACK.
+
+   This only applies to ABI_V4 or functions with eh_return. Define to 1
+   if interrupt handlers may clobber any part of unallocated stack, that is,
+   any word below sp.  Define to 0 otherwise.
+
+   Stack ties are used to prevent mem accesses from beeing scheduled across
+   the prologue/epilogue stack pointer adjustments.  This macro controls
+   whether we may only tie "register saves/restores" (value 0), or if we have
+   to tie any mem access so that no stack access is ever scheduled prior/past
+   the stack frame allocation/deallocation.
+
+   Note that this support has not been accepted in the FSF tree, who
+   considered this kind of interrupt handler behavior as an OS bug.  */
+
+#ifndef INTERRUPTS_CLOBBER_STACK
+#define INTERRUPTS_CLOBBER_STACK 0
+#endif
+
 #define min(A,B)	((A) < (B) ? (A) : (B))
 #define max(A,B)	((A) > (B) ? (A) : (B))
 
@@ -210,6 +229,10 @@ enum rs6000_abi rs6000_current_abi;
 /* ABI string from -mabi= option.  */
 const char *rs6000_abi_string;
 
+/* From -mrtp option (see vxworks.h).  */
+const char *rs6000_rtp_switch;
+int rs6000_rtp;
+
 /* Debug flags */
 const char *rs6000_debug_name;
 int rs6000_debug_stack;		/* debug stack applications */
@@ -278,7 +301,7 @@ static int num_insns_constant_wide (HOST_WIDE_INT);
 static void validate_condition_mode (enum rtx_code, enum machine_mode);
 static rtx rs6000_generate_compare (enum rtx_code);
 static void rs6000_maybe_dead (rtx);
-static void rs6000_emit_stack_tie (void);
+static void rs6000_emit_stack_tie (int);
 static void rs6000_frame_related (rtx, rtx, HOST_WIDE_INT, rtx, rtx);
 static rtx spe_synthesize_frame_save (rtx);
 static bool spe_func_has_64bit_regs_p (void);
@@ -383,6 +406,7 @@ static rtx spe_expand_predicate_builtin (enum insn_code, tree, rtx);
 static rtx spe_expand_evsel_builtin (enum insn_code, tree, rtx);
 static int rs6000_emit_int_cmove (rtx, rtx, rtx, rtx);
 static rs6000_stack_t *rs6000_stack_info (void);
+static HOST_WIDE_INT rs6000_get_static_stack_usage (void);
 static void debug_stack_info (rs6000_stack_t *);
 
 static rtx altivec_expand_builtin (tree, rtx, bool *);
@@ -640,6 +664,9 @@ static const char alt_reg_names[][8] =
 
 #undef TARGET_BUILD_BUILTIN_VA_LIST
 #define TARGET_BUILD_BUILTIN_VA_LIST rs6000_build_builtin_va_list
+
+#undef TARGET_GET_STATIC_STACK_USAGE
+#define TARGET_GET_STATIC_STACK_USAGE rs6000_get_static_stack_usage
 
 struct gcc_target targetm = TARGET_INITIALIZER;
 
@@ -990,6 +1017,17 @@ rs6000_override_options (const char *default_cpu)
         rs6000_sched_insert_nops = sched_finish_regroup_exact;
       else
         rs6000_sched_insert_nops = atoi (rs6000_sched_insert_nops_str);
+    }
+
+  /* Handle -mrtp.  */
+  if (rs6000_rtp_switch)
+    {
+      const char *base = rs6000_rtp_switch;
+      while (base[-1] != 'm') base--;
+
+      if (*rs6000_rtp_switch != '\0')
+	error ("invalid option `%s'", base);
+      rs6000_rtp = (base[0] != 'n');
     }
 
 #ifdef TARGET_REGNAMES
@@ -2596,6 +2634,8 @@ legitimate_offset_address_p (enum machine_mode mode, rtx x, int strict)
     return false;
   if (!INT_REG_OK_FOR_BASE_P (XEXP (x, 0), strict))
     return false;
+  if (legitimate_constant_pool_address_p (x))
+    return true;
   if (GET_CODE (XEXP (x, 1)) != CONST_INT)
     return false;
 
@@ -3231,8 +3271,10 @@ rs6000_legitimize_reload_address (rtx x, enum machine_mode mode,
       && DEFAULT_ABI == ABI_DARWIN
       && !ALTIVEC_VECTOR_MODE (mode)
       && (flag_pic || MACHO_DYNAMIC_NO_PIC_P)
-      /* Don't do this for TFmode, since the result isn't offsettable.  */
-      && mode != TFmode)
+      /* Don't do this for TFmode, since the result isn't offsettable.
+	 The same goes for DImode without 64-bit gprs.  */
+      && mode != TFmode
+      && (mode != DImode || TARGET_POWERPC64))
     {
       if (flag_pic)
 	{
@@ -3282,7 +3324,7 @@ rs6000_legitimize_reload_address (rtx x, enum machine_mode mode,
    word aligned.
 
    For modes spanning multiple registers (DFmode in 32-bit GPRs,
-   32-bit DImode, TImode), indexed addressing cannot be used because
+   32-bit DImode, TImode, TFmode), indexed addressing cannot be used because
    adjacent memory cells are accessed by adding word-sized offsets
    during assembly output.  */
 int
@@ -3313,6 +3355,7 @@ rs6000_legitimate_address (enum machine_mode mode, rtx x, int reg_ok_strict)
   if (legitimate_offset_address_p (mode, x, reg_ok_strict))
     return 1;
   if (mode != TImode
+      && mode != TFmode
       && ((TARGET_HARD_FLOAT && TARGET_FPRS)
 	  || TARGET_POWERPC64
 	  || (mode != DFmode && mode != TFmode))
@@ -3360,6 +3403,33 @@ rs6000_mode_dependent_address (rtx addr)
     }
 
   return false;
+}
+
+/* More elaborate version of recog's offsettable_memref_p predicate
+   that works around the ??? note of rs6000_mode_dependent_address.
+   In particular it accepts
+
+     (mem:DI (plus:SI (reg/f:SI 31 31) (const_int 32760 [0x7ff8])))
+
+   in 32-bit mode, that the recog predicate rejects.  */
+
+bool
+rs6000_offsettable_memref_p (rtx op)
+{
+  if (GET_CODE (op) != MEM)
+    return false;
+
+  /* First mimic offsettable_memref_p.  */
+  if (offsettable_address_p (1, GET_MODE (op), XEXP (op, 0)))
+    return true;
+
+  /* offsettable_address_p invokes rs6000_mode_dependent_address, but
+     the latter predicate knows nothing about the mode of the memory
+     reference and, therefore, assumes that it is the largest supported
+     mode (TFmode).  As a consequence, legitimate offsettable memory
+     references are rejected.  legitimate_offset_address_p contains the
+     correct logic for the PLUS case of rs6000_mode_dependent_address.  */
+  return legitimate_offset_address_p (GET_MODE (op), XEXP (op, 0), 1);
 }
 
 /* Try to output insns to set TARGET equal to the constant C if it can
@@ -3514,6 +3584,27 @@ rs6000_emit_set_long_const (rtx dest, HOST_WIDE_INT c1, HOST_WIDE_INT c2)
   return dest;
 }
 
+/* Helper for the following.  Get rid of [r+r] memory refs
+   in cases where it won't work (TImode, TFmode).  */
+
+static void
+rs6000_eliminate_indexed_memrefs (rtx operands[2])
+{
+  if (GET_CODE (operands[0]) == MEM
+      && GET_CODE (XEXP (operands[0], 0)) != REG
+      && ! reload_in_progress)
+    operands[0]
+      = replace_equiv_address (operands[0],
+			       copy_addr_to_reg (XEXP (operands[0], 0)));
+
+  if (GET_CODE (operands[1]) == MEM
+      && GET_CODE (XEXP (operands[1], 0)) != REG
+      && ! reload_in_progress)
+    operands[1]
+      = replace_equiv_address (operands[1],
+			       copy_addr_to_reg (XEXP (operands[1], 0)));
+}
+
 /* Emit a move from SOURCE to DEST in mode MODE.  */
 void
 rs6000_emit_move (rtx dest, rtx source, enum machine_mode mode)
@@ -3655,6 +3746,9 @@ rs6000_emit_move (rtx dest, rtx source, enum machine_mode mode)
       break;
 
     case TFmode:
+      rs6000_eliminate_indexed_memrefs (operands);
+      /* fall through */
+
     case DFmode:
     case SFmode:
       if (CONSTANT_P (operands[1]) 
@@ -3837,19 +3931,8 @@ rs6000_emit_move (rtx dest, rtx source, enum machine_mode mode)
       break;
 
     case TImode:
-      if (GET_CODE (operands[0]) == MEM
-	  && GET_CODE (XEXP (operands[0], 0)) != REG
-	  && ! reload_in_progress)
-	operands[0]
-	  = replace_equiv_address (operands[0],
-				   copy_addr_to_reg (XEXP (operands[0], 0)));
+      rs6000_eliminate_indexed_memrefs (operands);
 
-      if (GET_CODE (operands[1]) == MEM
-	  && GET_CODE (XEXP (operands[1], 0)) != REG
-	  && ! reload_in_progress)
-	operands[1]
-	  = replace_equiv_address (operands[1],
-				   copy_addr_to_reg (XEXP (operands[1], 0)));
       if (TARGET_POWER)
 	{
 	  emit_insn (gen_rtx_PARALLEL (VOIDmode,
@@ -10535,7 +10618,7 @@ rs6000_split_multireg_move (rtx dst, rtx src)
 			 : gen_adddi3 (breg, breg, delta_rtx));
 	      src = gen_rtx_MEM (mode, breg);
 	    }
-	  else if (! offsettable_memref_p (src))
+	  else if (! rs6000_offsettable_memref_p (src))
 	    {
 	      rtx newsrc, basereg;
 	      basereg = gen_rtx_REG (Pmode, reg);
@@ -10587,7 +10670,7 @@ rs6000_split_multireg_move (rtx dst, rtx src)
 			   : gen_adddi3 (breg, breg, delta_rtx));
 	      dst = gen_rtx_MEM (mode, breg);
 	    }
-	  else if (! offsettable_memref_p (dst))
+	  else if (! rs6000_offsettable_memref_p (dst))
 	    abort ();
 	}
 
@@ -11124,6 +11207,15 @@ rs6000_stack_info (void)
   return info_ptr;
 }
 
+/* Return the maximum static stack usage for the current function.  */
+
+static HOST_WIDE_INT
+rs6000_get_static_stack_usage (void)
+{
+  rs6000_stack_t *info = rs6000_stack_info ();
+  return info->total_size;
+}
+
 /* Return true if the current function uses any GPRs in 64-bit SIMD
    mode.  */
 
@@ -11643,15 +11735,19 @@ rs6000_aix_emit_builtin_unwind_init (void)
   emit_label (no_toc_save_needed);
 }
 
-/* This ties together stack memory (MEM with an alias set of
-   rs6000_sr_alias_set) and the change to the stack pointer.  */
+/* Emit the necessary bits to prevent scheduling of some memory accesses
+   across the prologue/epilogue stack pointer adjustments.
+
+   If CONSERVATIVE is 0, account for reg saves/restores instructions only
+   (MEMs tagged with rs6000_sr_alias_set).  Account for any possible mem
+   access otherwise.  */
 
 static void
-rs6000_emit_stack_tie (void)
+rs6000_emit_stack_tie (int conservative)
 {
   rtx mem = gen_rtx_MEM (BLKmode, gen_rtx_REG (Pmode, STACK_POINTER_REGNUM));
 
-  set_mem_alias_set (mem, rs6000_sr_alias_set);
+  set_mem_alias_set (mem, conservative ? 0 : rs6000_sr_alias_set);
   emit_insn (gen_stack_tie (mem));
 }
 
@@ -11739,6 +11835,139 @@ rs6000_emit_allocate_stack (HOST_WIDE_INT size, int copy_r12)
 				    gen_rtx_PLUS (Pmode, stack_reg,
 						  GEN_INT (-size))),
 		       REG_NOTES (insn));
+}
+
+/* Emit code to probe a range of stack addresses from FIRST to FIRST+SIZE,
+   inclusive.  These are offsets from the current stack pointer.  */
+
+static void
+rs6000_emit_probe_stack_range (HOST_WIDE_INT first, HOST_WIDE_INT size)
+{
+  if (stack_check_libfunc)
+    abort (); /* Not implemented.  */
+
+  else if (TARGET_64BIT)
+    abort (); /* Not implemented.  */
+
+  else
+    emit_insn (gen_probe_stack_range (GEN_INT (first), GEN_INT (size)));
+}
+
+/* Probe a range of stack addresses from FIRST to FIRST+SIZE, inclusive.
+   These are offsets from the current stack pointer.  */
+
+#define PROBE_INTERVAL (1 << STACK_CHECK_PROBE_INTERVAL_EXP)
+
+#if PROBE_INTERVAL > 32768
+#error Cannot use indexed addressing mode for stack probing
+#endif
+
+const char *
+output_probe_stack_range (rtx first_rtx, rtx size_rtx)
+{
+  static int labelno = 0;
+  HOST_WIDE_INT first = INTVAL (first_rtx);
+  HOST_WIDE_INT size = INTVAL (size_rtx);
+  HOST_WIDE_INT rounded_size;
+  char loop_lab[32], end_lab[32];
+
+  /* See if we have a constant small number of them to generate.  If so,
+     that's the easy case.  */
+  if (first + size <= 32768)
+    {
+      HOST_WIDE_INT i;
+
+      /* Probe at FIRST + N * PROBE_INTERVAL for values of N from 1 until
+	 it exceeds SIZE.  If only one probe is needed, this will not
+	 generate any code.  Then probe at SIZE.  */
+      for (i = PROBE_INTERVAL; i < size; i += PROBE_INTERVAL)
+	fprintf (asm_out_file, "\tstw 0,-"HOST_WIDE_INT_PRINT_DEC"(1)\n",
+		 first + i);
+
+      fprintf (asm_out_file, "\tstw 0,-"HOST_WIDE_INT_PRINT_DEC"(1)\n",
+	       first + size);
+    }
+
+  /* Otherwise, do the same as above, but in a loop.  Note that we must be
+     extra careful with variables wrapping around because we might be at
+     the very top (or the very bottom) of the address space and we have
+     to be able to handle this case properly; in particular, we use an
+     equality test for the loop condition.  */
+  else
+    {
+      /* Sanity check for the addressing mode we're going to use.  */
+      if (first > 32768)
+	abort();
+
+      /* Step 1: round SIZE to the previous multiple of the interval.  */
+
+      rounded_size = size & -PROBE_INTERVAL;
+
+
+      /* Step 2: compute initial and final value of the loop counter.  */
+
+      /* TEST_ADDR = SP + FIRST.  */
+      fprintf (asm_out_file, "\taddi 12,1,-"HOST_WIDE_INT_PRINT_DEC"\n",
+	       first);
+
+      /* LAST_ADDR = SP + FIRST + ROUNDED_SIZE.  */
+      if (rounded_size > 32768)
+	{
+	  int high = (-rounded_size) >> 16;
+	  int low = (-rounded_size) & 0xffff;
+
+	  if (high)
+	    fprintf (asm_out_file, "\tlis 0,%d\n", high);
+	  if (low)
+	    fprintf (asm_out_file, "\tori 0,0,%d\n", low);
+	  fputs ("\tadd 0,12,0\n", asm_out_file);
+	}
+      else
+	fprintf (asm_out_file, "\taddi 0,12,-"HOST_WIDE_INT_PRINT_DEC"\n",
+		 rounded_size);
+
+
+      /* Step 3: the loop
+
+        while (TEST_ADDR != LAST_ADDR)
+	  {
+	    TEST_ADDR = TEST_ADDR + PROBE_INTERVAL
+	    probe at TEST_ADDR
+	  }
+
+        probes at FIRST + N * PROBE_INTERVAL for values of N from 1
+        until it exceeds ROUNDED_SIZE.  */
+
+      ASM_GENERATE_INTERNAL_LABEL (loop_lab, "LPSRL", labelno);
+      ASM_OUTPUT_LABEL (asm_out_file, loop_lab);
+
+       /* Jump to END_LAB if TEST_ADDR == LAST_ADDR.  */
+      fputs ("\tcmpw 0,12,0\n", asm_out_file);
+      ASM_GENERATE_INTERNAL_LABEL (end_lab, "LPSRE", labelno++);
+      fputs ("\tbeq 0,", asm_out_file); assemble_name (asm_out_file, end_lab);
+      fputc ('\n', asm_out_file);
+ 
+      /* TEST_ADDR = TEST_ADDR + PROBE_INTERVAL.  */
+      fprintf (asm_out_file, "\taddi 12,12,-%d\n", PROBE_INTERVAL);
+  
+      /* Probe at TEST_ADDR and branch.  */
+      fputs ("\tstw 0,0(12)\n", asm_out_file);
+      fprintf (asm_out_file, "\tb "); assemble_name (asm_out_file, loop_lab);
+      fputc ('\n', asm_out_file);
+
+      ASM_OUTPUT_LABEL (asm_out_file, end_lab);
+
+
+      /* Step 4: probe at SIZE if we cannot assert at compile-time that
+	 it is equal to ROUNDED_SIZE.  */
+
+      /* TEMP = SIZE - ROUNDED_SIZE.  */
+      if (size != rounded_size)
+	fprintf (asm_out_file, "\tstw 0,-"HOST_WIDE_INT_PRINT_DEC"(12)\n",
+		 size - rounded_size);
+    }
+
+  return "";
 }
 
 /* Add to 'insn' a note which is PATTERN (INSN) but with REG replaced
@@ -12029,7 +12258,10 @@ rs6000_emit_prologue (void)
   int saving_FPRs_inline;
   int using_store_multiple;
   HOST_WIDE_INT sp_offset = 0;
-  
+
+  if (flag_stack_check == 2 && info->total_size)
+    rs6000_emit_probe_stack_range (STACK_CHECK_PROTECT, info->total_size);
+
    if (TARGET_SPE_ABI && info->spe_64bit_regs_used != 0)
      {
        reg_mode = V2SImode;
@@ -12061,8 +12293,8 @@ rs6000_emit_prologue (void)
 				       || info->first_fp_reg_save < 64
 				       || info->first_gp_reg_save < 32
 				       )));
-      if (frame_reg_rtx != sp_reg_rtx)
-	rs6000_emit_stack_tie ();
+      if (frame_reg_rtx != sp_reg_rtx || INTERRUPTS_CLOBBER_STACK)
+	rs6000_emit_stack_tie (INTERRUPTS_CLOBBER_STACK);
     }
 
   /* Save AltiVec registers if needed.  */
@@ -12789,8 +13021,8 @@ rs6000_emit_epilogue (int sibcall)
   if (DEFAULT_ABI == ABI_V4
       || current_function_calls_eh_return)
     {
-      if (frame_reg_rtx != sp_reg_rtx)
-	  rs6000_emit_stack_tie ();
+      if (frame_reg_rtx != sp_reg_rtx || INTERRUPTS_CLOBBER_STACK)
+	  rs6000_emit_stack_tie (INTERRUPTS_CLOBBER_STACK);
 
       if (use_backchain_to_restore_sp)
 	{

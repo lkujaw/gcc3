@@ -27,6 +27,11 @@
 # include <config.h>
 #endif
 
+#ifdef VMS
+/* Non-posix getcwd prototype is incompatible with char *getcwd() below */
+#define __POSIX_C_SOURCE
+#endif
+
 #include <sys/types.h>
 
 #ifdef __GNUC__

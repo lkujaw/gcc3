@@ -163,6 +163,7 @@ static void rest_of_handle_machine_reorg (tree, rtx);
 static void rest_of_handle_delay_slots (tree, rtx);
 #endif
 static void rest_of_handle_final (tree, rtx);
+static void rest_of_handle_stack_usage (tree);
 
 /* Nonzero to dump debug info whilst parsing (-dy option).  */
 static int set_yydebug;
@@ -345,12 +346,16 @@ static struct dump_file_info dump_file[DFI_MAX] =
 static int open_dump_file (enum dump_file_index, tree);
 static void close_dump_file (enum dump_file_index,
 			     void (*) (FILE *, rtx), rtx);
+static FILE *open_auxiliary_file (const char *);
 
 /* Other flags saying which kinds of debugging dump have been requested.  */
 
 int rtl_dump_and_exit;
 int flag_print_asm_name;
 enum graph_dump_types graph_dump_format;
+
+/* Output callgraph information on a per-file basis.  */
+int flag_callgraph_info;
 
 /* Name for output file of assembly code, specified with -o.  */
 
@@ -387,6 +392,11 @@ int flag_eliminate_dwarf2_dups = 0;
 /* Nonzero if doing unused type elimination.  */
 
 int flag_eliminate_unused_debug_types = 1;
+
+/* Nonzero means we should emit dwarf2 information including
+   the GNAT vendor extensions.  */
+
+int flag_gnat_dwarf_extensions = 0;
 
 /* Nonzero means emit debugging information only for symbols which are used.  */
 int flag_debug_only_used_symbols = 0;
@@ -889,8 +899,12 @@ int flag_zero_initialized_in_bss = 1;
 /* Tag all structures with __attribute__(packed).  */
 int flag_pack_struct = 0;
 
-/* Emit code to check for stack overflow; also may cause large objects
-   to be allocated dynamically.  */
+/* 0 no stack checking.
+   1 full middle-end stack checking.
+   2 static back-end stack checking.
+   3 full back-end stack checking.
+   Full middle-end stack checking causes large objects to be allocated
+   dynamically.  That is not the case with either (2) or (3).  */
 int flag_stack_check;
 
 /* When non-NULL, indicates that whenever space is allocated on the
@@ -901,6 +915,12 @@ int flag_stack_check;
    At present, the rtx may be either a REG or a SYMBOL_REF, although
    the support provided depends on the backend.  */
 rtx stack_limit_rtx;
+
+/* Compute stack usage information on a per-function basis.  */
+int flag_stack_usage_info;
+
+/* Output stack usage information on a per-function basis.  */
+int flag_stack_usage;
 
 /* 0 if pointer arguments may alias each other.  True in C.
    1 if pointer arguments may not alias each other but may alias
@@ -1196,6 +1216,7 @@ FILE *asm_out_file;
 FILE *aux_info_file;
 FILE *rtl_dump_file = NULL;
 FILE *cgraph_dump_file = NULL;
+FILE *stack_usage_file = NULL;
 
 /* The current working directory of a translation.  It's generally the
    directory from which compilation was initiated, but a preprocessed
@@ -1407,7 +1428,7 @@ output_quoted_string (FILE *asm_file, const char *string)
 #ifdef OUTPUT_QUOTED_STRING
   OUTPUT_QUOTED_STRING (asm_file, string);
 #else
-  char c;
+  unsigned char c;
 
   putc ('\"', asm_file);
   while ((c = *string++) != 0)
@@ -1544,6 +1565,26 @@ close_dump_file (enum dump_file_index index,
 
   rtl_dump_file = NULL;
   timevar_pop (TV_DUMP);
+}
+
+/* Routine to open an auxiliary output file.  */
+
+static FILE *
+open_auxiliary_file (const char *ext)
+{
+  char *filename;
+  char seq[16];
+  FILE *file;
+
+  sprintf (seq, DUMPFILE_FORMAT, 0);
+  seq[1] = 0;
+
+  filename = concat (aux_base_name, seq, ext, NULL);
+  file = fopen (filename, "w");
+  if (!file)
+    fatal_error ("can't open %s for writing: %m", filename);
+  free (filename);
+  return file;
 }
 
 /* Do any final processing required for the declarations in VEC, of
@@ -2075,14 +2116,14 @@ rest_of_handle_final (tree decl, rtx insns)
 #ifdef IA64_UNWIND_INFO
     /* ??? The IA-64 ".handlerdata" directive must be issued before
        the ".endp" directive that closes the procedure descriptor.  */
-    output_function_exception_table ();
+    output_function_exception_table (fnname);
 #endif
 
     assemble_end_function (decl, fnname);
 
 #ifndef IA64_UNWIND_INFO
     /* Otherwise, it feels unclean to switch sections in the middle.  */
-    output_function_exception_table ();
+    output_function_exception_table (fnname);
 #endif
 
     if (! quiet_flag)
@@ -2097,6 +2138,88 @@ rest_of_handle_final (tree decl, rtx insns)
   timevar_pop (TV_FINAL);
 
   ggc_collect ();
+}
+
+/* Output stack usage information.  */
+static void
+rest_of_handle_stack_usage (tree decl)
+{
+  static bool warning_issued = false;
+  const char *stack_usage_kind_str[] = {
+    "static",
+    "dynamic",
+    "dynamic,bounded"
+  };
+  HOST_WIDE_INT stack_usage = -1;
+  enum stack_usage_kind stack_usage_kind;
+
+  /* Rely on the back-end to compute the maximum static stack usage.
+     The back-end needs this information at one point or another to
+     reserve storage for the frame.  */
+  if (targetm.get_static_stack_usage)
+    stack_usage = targetm.get_static_stack_usage ();
+
+  if (stack_usage == -1)
+    {
+      if (!warning_issued)
+	{
+	  warning ("-fstack-usage not supported for this target");
+	  warning_issued = true;
+	}
+      return;
+    }
+
+  stack_usage_kind = STATIC;
+
+  /* Add the maximum amount of space pushed onto the stack.  */
+  if (current_function_pushed_stack_size > 0)
+    {
+      stack_usage += current_function_pushed_stack_size;
+      stack_usage_kind = DYNAMIC_BOUNDED;
+    }
+
+  /* Now on to the tricky part: dynamic stack allocation.  */
+  if (current_function_allocates_dynamic_stack_space)
+    {
+      if (current_function_has_unbounded_dynamic_stack_size)
+	stack_usage_kind = DYNAMIC;
+      else
+	stack_usage_kind = DYNAMIC_BOUNDED;
+
+      /* Add the size even in the unbounded case, this can't hurt.  */
+      stack_usage += current_function_dynamic_stack_size;
+
+#ifdef SETJMP_VIA_SAVE_AREA
+      /* The stack usage mechanism in allocate_dynamic_stack_space
+	 only accounts for the setjmp-less case.  We therefore have
+	 to add the dynamic offset for every dynamic allocation in
+	 case setjmp is invoked in the function.  */
+      if (current_function_calls_setjmp)
+	{
+	  int align = PREFERRED_STACK_BOUNDARY / BITS_PER_UNIT;
+	  int save_area_size
+	    = (get_stack_dynamic_offset (decl) + align - 1) / align * align;
+
+	  stack_usage += current_function_dynamic_alloc_count
+			   * save_area_size;
+	}
+#endif
+    }
+
+  if (flag_callgraph_info & CALLGRAPH_INFO_STACK_USAGE)
+    {
+      struct cgraph_rtl_info *cgi = cgraph_rtl_info (decl);
+      cgi->stack_usage = stack_usage;
+      cgi->stack_usage_kind = stack_usage_kind;
+    }
+
+  if (flag_stack_usage)
+    {
+      print_decl_identifier (stack_usage_file, decl,
+			     PRINT_DECL_ORIGIN | PRINT_DECL_NAME);
+      fprintf (stack_usage_file, "\t"HOST_WIDE_INT_PRINT_DEC"\t%s\n",
+	       stack_usage, stack_usage_kind_str[stack_usage_kind]);
+    }
 }
 
 #ifdef DELAY_SLOTS
@@ -3473,6 +3596,10 @@ rest_of_compilation (tree decl)
   if (optimize)
     cleanup_cfg (CLEANUP_EXPENSIVE);
 
+  /* The IA-64 port invalidates its static stack usage info right after.  */
+  if (flag_stack_usage_info)
+    rest_of_handle_stack_usage (decl);
+
   /* On some machines, the prologue and epilogue code, or parts thereof,
      can be represented as RTL.  Doing so lets us schedule insns between
      it and the rest of the code and also allows delayed branch
@@ -4534,6 +4661,10 @@ lang_dependent_init (const char *name)
 
   init_asm_output (name);
 
+  /* If stack usage information is desired, open the output file.  */
+  if (flag_stack_usage)
+    stack_usage_file = open_auxiliary_file ("su");
+
   /* These create various _DECL nodes, so need to be called after the
      front end is initialized.  */
   init_eh ();
@@ -4586,6 +4717,16 @@ finalize (void)
 	fatal_error ("error writing to %s: %m", asm_file_name);
       if (fclose (asm_out_file) != 0)
 	fatal_error ("error closing %s: %m", asm_file_name);
+    }
+
+  if (stack_usage_file)
+    fclose (stack_usage_file);
+
+  if (flag_callgraph_info)
+    {
+      FILE *file = open_auxiliary_file ("ci");
+      dump_cgraph_vcg (file);
+      fclose (file);
     }
 
   /* Do whatever is necessary to finish printing the graphs.  */

@@ -1,10 +1,12 @@
 # Multilibs for powerpc embedded ELF targets.
 
-MULTILIB_OPTIONS	= msoft-float \
+MULTILIB_OPTIONS	= mcpu=505 \
+			  msoft-float \
 			  mlittle/mbig \
 			  fleading-underscore
 
-MULTILIB_DIRNAMES	= nof \
+MULTILIB_DIRNAMES	= m505 \
+			  nof \
 			  le be \
 			  und
 

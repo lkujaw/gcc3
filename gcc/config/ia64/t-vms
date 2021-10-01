@@ -1,0 +1,56 @@
+LIB1ASMSRC    = ia64/lib1funcs.asm
+
+# We use different names for the DImode div/mod files so that they won't
+# conflict with libgcc2.c files.  We used to use __ia64 as a prefix, now
+# we use __ as the prefix.  Note that L_divdi3 in libgcc2.c actually defines
+# a TImode divide function, so there is no actual overlap here between
+# libgcc2.c and lib1funcs.asm.
+LIB1ASMFUNCS  = __divxf3 __divdf3 __divsf3 \
+	__divdi3 __moddi3 __udivdi3 __umoddi3 \
+	__divsi3 __modsi3 __udivsi3 __umodsi3 __save_stack_nonlocal \
+	__nonlocal_goto __restore_stack_nonlocal __trampoline
+
+LIB2FUNCS_EXTRA =
+
+# VMS_EXTRA_PARTS is defined in x-vms and represent object files that
+# are only needed for VMS targets, but can only be compiled on a VMS host
+# (because they need DEC C).
+EXTRA_PARTS = $(VMS_EXTRA_PARTS) crtbegin.o crtbeginS.o crtend.o crtendS.o crtinitS.o
+
+CRTSTUFF_T_CFLAGS = -O0
+CRTSTUFF_T_CFLAGS_S = -O0
+
+crtinitS.o: $(srcdir)/config/ia64/crtinit.asm $(GCC_PASSES)
+	$(GCC_FOR_TARGET) -I. -c -o crtinitS.o -x assembler-with-cpp \
+		$(srcdir)/config/ia64/crtinit.asm
+
+# LIB2ADDEH = $(srcdir)/unwind-sjlj.c
+LIB2ADDEH = $(srcdir)/config/ia64/unwind-ia64.c $(srcdir)/unwind-sjlj.c \
+  $(srcdir)/unwind-c.c $(srcdir)/config/ia64/fde-vms.c $(srcdir)/gthr-gnat.c
+
+# ??? Hack to get -P option used when compiling lib1funcs.asm, because Intel
+# assembler does not accept # line number as a comment.
+# ??? This breaks C++ pragma interface/implementation, which is used in the
+# C++ part of libgcc2, hence it had to be disabled.  Must find some other way
+# to support the Intel assembler.
+#LIBGCC2_DEBUG_CFLAGS = -g1 -P
+
+# genattrtab generates very long string literals.
+insn-attrtab.o-warn = -Wno-error
+
+# Skip more bytes in compare to account for time stamp in object file header
+skip_bytes = 512
+
+# Shared library macros
+shlib_version:=$(shell echo $(gcc_version) | sed -e 's/\./,/' -e 's/\.//g')
+SHLIB_EXT = .exe
+SHLIB_OBJS = @shlib_objs@
+SHLIB_NAME = @shlib_dir@@shlib_base_name@.exe
+SHLIB_MULTILIB =
+SHLIB_INSTALL = $(INSTALL_DATA) $(SHLIB_NAME) $$(DESTDIR)$$(libsubdir)/$(SHLIB_ NAME)
+SHLIB_LINK = \
+  $(GCC_FOR_TARGET) $(LIBGCC2_CFLAGS) -nodefaultlibs \
+  -shared --for-linker=/noinform -o $(SHLIB_NAME) $(SHLIB_OBJS) \
+  --for-linker=$(srcdir)/config/ia64/VMS_SYMVEC_@shlib_base_name@.opt \
+  --for-linker=gsmatch=equal,$(shlib_version)
+

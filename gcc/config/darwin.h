@@ -274,8 +274,9 @@ Boston, MA 02111-1307, USA.  */
 
 /* Machine dependent libraries.  */
 
-#undef	LIB_SPEC
+#ifndef LIB_SPEC
 #define LIB_SPEC "%{!static:-lSystem}"
+#endif
 
 /* We specify crt0.o as -lcrt0.o so that ld will search the library path.  */
 
@@ -299,6 +300,10 @@ Boston, MA 02111-1307, USA.  */
 /* We use Dbx symbol format.  */
 
 #define DBX_DEBUGGING_INFO 1
+
+/* When generating stabs debugging, ensure S_FUN stabs appear before the
+   rest of a function, for the sake of addr2line.  */
+#define DBX_FUNCTION_FIRST
 
 /* When generating stabs debugging, use N_BINCL entries.  */
 
@@ -835,3 +840,8 @@ enum machopic_addr_class {
 #define ASM_APP_ON ""
 #undef ASM_APP_OFF
 #define ASM_APP_OFF ""
+
+/* Darwin before 7.0 does not have C99 functions.   */
+#ifndef TARGET_C99_FUNCTIONS
+#define TARGET_C99_FUNCTIONS 0
+#endif

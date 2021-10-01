@@ -70,6 +70,9 @@ struct gcc_debug_hooks
      function.  */
   void (* end_prologue) (unsigned int line, const char *file);
 
+  /* Called at beginning of epilogue code. */
+  void (* begin_epilogue) (unsigned int line, const char *file);
+
   /* Record end of epilogue code.  */
   void (* end_epilogue) (unsigned int line, const char *file);
 
@@ -131,6 +134,8 @@ extern const struct gcc_debug_hooks vmsdbg_debug_hooks;
 /* Dwarf2 frame information.  */
 
 extern void dwarf2out_begin_prologue (unsigned int, const char *);
+extern void dwarf2out_end_prologue (unsigned int, const char *);
+extern void dwarf2out_begin_epilogue (unsigned int, const char *);
 extern void dwarf2out_end_epilogue (unsigned int, const char *);
 extern void dwarf2out_frame_init (void);
 extern void dwarf2out_frame_finish (void);

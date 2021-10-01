@@ -2246,7 +2246,7 @@ warn_if_unused_value (tree exp)
       return warn_if_unused_value (TREE_OPERAND (exp, 1));
 
     case SAVE_EXPR:
-      return warn_if_unused_value (TREE_OPERAND (exp, 1));
+      return warn_if_unused_value (TREE_OPERAND (exp, 0));
 
     case TRUTH_ORIF_EXPR:
     case TRUTH_ANDIF_EXPR:
@@ -3976,9 +3976,9 @@ expand_decl (tree decl)
     }
 
   else if (TREE_CODE (DECL_SIZE_UNIT (decl)) == INTEGER_CST
-	   && ! (flag_stack_check && ! STACK_CHECK_BUILTIN
-		 && 0 < compare_tree_int (DECL_SIZE_UNIT (decl),
-					  STACK_CHECK_MAX_VAR_SIZE)))
+	   && ! (flag_stack_check == 1
+		 && compare_tree_int (DECL_SIZE_UNIT (decl),
+				      STACK_CHECK_MAX_VAR_SIZE) > 0))
     {
       /* Variable of fixed size that goes on the stack.  */
       rtx oldaddr = 0;
@@ -4036,9 +4036,12 @@ expand_decl (tree decl)
       /* Allocate space on the stack for the variable.  Note that
 	 DECL_ALIGN says how the variable is to be aligned and we
 	 cannot use it to conclude anything about the alignment of
-	 the size.  */
+	 the size.  We can pass TRUE as the 4th argument because
+	 the above call to save_stack_pointer will arrange for
+	 restoring its value when the current block is exited.  */
       address = allocate_dynamic_stack_space (size, NULL_RTX,
-					      TYPE_ALIGN (TREE_TYPE (decl)));
+					      TYPE_ALIGN (TREE_TYPE (decl)),
+					      TRUE);
 
       /* Reference the variable indirect through that rtx.  */
       x = gen_rtx_MEM (DECL_MODE (decl), address);
@@ -4611,8 +4614,12 @@ pushcase_range (tree value1, tree value2, tree (*converter) (tree, tree),
     value2 = TYPE_MAX_VALUE (index_type);
 
   /* Fail if the range is empty.  Do this before any conversion since
-     we want to allow out-of-range empty ranges.  */
-  if (value2 != 0 && tree_int_cst_lt (value2, value1))
+     we want to allow out-of-range empty ranges.  Guard against the
+     case where a previous error leads to a bogus nonconstant bound,
+     by considering the range empty in that case. */
+  if ((value1 != 0 && TREE_CODE (value1) != INTEGER_CST)
+      || (value2 != 0 && TREE_CODE (value2) != INTEGER_CST)
+      || (value2 != 0 && tree_int_cst_lt (value2, value1)))
     return 4;
 
   /* If the max was unbounded, use the max of the nominal_type we are

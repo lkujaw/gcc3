@@ -148,7 +148,7 @@ _Unwind_IteratePhdrCallback (struct dl_phdr_info *info, size_t size, void *ptr)
 
 struct unw_table_entry *
 _Unwind_FindTableEntry (void *pc, unsigned long *segment_base,
-                        unsigned long *gp)
+                        unsigned long *gp, struct unw_table_entry *ent)
 {
   struct unw_ia64_callback_data data;
 

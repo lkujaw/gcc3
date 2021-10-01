@@ -81,6 +81,11 @@ Software Foundation, 59 Temple Place - Suite 330, Boston, MA
 #define EH_RETURN_DATA_REGNO(N) INVALID_REGNUM
 #endif
 
+/* The size of the target's pointer type.  */
+#ifndef PTR_SIZE
+#define PTR_SIZE (POINTER_SIZE / BITS_PER_UNIT)
+#endif
+
 
 /* Nonzero means enable synchronous exceptions for non-call instructions.  */
 int flag_non_call_exceptions;
@@ -3577,7 +3582,7 @@ sjlj_output_call_site_table (void)
    table.  */
 
 void
-default_exception_section (void)
+default_exception_section (const char *fnname ATTRIBUTE_UNUSED)
 {
   if (targetm.have_named_sections)
     {
@@ -3592,7 +3597,17 @@ default_exception_section (void)
 #else
       flags = SECTION_WRITE;
 #endif
-      named_section_flags (".gcc_except_table", flags);
+#ifdef HAVE_LD_EH_GC_SECTIONS
+      if (flag_function_sections)
+	{
+	  char *section_name = xmalloc (strlen (fnname) + 32);
+	  sprintf (section_name, ".gcc_except_table.%s", fnname);
+	  named_section_flags (section_name, flags);
+	  free (section_name);
+	}
+      else
+#endif
+	named_section_flags (".gcc_except_table", flags);
     }
   else if (flag_pic)
     data_section ();
@@ -3601,9 +3616,10 @@ default_exception_section (void)
 }
 
 void
-output_function_exception_table (void)
+output_function_exception_table (const char *fnname ATTRIBUTE_UNUSED)
 {
   int tt_format, cs_format, lp_format, i, n;
+  char llsda_label[32];
 #ifdef HAVE_AS_LEB128
   char ttype_label[32];
   char cs_after_size_label[32];
@@ -3619,13 +3635,19 @@ output_function_exception_table (void)
     return;
 
 #ifdef IA64_UNWIND_INFO
+  fputs ("\t.type\t", asm_out_file);
+  output_addr_const (asm_out_file, eh_personality_libfunc);
+  fputs (", @function", asm_out_file);
+  fputs ("\n\t.global\t", asm_out_file);
+  output_addr_const (asm_out_file, eh_personality_libfunc);
+  fputs ("\n", asm_out_file);
   fputs ("\t.personality\t", asm_out_file);
   output_addr_const (asm_out_file, eh_personality_libfunc);
   fputs ("\n\t.handlerdata\n", asm_out_file);
   /* Note that varasm still thinks we're in the function's code section.
      The ".endp" directive that will immediately follow will take us back.  */
 #else
-  (*targetm.asm_out.exception_section) ();
+  (*targetm.asm_out.exception_section) (fnname);
 #endif
 
   have_tt_data = (VARRAY_ACTIVE_SIZE (cfun->eh->ttype_data) > 0
@@ -3646,8 +3668,9 @@ output_function_exception_table (void)
       assemble_align (tt_format_size * BITS_PER_UNIT);
     }
 
-  (*targetm.asm_out.internal_label) (asm_out_file, "LLSDA",
-			     current_function_funcdef_no);
+  ASM_GENERATE_INTERNAL_LABEL (llsda_label, "LLSDA",
+			       current_function_funcdef_no);
+  ASM_OUTPUT_LABEL (asm_out_file, llsda_label);
 
   /* The LSDA header.  */
 
@@ -3758,6 +3781,7 @@ output_function_exception_table (void)
     {
       tree type = VARRAY_TREE (cfun->eh->ttype_data, i);
       rtx value;
+      bool public = true;
 
       if (type == NULL_TREE)
 	value = const0_rtx;
@@ -3777,6 +3801,7 @@ output_function_exception_table (void)
 	      node = cgraph_varpool_node (type);
 	      if (node)
 		cgraph_varpool_mark_needed_node (node);
+	      public = TREE_PUBLIC (type);
 	    }
 	  else if (TREE_CODE (type) != INTEGER_CST)
 	    abort ();
@@ -3786,7 +3811,7 @@ output_function_exception_table (void)
 	assemble_integer (value, tt_format_size,
 			  tt_format_size * BITS_PER_UNIT, 1);
       else
-	dw2_asm_output_encoded_addr_rtx (tt_format, value, NULL);
+	dw2_asm_output_encoded_addr_rtx (tt_format, value, public, NULL);
     }
 
 #ifdef HAVE_AS_LEB128
@@ -3801,6 +3826,16 @@ output_function_exception_table (void)
 			 (i ? NULL : "Exception specification table"));
 
   function_section (current_function_decl);
+
+#ifdef HAVE_LD_EH_GC_SECTIONS
+  /* Make the function reference its exception table so that the latter
+     cannot be discarded by the linker unless the function itself is
+     discarded.  */
+  if (targetm.have_named_sections && flag_function_sections)
+    dw2_asm_output_addr (PTR_SIZE,
+			 llsda_label,
+			 "Explicit reference to the table");
+#endif
 }
 
 #include "gt-except.h"

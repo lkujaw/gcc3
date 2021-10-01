@@ -1621,7 +1621,9 @@ noce_try_abs (struct noce_if_info *if_info)
   if (no_new_pseudos)
     return FALSE;
 
-  /* Recognize A and B as constituting an ABS or NABS.  */
+  /* Recognize A and B as constituting an ABS or NABS.  The canonical
+     form is a branch around the negation, taken when the object is the
+     first operand of a comparison against 0 that evaluates to true.  */
   a = if_info->a;
   b = if_info->b;
   if (GET_CODE (a) == NEG && rtx_equal_p (XEXP (a, 0), b))
@@ -1642,25 +1644,30 @@ noce_try_abs (struct noce_if_info *if_info)
   if (rtx_equal_p (XEXP (cond, 0), b))
     c = XEXP (cond, 1);
   else if (rtx_equal_p (XEXP (cond, 1), b))
-    c = XEXP (cond, 0);
+    {
+      c = XEXP (cond, 0);
+      negate = !negate;
+    }
   else
     return FALSE;
 
-  /* Verify that C is zero.  Search backward through the block for
-     a REG_EQUAL note if necessary.  */
+  /* Verify that C is zero.  Search one step backward for a
+     REG_EQUAL note or a simple source if necessary.  */
   if (REG_P (c))
     {
-      rtx insn, note = NULL;
-      for (insn = earliest;
-	   insn != BB_HEAD (if_info->test_bb);
-	   insn = PREV_INSN (insn))
-	if (INSN_P (insn)
-	    && ((note = find_reg_note (insn, REG_EQUAL, c))
-		|| (note = find_reg_note (insn, REG_EQUIV, c))))
-	  break;
-      if (! note)
+      rtx insn, set;
+      if ((insn = PREV_INSN (earliest)) != NULL_RTX
+	  && (set = single_set (insn)) != NULL_RTX
+	  && rtx_equal_p (SET_DEST (set), c))
+	{
+	  rtx note = find_reg_equal_equiv_note (insn);
+	  if (note)
+	    c = XEXP (note, 0);
+	  else
+	    c = SET_SRC (set);
+	}
+      else
 	return FALSE;
-      c = XEXP (note, 0);
     }
   if (GET_CODE (c) == MEM
       && GET_CODE (XEXP (c, 0)) == SYMBOL_REF

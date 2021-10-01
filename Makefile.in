@@ -23504,8 +23504,21 @@ gcc-no-fixedincludes:
 	  mv gcc/include gcc/tmp-include 2>/dev/null; \
 	  mkdir gcc/include; \
 	  cp $(srcdir)/gcc/gsyslimits.h gcc/include/syslimits.h; \
+	  mv gcc/stmp-fixinc gcc/stmp-fixinc-orig; \
 	  touch gcc/stmp-fixinc gcc/include/fixed; \
-	  rm -f gcc/stmp-headers gcc/stmp-int-hdrs; \
+	  mv gcc/stmp-int-hdrs gcc/stmp-int-hdrs-orig; \
+	  mv gcc/stmp-headers gcc/stmp-headers-orig; \
+	  r=`${PWD_COMMAND}`; export r; \
+	  s=`cd $(srcdir); ${PWD_COMMAND}` ; export s; \
+	  $(SET_LIB_PATH) \
+	  (cd ./gcc && \
+	   $(MAKE) $(GCC_FLAGS_TO_PASS) stmp-int-hdrs); \
+	  mv gcc/stmp-fixinc-orig gcc/stmp-fixinc; \
+	  mv gcc/stmp-int-hdrs-orig gcc/stmp-int-hdrs; \
+	  mv gcc/stmp-headers-orig gcc/stmp-headers; \
+	  true; \
+	else true; fi
+	@if [ -f ./gcc/Makefile ]; then \
 	  r=`${PWD_COMMAND}`; export r; \
 	  s=`cd $(srcdir); ${PWD_COMMAND}` ; export s; \
 	  $(SET_LIB_PATH) \

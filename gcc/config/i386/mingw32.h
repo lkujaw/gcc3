@@ -58,7 +58,8 @@ Boston, MA 02111-1307, USA.  */
   %{shared: %{mdll: %eshared and mdll are not compatible}} \
   %{shared: --shared} %{mdll:--dll} \
   %{static:-Bstatic} %{!static:-Bdynamic} \
-  %{shared|mdll: -e _DllMainCRTStartup@12}"
+  %{shared|mdll: -e _DllMainCRTStartup@12} \
+  --enable-auto-import --enable-runtime-pseudo-reloc"
 
 /* Include in the mingw32 libraries with libgcc */
 #undef LIBGCC_SPEC
@@ -67,40 +68,17 @@ Boston, MA 02111-1307, USA.  */
 
 #undef STARTFILE_SPEC
 #define STARTFILE_SPEC "%{shared|mdll:dllcrt2%O%s} \
-  %{!shared:%{!mdll:crt2%O%s}} %{pg:gcrt2%O%s}"
+  %{!shared:%{!mdll:crt2%O%s}} %{pg:gcrt2%O%s}  \
+  %{!fno-exceptions:crtbegin%O%s}"
+
+#undef ENDFILE_SPEC
+#define ENDFILE_SPEC "%{!fno-exceptions:crtend%O%s}"
 
 /* An additional prefix to try after the standard prefixes.  */
 #undef MD_STARTFILE_PREFIX
 #define MD_STARTFILE_PREFIX "/mingw/lib/"
 
-/* Output STRING, a string representing a filename, to FILE.
-   We canonicalize it to be in Unix format (backslashes are replaced
-   forward slashes.  */
-#undef OUTPUT_QUOTED_STRING
-#define OUTPUT_QUOTED_STRING(FILE, STRING)               \
-do {						         \
-  char c;					         \
-						         \
-  putc ('\"', asm_file);			         \
-						         \
-  while ((c = *string++) != 0)			         \
-    {						         \
-      if (c == '\\')				         \
-	c = '/';				         \
-						         \
-      if (ISPRINT (c))                                   \
-        {                                                \
-          if (c == '\"')			         \
-	    putc ('\\', asm_file);		         \
-          putc (c, asm_file);			         \
-        }                                                \
-      else                                               \
-        fprintf (asm_file, "\\%03o", (unsigned char) c); \
-    }						         \
-						         \
-  putc ('\"', asm_file);			         \
-} while (0)
-
 /* Define as short unsigned for compatibility with MS runtime.  */
 #undef WINT_TYPE
 #define WINT_TYPE "short unsigned int"
+

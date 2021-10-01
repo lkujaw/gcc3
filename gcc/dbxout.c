@@ -386,6 +386,7 @@ const struct gcc_debug_hooks dbx_debug_hooks =
   dbxout_source_line,		/* source_line */
   dbxout_source_line,		/* begin_prologue: just output line info */
   debug_nothing_int_charstar,	/* end_prologue */
+  debug_nothing_int_charstar,	/* begin_epilogue */
   debug_nothing_int_charstar,	/* end_epilogue */
 #ifdef DBX_FUNCTION_FIRST
   dbxout_begin_function,
@@ -417,6 +418,7 @@ const struct gcc_debug_hooks xcoff_debug_hooks =
   xcoffout_source_line,
   xcoffout_begin_prologue,	/* begin_prologue */
   debug_nothing_int_charstar,	/* end_prologue */
+  debug_nothing_int_charstar,	/* begin_epilogue */
   xcoffout_end_epilogue,
   debug_nothing_tree,		/* begin_function */
   xcoffout_end_function,
@@ -3014,10 +3016,37 @@ dbxout_reg_parms (tree parms)
 
 	/* Report parms that live in registers during the function
 	   but were passed in memory.  */
-	if (GET_CODE (DECL_RTL (parms)) == REG
-	    && REGNO (DECL_RTL (parms)) < FIRST_PSEUDO_REGISTER)
-	  dbxout_symbol_location (parms, TREE_TYPE (parms),
-				  0, DECL_RTL (parms));
+	if (GET_CODE (DECL_RTL (parms)) == REG)
+	  {
+	    if (REGNO (DECL_RTL (parms)) < FIRST_PSEUDO_REGISTER)
+	      dbxout_symbol_location (parms, TREE_TYPE (parms),
+				    0, DECL_RTL (parms));
+	    else
+	      {
+		/* Here, we are looking at where the parameter lives. This is
+	           normally indicated by DECL_RTL. However, when optimization
+		   is enabled, this might contain a pseudo-reg (this is the
+	           case here, see test above.
+	           In this case, we can use DECL_INCOMING_RTL as the source
+	           for this information, in certain limited cases. For a full
+	           explanations of the heuristics used, see file dwarf2out.c,
+	           function rtl_for_decl_location.  */
+
+	        tree declared_type = TYPE_MAIN_VARIANT (TREE_TYPE (parms));
+	        tree passed_type = TYPE_MAIN_VARIANT (DECL_ARG_TYPE (parms));
+
+	        if (declared_type == passed_type)
+	          dbxout_symbol_location (parms, TREE_TYPE (parms),
+	                                  0, DECL_INCOMING_RTL (parms));
+	        else if (! BYTES_BIG_ENDIAN
+	                 && ((TREE_CODE (declared_type) == INTEGER_TYPE)
+	                     || (TREE_CODE (declared_type) == ENUMERAL_TYPE))
+	                 && (GET_MODE_SIZE (TYPE_MODE (declared_type))
+	                      <= GET_MODE_SIZE (TYPE_MODE (passed_type))))
+	          dbxout_symbol_location (parms, TREE_TYPE (parms),
+                                          0, DECL_INCOMING_RTL (parms));
+	      }
+	  }
 	else if (GET_CODE (DECL_RTL (parms)) == CONCAT)
 	  dbxout_symbol_location (parms, TREE_TYPE (parms),
 				  0, DECL_RTL (parms));

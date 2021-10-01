@@ -33,5 +33,3 @@ Boston, MA 02111-1307, USA.  */
 
 .section	.eh_frame,NOWRT
 		.align 0
-		.global __EH_FRAME_BEGIN__
-__EH_FRAME_BEGIN__:

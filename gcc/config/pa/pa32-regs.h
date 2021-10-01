@@ -236,6 +236,11 @@
    Instead use the identity mapping.  */
 #define DWARF_FRAME_REGNUM(REG) REG
 
+/* Alternate dwarf return column, useful for unwinding through signal
+   frames since return addresses are passed in a general register that
+   we need to restore.  */
+#define DWARF_ALT_FRAME_RETURN_COLUMN (FIRST_PSEUDO_REGISTER)
+
 /* Define the classes of registers for register constraints in the
    machine description.  Also define ranges of constants.
 

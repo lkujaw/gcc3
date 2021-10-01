@@ -318,6 +318,10 @@
 /* Define if your linker supports --eh-frame-hdr option. */
 #undef HAVE_LD_EH_FRAME_HDR
 
+/* Define if your linker supports garbage collection of sections in presence
+   of EH frames. */
+#undef HAVE_LD_EH_GC_SECTIONS
+
 /* Define if your linker supports -pie option. */
 #undef HAVE_LD_PIE
 

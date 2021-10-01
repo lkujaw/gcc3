@@ -27,6 +27,10 @@ Foundation, 59 Temple Place - Suite 330, Boston, MA 02111-1307, USA.  */
 #include "c-common.h"		/* For flags.  */
 #include "c-pragma.h"		/* For parse_in.  */
 
+#ifndef ASM_COMMENT_START
+#define ASM_COMMENT_START "#"
+#endif
+
 /* Encapsulates state used to convert a stream of tokens into a text
    file.  */
 static struct
@@ -243,9 +247,16 @@ print_line (const struct line_map *map, fileline line, const char *special_flags
       p = cpp_quote_string (to_file_quoted,
 			    (unsigned char *)map->to_file, to_file_len);
       *p = '\0';
-      fprintf (print.outf, "# %u \"%s\"%s",
-	       SOURCE_LINE (map, print.line),
-	       to_file_quoted, special_flags);
+
+      if (cpp_get_options (parse_in)->lang == CLK_ASM)
+	fprintf (print.outf, "%s %u \"%s\"%s",
+		 ASM_COMMENT_START,
+		 SOURCE_LINE (map, print.line),
+	         to_file_quoted, special_flags);
+      else
+	fprintf (print.outf, "# %u \"%s\"%s",
+		 SOURCE_LINE (map, print.line),
+		 to_file_quoted, special_flags);
 
       if (map->sysp == 2)
 	fputs (" 3 4", print.outf);
@@ -347,7 +358,10 @@ pp_dir_change (cpp_reader *pfile ATTRIBUTE_UNUSED, const char *dir)
   /* cpp_quote_string does not nul-terminate, so we have to do it ourselves. */
   p = cpp_quote_string (to_file_quoted, (unsigned char *) dir, to_file_len);
   *p = '\0';
-  fprintf (print.outf, "# 1 \"%s//\"\n", to_file_quoted);
+  if (cpp_get_options (parse_in)->lang == CLK_ASM)
+    fprintf (print.outf, "%s 1 \"%s//\"\n", ASM_COMMENT_START, to_file_quoted);
+  else
+    fprintf (print.outf, "# 1 \"%s//\"\n", to_file_quoted);
 }
 
 /* The file name, line number or system header flags have changed, as

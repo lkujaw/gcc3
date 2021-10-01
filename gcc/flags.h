@@ -567,9 +567,19 @@ extern int flag_argument_noalias;
    if alias analysis (in general) is enabled.  */
 extern int flag_strict_aliasing;
 
-/* Emit code to probe the stack, to help detect stack overflow; also
-   may cause large objects to be allocated dynamically.  */
+/* 0 no stack checking.
+   1 full middle-end stack checking.
+   2 static back-end stack checking.
+   3 full back-end stack checking.
+   Full middle-end stack checking causes large objects to be allocated
+   dynamically.  That is not the case with either (2) or (3).  */
 extern int flag_stack_check;
+
+/* Compute stack usage information on a per-function basis.  */
+extern int flag_stack_usage_info;
+
+/* Output stack usage information on a per-function basis.  */
+extern int flag_stack_usage;
 
 /* Do the full regmove optimization pass.  */
 extern int flag_regmove;
@@ -653,6 +663,11 @@ enum graph_dump_types
 };
 extern enum graph_dump_types graph_dump_format;
 
+/* Output callgraph information on a per-file basis.  */
+#define CALLGRAPH_INFO_NAKED        0x1
+#define CALLGRAPH_INFO_STACK_USAGE  0x2
+extern int flag_callgraph_info;
+
 /* Nonzero means ignore `#ident' directives.  0 means handle them.
    On SVR4 targets, it also controls whether or not to emit a
    string identifying the compiler.  */
@@ -697,6 +712,11 @@ extern int flag_eliminate_dwarf2_dups;
 /* Nonzero means we should do unused type elimination.  */
 
 extern int flag_eliminate_unused_debug_types;
+
+/* Nonzero means we should emit dwarf2 information including
+   the GNAT vendor extensions.  */
+
+extern int flag_gnat_dwarf_extensions;
 
 /* Nonzero means to collect statistics which might be expensive
    and to print them when we are done.  */

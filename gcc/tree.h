@@ -62,6 +62,10 @@ extern const char tree_code_type[];
 
 #define EXPR_P(NODE) IS_EXPR_CODE_CLASS (TREE_CODE_CLASS (TREE_CODE (NODE)))
 
+/* Returns nonzero iff NODE represents a reference.  */
+
+#define REFERENCE_CLASS_P(NODE) (TREE_CODE_CLASS (TREE_CODE (NODE)) == 'r')
+
 /* Number of argument-words in each kind of tree-node.  */
 
 extern const unsigned char tree_code_length[];
@@ -140,7 +144,7 @@ struct tree_common GTY(())
   unsigned readonly_flag : 1;
   unsigned unsigned_flag : 1;
   unsigned asm_written_flag: 1;
-  unsigned unused_0 : 1;
+  unsigned nowarning_flag : 1;
 
   unsigned used_flag : 1;
   unsigned nothrow_flag : 1;
@@ -188,6 +192,8 @@ struct tree_common GTY(())
        CLEANUP_EH_ONLY in
            TARGET_EXPR, WITH_CLEANUP_EXPR, CLEANUP_STMT,
 	   TREE_LIST elements of a block's cleanup list.
+       TYPE_REF_CAN_ALIAS_ALL in
+           POINTER_TYPE, REFERENCE_TYPE
 
    public_flag:
 
@@ -268,6 +274,10 @@ struct tree_common GTY(())
 	TREE_DEPRECATED in
 	   ..._DECL
 
+   nowarning_flag:
+
+       TREE_NO_WARNING in
+           ... any expr or decl node
 */
 
 /* Define accessors for the fields that all tree nodes have
@@ -453,6 +463,10 @@ extern void tree_operand_check_failed (int, enum tree_code,
   (TREE_CODE (TYPE) == INTEGER_TYPE || TREE_CODE (TYPE) == ENUMERAL_TYPE  \
    || TREE_CODE (TYPE) == BOOLEAN_TYPE || TREE_CODE (TYPE) == CHAR_TYPE)
 
+/* Nonzero if type represents a vector type.  */
+
+#define VECTOR_TYPE_P(TYPE) (TREE_CODE (TYPE) == VECTOR_TYPE)
+
 /* Nonzero if TYPE represents a scalar floating-point type.  */
 
 #define SCALAR_FLOAT_TYPE_P(TYPE) (TREE_CODE (TYPE) == REAL_TYPE)
@@ -547,6 +561,10 @@ extern void tree_operand_check_failed (int, enum tree_code,
    this string as an argument.  */
 #define TREE_SYMBOL_REFERENCED(NODE) \
   (IDENTIFIER_NODE_CHECK (NODE)->common.static_flag)
+
+/* Nonzero in a pointer or reference type means the data pointed to
+   by this type can alias anything.  */
+#define TYPE_REF_CAN_ALIAS_ALL(NODE) ((NODE)->common.static_flag)
 
 /* In an INTEGER_CST, REAL_CST, COMPLEX_CST, or VECTOR_CST, this means
    there was an overflow in folding, and no warning has been issued
@@ -647,6 +665,12 @@ extern void tree_operand_check_failed (int, enum tree_code,
 /* Nonzero in an IDENTIFIER_NODE if the use of the name is defined as a
    deprecated feature by __attribute__((deprecated)).  */
 #define TREE_DEPRECATED(NODE) ((NODE)->common.deprecated_flag)
+
+/* In an expr node (usually a conversion) this means the node was made
+   implicitly and should not lead to any sort of warning.  In a decl node,
+   warnings concerning the decl should be suppressed.  This is used at
+   least for used-before-set warnings.  */
+#define TREE_NO_WARNING(NODE) ((NODE)->common.nowarning_flag)
 
 /* These flags are available for each language front end to use internally.  */
 #define TREE_LANG_FLAG_0(NODE) ((NODE)->common.lang_flag_0)
@@ -938,6 +962,8 @@ struct tree_block GTY(())
 #define TYPE_OFFSET_BASETYPE(NODE) (TYPE_CHECK (NODE)->type.maxval)
 #define TYPE_POINTER_TO(NODE) (TYPE_CHECK (NODE)->type.pointer_to)
 #define TYPE_REFERENCE_TO(NODE) (TYPE_CHECK (NODE)->type.reference_to)
+#define TYPE_NEXT_PTR_TO(NODE) (POINTER_TYPE_CHECK (NODE)->type.minval)
+#define TYPE_NEXT_REF_TO(NODE) (REFERENCE_TYPE_CHECK (NODE)->type.minval)
 #define TYPE_MIN_VALUE(NODE) (TYPE_CHECK (NODE)->type.minval)
 #define TYPE_MAX_VALUE(NODE) (TYPE_CHECK (NODE)->type.maxval)
 #define TYPE_PRECISION(NODE) (TYPE_CHECK (NODE)->type.precision)
@@ -1052,6 +1078,7 @@ struct tree_block GTY(())
 
 /* If set in an ARRAY_TYPE, indicates a string type (for languages
    that distinguish string from array of char).
+   If set in an INTEGER_TYPE, indicates a character type.
    If set in a SET_TYPE, indicates a bitstring type.  */
 #define TYPE_STRING_FLAG(NODE) (TYPE_CHECK (NODE)->type.string_flag)
 
@@ -2129,9 +2156,9 @@ extern tree make_unsigned_type (int);
 extern void initialize_sizetypes (void);
 extern void set_sizetype (tree);
 extern void fixup_unsigned_type (tree);
-extern tree build_pointer_type_for_mode (tree, enum machine_mode);
+extern tree build_pointer_type_for_mode (tree, enum machine_mode, bool);
 extern tree build_pointer_type (tree);
-extern tree build_reference_type_for_mode (tree, enum machine_mode);
+extern tree build_reference_type_for_mode (tree, enum machine_mode, bool);
 extern tree build_reference_type (tree);
 extern tree build_type_no_quals (tree);
 extern tree build_index_type (tree);
@@ -2357,7 +2384,6 @@ typedef struct record_layout_info_s
   int packed_maybe_necessary;
 } *record_layout_info;
 
-extern void set_lang_adjust_rli (void (*) (record_layout_info));
 extern record_layout_info start_record_layout (tree);
 extern tree bit_from_pos (tree, tree);
 extern tree byte_from_pos (tree, tree);
@@ -2903,6 +2929,10 @@ extern void print_node (FILE *, const char *, tree, int);
 extern void print_node_brief (FILE *, const char *, tree, int);
 extern void indent_to (FILE *, int);
 #endif
+extern void print_decl_identifier (FILE *, tree, int flags);
+#define PRINT_DECL_ORIGIN       0x1
+#define PRINT_DECL_NAME         0x2
+#define PRINT_DECL_UNIQUE_NAME  0x4
 
 /* In expr.c */
 extern int apply_args_register_offset (int);

@@ -111,6 +111,7 @@ static void store_reg (int, HOST_WIDE_INT, int);
 static void store_reg_modify (int, int, HOST_WIDE_INT);
 static void load_reg (int, HOST_WIDE_INT, int);
 static void set_reg_plus_d (int, int, HOST_WIDE_INT, int);
+static HOST_WIDE_INT pa_get_static_stack_usage (void);
 static void pa_output_function_prologue (FILE *, HOST_WIDE_INT);
 static void update_total_code_bytes (int);
 static void pa_output_function_epilogue (FILE *, HOST_WIDE_INT);
@@ -248,6 +249,9 @@ static size_t n_deferred_plabels = 0;
 
 #undef TARGET_INIT_BUILTINS
 #define TARGET_INIT_BUILTINS pa_init_builtins
+
+#undef TARGET_GET_STATIC_STACK_USAGE
+#define TARGET_GET_STATIC_STACK_USAGE pa_get_static_stack_usage
 
 #undef TARGET_RTX_COSTS
 #define TARGET_RTX_COSTS hppa_rtx_costs
@@ -3642,6 +3646,15 @@ compute_frame_size (HOST_WIDE_INT size, int *fregs_live)
 	  & ~(PREFERRED_STACK_BOUNDARY / BITS_PER_UNIT - 1));
 }
 
+/* Return the maximum static stack usage for the current function.  */
+
+static HOST_WIDE_INT
+pa_get_static_stack_usage (void)
+{
+  int fregs_live;
+  return compute_frame_size (get_frame_size (), &fregs_live);
+}
+
 /* Generate the assembly code for function entry.  FILE is a stdio
    stream to output the code to.  SIZE is an int: how many units of
    temporary storage to allocate.
@@ -3665,13 +3678,45 @@ pa_output_function_prologue (FILE *file, HOST_WIDE_INT size ATTRIBUTE_UNUSED)
   /* The function's label and associated .PROC must never be
      separated and must be output *after* any profiling declarations
      to avoid changing spaces/subspaces within a procedure.  */
-  ASM_OUTPUT_LABEL (file, XSTR (XEXP (DECL_RTL (current_function_decl), 0), 0));
+  ASM_OUTPUT_LABEL
+    (file, XSTR (XEXP (DECL_RTL (current_function_decl), 0), 0));
   fputs ("\t.PROC\n", file);
 
   /* hppa_expand_prologue does the dirty work now.  We just need
      to output the assembler directives which denote the start
      of a function.  */
+
+  /* Announce the size of the static part of the frame. Note that the value
+     output here is not in accordance with the HP convention, but the delta
+     is compensated by GAS.  */  
   fprintf (file, "\t.CALLINFO FRAME=" HOST_WIDE_INT_PRINT_DEC, actual_fsize);
+
+  /* If dynamic stack allocation occurs within the function, say so.  */
+  if (current_function_calls_alloca) 
+    {
+      fprintf (file, ",ALLOCA_FRAME,LARGE_FRAME");
+      
+      /* LARGE_FRAME is actually not a valid argument since the corresponding
+	 unwind entry bit is supposed to be computed by the assembler based
+	 upon the actual size of the static part of the frame. GAS does not
+	 honor this, however, and due to variations between HP and GCC frame
+	 layout conventions, standard calls to the HP unwinding library for
+	 backtracing purposes badly fail upon alloca frames if nothing is
+	 done. 
+
+	 We can fake the unwinder about the value of the frame pointer but its
+	 easier to do this when the value of r4 is used, which is the case
+	 when the LARGE_FRAME bit is set. To be able to always do this, a
+	 patch to GAS makes it support the LARGE_FRAME argument and we always
+	 ask for this bit to be set when dynamic stack allocation occurs.
+
+	 Another solution to this issue would be to announce 0 for the size of
+         the static part of the frame, but this badly confuses GDB in a way
+         currently not easily recoverable.  */
+    }
+
+  /* If this functions calls other functions say so. RP is always saved at
+     the conventional place in such cases, so announce it.  */
   if (regs_ever_live[2])
     fputs (",CALLS,SAVE_RP", file);
   else
@@ -3700,12 +3745,160 @@ pa_output_function_prologue (FILE *file, HOST_WIDE_INT size ATTRIBUTE_UNUSED)
   if (gr_saved)
     fprintf (file, ",ENTRY_GR=%d", gr_saved + 2);
 
-  if (fr_saved)
-    fprintf (file, ",ENTRY_FR=%d", fr_saved + 11);
+  /* Don't tell about the floating point registers because this would make the
+     backtrace unwinder look for r3 at the wrong place (that is, not where GCC
+     has put it). Might confuse GDB in some cases, but this effect is much
+     less an issue than the mess we get with backtraces otherwise.
+
+     The right solution would be to fix the frame layout to synchronize with
+     the HP convention. This is desireable but requires a very significant 
+     additional amount of work.  */
 
   fputs ("\n\t.ENTRY\n", file);
 
   remove_useless_addtr_insns (0);
+}
+
+/* Emit code to probe a range of stack addresses from FIRST to FIRST+SIZE,
+   inclusive.  These are offsets from the current stack pointer.  */
+
+static void
+pa_emit_probe_stack_range (HOST_WIDE_INT first, HOST_WIDE_INT size)
+{
+  if (stack_check_libfunc)
+    abort (); /* Not implemented.  */
+
+  else if (TARGET_64BIT)
+    abort (); /* Not implemented.  */
+
+  else
+    emit_insn (gen_probe_stack_range (GEN_INT (first), GEN_INT (size)));
+}
+
+/* Probe a range of stack addresses from FIRST to FIRST+SIZE, inclusive.
+   These are offsets from the current stack pointer.  */
+
+#define PROBE_INTERVAL (1 << STACK_CHECK_PROBE_INTERVAL_EXP)
+
+#if PROBE_INTERVAL >= 8192
+#error Cannot use indexed addressing mode for stack probing
+#endif
+
+#if PROBE_INTERVAL & 0x7ff
+#error Cannot use addil instruction for stack probing
+#endif
+
+const char *
+output_probe_stack_range (rtx first_rtx, rtx size_rtx)
+{
+  static int labelno = 0;
+  HOST_WIDE_INT first = INTVAL (first_rtx);
+  HOST_WIDE_INT size = INTVAL (size_rtx);
+  HOST_WIDE_INT rounded_size;
+  char loop_lab[32], end_lab[32];
+
+  /* Sanity check for addil instruction.  */
+  if (first & 0x7ff)
+    abort ();
+
+  /* See if we have a constant small number of them to generate.  If so,
+     that's the easy case.  */
+  if (size <= PROBE_INTERVAL)
+    {
+      fprintf (asm_out_file, "\taddil L'"HOST_WIDE_INT_PRINT_DEC",%%r30\n",
+	       first);
+      fprintf (asm_out_file, "\tstw %%r0,"HOST_WIDE_INT_PRINT_DEC"(%%r1)\n",
+	       size);
+    }
+
+  /* The run-time loop is made up of 8 insns in the generic case while this
+     compile-time loop is made up of 3+2*(n-2) insns for n # of intervals.  */
+  else if (size <= 4 * PROBE_INTERVAL)
+    {
+      HOST_WIDE_INT i;
+
+      fprintf (asm_out_file, "\taddil L'"HOST_WIDE_INT_PRINT_DEC",%%r30\n",
+	       first + PROBE_INTERVAL);
+      fputs ("\tstw %r0,0(%r1)\n", asm_out_file);
+
+      /* Probe at FIRST + N * PROBE_INTERVAL for values of N from 2 until
+	 it exceeds SIZE.  If only two probes are needed, this will not
+	 generate any code.  Then probe at SIZE.  */
+      for (i = 2 * PROBE_INTERVAL; i < size; i += PROBE_INTERVAL)
+	{
+	  fprintf (asm_out_file, "\taddil L'%d,%%r1\n", PROBE_INTERVAL);
+	  fputs ("\tstw %r0,0(%r1)\n", asm_out_file);
+	}
+
+      fprintf (asm_out_file, "\tstw %%r0,"HOST_WIDE_INT_PRINT_DEC"(%%r1)\n",
+	       size - (i - PROBE_INTERVAL));
+    }
+
+  /* Otherwise, do the same as above, but in a loop.  Note that we must be
+     extra careful with variables wrapping around because we might be at
+     the very top (or the very bottom) of the address space and we have
+     to be able to handle this case properly; in particular, we use an
+     equality test for the loop condition.  */
+  else
+    {
+      /* Step 1: round SIZE to the previous multiple of the interval.  */
+
+      rounded_size = size & -PROBE_INTERVAL;
+
+
+      /* Step 2: compute initial and final value of the loop counter.  */
+
+      /* TEST_ADDR = SP + FIRST.  */
+      fprintf (asm_out_file, "\taddil L'"HOST_WIDE_INT_PRINT_DEC",%%r30\n",
+	       first);
+
+      /* LAST_ADDR = SP + FIRST + ROUNDED_SIZE.  */
+      fprintf (asm_out_file, "\tldil L'"HOST_WIDE_INT_PRINT_DEC",%%r20\n",
+	       rounded_size);
+      fputs ("\taddl %r1,%r20,%r20\n", asm_out_file);
+
+
+      /* Step 3: the loop
+
+        while (TEST_ADDR != LAST_ADDR)
+	  {
+	    TEST_ADDR = TEST_ADDR + PROBE_INTERVAL
+	    probe at TEST_ADDR
+	  }
+
+        probes at FIRST + N * PROBE_INTERVAL for values of N from 1
+        until it exceeds ROUNDED_SIZE.  */
+
+      ASM_GENERATE_INTERNAL_LABEL (loop_lab, "LPSRL", labelno);
+      ASM_OUTPUT_LABEL (asm_out_file, loop_lab);
+
+       /* Jump to END_LAB if TEST_ADDR == LAST_ADDR.  */
+      ASM_GENERATE_INTERNAL_LABEL (end_lab, "LPSRE", labelno++);
+      fputs ("\tcomb,= %r1,%r20,", asm_out_file);
+      assemble_name (asm_out_file, end_lab);
+      fputc ('\n', asm_out_file);
+ 
+      /* TEST_ADDR = TEST_ADDR + PROBE_INTERVAL.  */
+      fprintf (asm_out_file, "\t addil L'%d,%%r1\n", PROBE_INTERVAL);
+  
+      /* Probe at TEST_ADDR and branch.  */
+      fprintf (asm_out_file, "\tb "); assemble_name (asm_out_file, loop_lab);
+      fputc ('\n', asm_out_file);
+      fputs ("\t stw %r0,0(%r1)\n", asm_out_file);
+
+      ASM_OUTPUT_LABEL (asm_out_file, end_lab);
+
+
+      /* Step 4: probe at SIZE if we cannot assert at compile-time that
+	 it is equal to ROUNDED_SIZE.  */
+
+      /* TEMP = SIZE - ROUNDED_SIZE.  */
+      if (size != rounded_size)
+	fprintf (asm_out_file, "\tstw %%r0,"HOST_WIDE_INT_PRINT_DEC"(%%r20)\n",
+		 size - rounded_size);
+    }
+
+  return "";
 }
 
 void
@@ -3729,6 +3922,9 @@ hppa_expand_prologue (void)
     local_fsize += STARTING_FRAME_OFFSET;
 
   actual_fsize = compute_frame_size (size, &save_fregs);
+
+  if (flag_stack_check == 2 && actual_fsize)
+    pa_emit_probe_stack_range (STACK_CHECK_PROTECT, actual_fsize);
 
   /* Compute a few things we will use often.  */
   tmpreg = gen_rtx_REG (word_mode, 1);
@@ -4382,6 +4578,13 @@ hppa_profile_hook (int label_no)
 
   use_reg (&CALL_INSN_FUNCTION_USAGE (call_insn), gen_rtx_REG (SImode, 25));
   use_reg (&CALL_INSN_FUNCTION_USAGE (call_insn), gen_rtx_REG (SImode, 26));
+
+  /* Account for the mandatory stack space to be reserved for outgoing arguments
+     even when passed in registers. This is necessary for compute_frame_size to
+     compute the proper value in case a function has no other call than the one
+     we just emitted. */
+  if (current_function_outgoing_args_size < REG_PARM_STACK_SPACE (NULL_TREE))
+    current_function_outgoing_args_size = REG_PARM_STACK_SPACE (NULL_TREE);
 
   /* Indicate the _mcount call cannot throw, nor will it execute a
      non-local goto.  */
@@ -5364,6 +5567,9 @@ pa_som_file_start (void)
   pa_file_start_level ();
   pa_file_start_space (0);
   aputs ("\t.IMPORT $global$,DATA\n"
+         "\t.IMPORT __gxx_personality_v0,CODE\n" 
+         "\t.IMPORT __gnat_eh_personality,CODE\n" 
+         "\t.IMPORT $global$,DATA\n"
          "\t.IMPORT $$dyncall,MILLICODE\n");
   pa_file_start_mcount ("CODE");
   pa_file_start_file (0);
@@ -7483,19 +7689,31 @@ output_call (rtx insn, rtx call_dest, int sibcall)
   if (!delay_slot_filled && INSN_ADDRESSES_SET_P ())
     {
       /* See if the return address can be adjusted.  Use the containing
-         sequence insn's address.  */
-      rtx seq_insn = NEXT_INSN (PREV_INSN (XVECEXP (final_sequence, 0, 0)));
-      int distance = (INSN_ADDRESSES (INSN_UID (JUMP_LABEL (NEXT_INSN (insn))))
-		      - INSN_ADDRESSES (INSN_UID (seq_insn)) - 8);
+         sequence insn's address.  Avoid doing that if we're generating call
+         frame information, because we need the return address to remain right
+         after the call in order not to badly confuse the unwinder.  */
+      int call_with_adjusted_ra = 0;
 
-      if (VAL_14_BITS_P (distance))
-	{
-	  xoperands[1] = gen_label_rtx ();
-	  output_asm_insn ("ldo %0-%1(%%r2),%%r2", xoperands);
-	  (*targetm.asm_out.internal_label) (asm_out_file, "L",
-					     CODE_LABEL_NUMBER (xoperands[1]));
+      if (!DO_FRAME_NOTES)
+	{	  
+	  rtx seq_insn
+	    = NEXT_INSN (PREV_INSN (XVECEXP (final_sequence, 0, 0)));
+
+	  int distance
+	    = (INSN_ADDRESSES (INSN_UID (JUMP_LABEL (NEXT_INSN (insn))))
+	       - INSN_ADDRESSES (INSN_UID (seq_insn)) - 8);
+
+	  if (VAL_14_BITS_P (distance))
+	    {
+	      xoperands[1] = gen_label_rtx ();
+	      output_asm_insn ("ldo %0-%1(%%r2),%%r2", xoperands);
+	      (*targetm.asm_out.internal_label)
+		(asm_out_file, "L", CODE_LABEL_NUMBER (xoperands[1]));
+	      call_with_adjusted_ra = 1;
+	    }
 	}
-      else
+      
+      if (!call_with_adjusted_ra)
 	output_asm_insn ("nop\n\tb,n %0", xoperands);
     }
   else

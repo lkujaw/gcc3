@@ -114,6 +114,15 @@ lhd_print_tree_nothing (FILE *file ATTRIBUTE_UNUSED,
 {
 }
 
+void
+lhd_print_decl_source_location (FILE *file,
+				tree decl,
+				int indent ATTRIBUTE_UNUSED)
+{
+  fputs (basename (DECL_SOURCE_FILE (decl)), file);
+  fprintf (file, ":%d", DECL_SOURCE_LINE (decl));
+}
+
 /* Called from safe_from_p.  */
 
 int
@@ -463,6 +472,16 @@ lhd_expr_size (tree exp)
 
 bool
 lhd_decl_uninit (tree t ATTRIBUTE_UNUSED)
+{
+  return false;
+}
+
+/* lang_hooks.can_promote_packed_bit_field_p: Find out whether a packed
+   bit-field can be promoted to a greater alignment than the minimal one.  */
+
+bool
+lhd_can_promote_packed_bit_field_p (tree field ATTRIBUTE_UNUSED,
+				    unsigned align ATTRIBUTE_UNUSED)
 {
   return false;
 }

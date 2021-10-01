@@ -740,3 +740,62 @@ print_node (FILE *file, const char *prefix, tree node, int indent)
 
   fprintf (file, ">");
 }
+
+/* Print the identifier for DECL according to FLAGS.  */
+
+void
+print_decl_identifier (FILE *file, tree decl, int flags)
+{
+  bool needs_colon = false;
+  const char *name;
+  char *malloced_name = NULL;
+  char p;
+
+  if (flags & PRINT_DECL_ORIGIN)
+    {
+      lang_hooks.print_decl_source_location (file, decl, 0);
+      needs_colon = true;
+    }
+
+  if (flags & PRINT_DECL_UNIQUE_NAME)
+    {
+      name = IDENTIFIER_POINTER (DECL_ASSEMBLER_NAME (decl));
+      if (! TREE_PUBLIC (decl)
+	  || (DECL_WEAK (decl) && ! DECL_EXTERNAL (decl)))
+        /* The symbol has internal or weak linkage so its assembler name
+	   is not necessarily unique among the compilation units of the
+	   program.  We therefore have to further mangle it.  But we can't
+	   simply use DECL_SOURCE_FILE because it contains the name of the
+	   file the symbol originates from so, e.g. for function templates
+	   in C++ where the templates are defined in a header file, we can
+	   have symbols with the same assembler name and DECL_SOURCE_FILE.
+	   That's why we use the name of the top-level source file of the
+	   compilation unit.  ??? Unnecessary for Ada.  */
+	name = malloced_name = concat (main_input_filename, ":", name, NULL);
+    }
+  else if (flags & PRINT_DECL_NAME)
+    {
+      const char *dot;
+
+      name = lang_hooks.decl_printable_name (decl, 2);
+      dot = strrchr (name, '.');
+      if (dot)
+	name = dot + 1;
+    }
+  else
+    return;
+
+  if (needs_colon)
+    fputc (':', file);
+
+  while ((p = *name++) != 0)
+    {
+      /* Strip double-quotes because of VCG.  */
+      if (p == '"')
+	continue;
+      fputc (p, file);
+    }
+
+  if (malloced_name)
+    free (malloced_name);
+}

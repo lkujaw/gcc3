@@ -326,6 +326,7 @@ const struct gcc_debug_hooks sdb_debug_hooks =
   sdbout_begin_prologue,	/* begin_prologue */
   debug_nothing_int_charstar,	/* end_prologue */
 #endif
+  debug_nothing_int_charstar,	/* begin_epilogue */
   sdbout_end_epilogue,		/* end_epilogue */
   sdbout_begin_function,	/* begin_function */
   sdbout_end_function,		/* end_function */

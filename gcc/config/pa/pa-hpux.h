@@ -19,7 +19,13 @@ the Free Software Foundation, 59 Temple Place - Suite 330,
 Boston, MA 02111-1307, USA.  */
 
 #undef TARGET_DEFAULT
-#define TARGET_DEFAULT 0
+#define TARGET_DEFAULT MASK_DISABLE_INDEXING
+/* We disable indexing by default because it very strongly relies on
+   REG_POINTER beeing properly set, which turns out not to be case out of a
+   number of significant passes (cse, reload, ...).  In various places the
+   back-end code attempts to alleviate that, not always in a very successful
+   way, leading to a range of symptoms from unrecognizable instruction ICEs
+   to wrong code generation.  */
 
 /* Make GCC agree with types.h.  */
 #undef SIZE_TYPE
@@ -116,3 +122,65 @@ Boston, MA 02111-1307, USA.  */
    compatibility with the HP-UX unwind library.  */
 #undef TARGET_HPUX_UNWIND_LIBRARY
 #define TARGET_HPUX_UNWIND_LIBRARY 1
+
+/* Define the necessary stuff for the DWARF2 CFI support.  */
+
+#define NO_PROFILE_COUNTERS 1
+#define DWARF2_UNWIND_INFO 1
+
+/* This macro chooses the encoding of pointers embedded in the exception
+   handling sections.  If at all possible, this should be defined such
+   that the exception handling section will not require dynamic relocations,
+   and so may be read-only.
+
+   FIXME:  This should use an indirect data relative encoding for code
+   labels and function pointers.  We used DW_EH_PE_aligned to output
+   a PLABEL constructor.  */
+#undef ASM_PREFERRED_EH_DATA_FORMAT
+#define ASM_PREFERRED_EH_DATA_FORMAT(CODE,GLOBAL)                     \
+  (CODE == 2 && GLOBAL ? DW_EH_PE_aligned : DW_EH_PE_absptr)
+
+/* Handle special EH pointer encodings.  Absolute, pc-relative, and
+   indirect are handled automatically.  Since pc-relative encodining is
+   not possible on the PA and we don't have the infrastructure for
+   data relative encoding, we use aligned plabels for code labels
+   and function pointers.  */
+#define ASM_MAYBE_OUTPUT_ENCODED_ADDR_RTX(FILE, ENCODING, SIZE, ADDR, DONE) \
+  do {                                                                       \
+    if (((ENCODING) & 0x0F) == DW_EH_PE_aligned)                      \
+      {                                                                      \
+      fputs (integer_asm_op ((SIZE), FALSE), FILE);                   \
+      fputs ("P%", FILE);                                             \
+      assemble_name (FILE, XSTR ((ADDR), 0));                         \
+      goto DONE;                                                      \
+      }                                                                      \
+    } while (0)
+
+
+/* A C expression whose value is RTL representing the location of the incoming
+   return address at the beginning of any function, before the prologue. This
+   RTL is either a REG, indicating that the return value is saved in `REG', or
+   a MEM representing a location in the stack.
+
+   You only need to define this macro if you want to support call frame
+   debugging information like that provided by DWARF 2.
+
+   If this RTL is a REG, you should also define DWARF_FRAME_RETURN_COLUMN to
+   DWARF_FRAME_REGNUM (REGNO).  */
+#define INCOMING_RETURN_ADDR_RTX  (gen_rtx_REG (word_mode, 2))
+#define DWARF_FRAME_RETURN_COLUMN (DWARF_FRAME_REGNUM (2))
+
+/* A C expression whose value is an integer giving the offset, in bytes, from
+   the value of the stack pointer register to the top of the stack frame at
+   the beginning of any function, before the prologue. The top of the frame is
+   defined to be the value of the stack pointer in the previous frame, just
+   before the call instruction.
+
+   You only need to define this macro if you want to support call frame
+   debugging information like that provided by DWARF 2.  */
+#define INCOMING_FRAME_SP_OFFSET 0
+
+#define MD_FALLBACK_FRAME_STATE_FOR_SOURCE "config/pa/hpux-ehfb.h"
+
+/* Define this to be nonzero if static stack checking is supported.  */
+#define STACK_CHECK_STATIC_BUILTIN 1

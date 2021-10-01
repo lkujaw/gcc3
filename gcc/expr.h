@@ -213,13 +213,19 @@ extern bool default_must_pass_in_stack (enum machine_mode, tree);
 
 /* Provide default values for the macros controlling stack checking.  */
 
+/* The default is neither full back-end stack checking...  */
 #ifndef STACK_CHECK_BUILTIN
 #define STACK_CHECK_BUILTIN 0
 #endif
 
-/* The default interval is one page.  */
-#ifndef STACK_CHECK_PROBE_INTERVAL
-#define STACK_CHECK_PROBE_INTERVAL 4096
+/* ...nor static back-end stack checking.  */
+#ifndef STACK_CHECK_STATIC_BUILTIN
+#define STACK_CHECK_STATIC_BUILTIN 0
+#endif
+
+/* The default interval is one page (4096 bytes).  */
+#ifndef STACK_CHECK_PROBE_INTERVAL_EXP
+#define STACK_CHECK_PROBE_INTERVAL_EXP 12
 #endif
 
 /* The default is to do a store into the stack.  */
@@ -227,16 +233,31 @@ extern bool default_must_pass_in_stack (enum machine_mode, tree);
 #define STACK_CHECK_PROBE_LOAD 0
 #endif
 
-/* This value is arbitrary, but should be sufficient for most machines.  */
+/* This is a kludge to try to capture the discrepancy between the old
+   mechanism (middle-end stack checking) and the new mechanism (static
+   back-end stack checking).  STACK_CHECK_PROTECT needs to be bumped
+   for the latter because part of the protection area is effectively
+   included in STACK_CHECK_MAX_FRAME_SIZE for the former.  */
+#ifdef STACK_CHECK_PROTECT
+#define STACK_OLD_CHECK_PROTECT STACK_CHECK_PROTECT
+#else
+#define STACK_OLD_CHECK_PROTECT \
+ (USING_SJLJ_EXCEPTIONS ? 75 * UNITS_PER_WORD : 8 * 1024)
+#endif
+
+/* Minimum amount of stack required to recover from an anticipated stack
+   overflow detection.  The default value conveys an estimate of the amount
+   of stack required to propagate an exception.  */
 #ifndef STACK_CHECK_PROTECT
-#define STACK_CHECK_PROTECT (75 * UNITS_PER_WORD)
+#define STACK_CHECK_PROTECT \
+ (USING_SJLJ_EXCEPTIONS ? 75 * UNITS_PER_WORD : 12 * 1024)
 #endif
 
 /* Make the maximum frame size be the largest we can and still only need
    one probe per function.  */
 #ifndef STACK_CHECK_MAX_FRAME_SIZE
 #define STACK_CHECK_MAX_FRAME_SIZE \
-  (STACK_CHECK_PROBE_INTERVAL - UNITS_PER_WORD)
+  ((1 << STACK_CHECK_PROBE_INTERVAL_EXP) - UNITS_PER_WORD)
 #endif
 
 /* This is arbitrary, but should be large enough everywhere.  */
@@ -590,6 +611,8 @@ extern rtx prepare_call_address (rtx, tree, rtx *, int, int);
 
 extern rtx expand_call (tree, rtx, int);
 
+extern bool shift_returned_value (tree, rtx *);
+
 #ifdef TREE_CODE
 extern rtx expand_shift (enum tree_code, enum machine_mode, rtx, tree, rtx,
 			 int);
@@ -754,9 +777,8 @@ extern void emit_stack_save (enum save_level, rtx *, rtx);
 /* Restore the stack pointer from a save area of the specified level.  */
 extern void emit_stack_restore (enum save_level, rtx, rtx);
 
-/* Allocate some space on the stack dynamically and return its address.  An rtx
-   says how many bytes.  */
-extern rtx allocate_dynamic_stack_space (rtx, rtx, int);
+/* Allocate some space on the stack dynamically and return its address.  */
+extern rtx allocate_dynamic_stack_space (rtx, rtx, int, bool);
 
 /* Probe a range of stack addresses from FIRST to FIRST+SIZE, inclusive.
    FIRST is a constant and size is a Pmode RTX.  These are offsets from the

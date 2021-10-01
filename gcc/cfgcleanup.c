@@ -1883,8 +1883,12 @@ try_optimize_cfg (int mode)
 		  changed_here = true;
 		}
 
-	      /* Simplify branch to branch.  */
-	      if (try_forward_edges (mode, b))
+	      /* Simplify branch to branch if optimizing or when expensive
+		 passes are allowed.  The condition prevents a couple of early
+		 simplifications when not optimizing, which in turn avoids
+		 potential deterioration of O0 debuggability.  */
+	      if ((optimize || (mode & CLEANUP_EXPENSIVE))
+		  && try_forward_edges (mode, b))
 		changed_here = true;
 
 	      /* Look for shared code between blocks.  */

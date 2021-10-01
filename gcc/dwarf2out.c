@@ -245,6 +245,8 @@ typedef struct dw_fde_struct GTY(())
   const char *dw_fde_begin;
   const char *dw_fde_current_label;
   const char *dw_fde_end;
+  const char *dw_fde_end_prologue;
+  const char *dw_fde_begin_epilogue;
   dw_cfi_ref dw_fde_cfi;
   unsigned funcdef_number;
   unsigned all_throwers_are_sibcalls : 1;
@@ -388,6 +390,14 @@ static void def_cfa_1 (const char *, dw_cfa_location *);
 
 #ifndef FUNC_END_LABEL
 #define FUNC_END_LABEL		"LFE"
+#endif
+
+#ifndef PROLOGUE_END_LABEL
+#define PROLOGUE_END_LABEL	"LPE"
+#endif
+
+#ifndef EPILOGUE_BEGIN_LABEL
+#define EPILOGUE_BEGIN_LABEL	"LEB"
 #endif
 
 #define FRAME_BEGIN_LABEL	"Lframe"
@@ -1833,7 +1843,7 @@ output_cfi (dw_cfi_ref cfi, dw_fde_ref fde, int for_eh)
 	    dw2_asm_output_encoded_addr_rtx (
 		ASM_PREFERRED_EH_DATA_FORMAT (/*code=*/1, /*global=*/0),
 		gen_rtx_SYMBOL_REF (Pmode, cfi->dw_cfi_oprnd1.dw_cfi_addr),
-		NULL);
+		true, NULL);
 	  else
 	    dw2_asm_output_addr (DWARF2_ADDR_SIZE,
 				 cfi->dw_cfi_oprnd1.dw_cfi_addr, NULL);
@@ -2066,7 +2076,8 @@ output_call_frame_info (int for_eh)
 	  dw2_asm_output_data (1, per_encoding, "Personality (%s)",
 			       eh_data_format_name (per_encoding));
 	  dw2_asm_output_encoded_addr_rtx (per_encoding,
-					   eh_personality_libfunc, NULL);
+					   eh_personality_libfunc,
+					   true, NULL);
 	}
 
       if (any_lsda_needed)
@@ -2113,7 +2124,7 @@ output_call_frame_info (int for_eh)
       if (for_eh)
 	{
 	  dw2_asm_output_encoded_addr_rtx (fde_encoding,
-		   gen_rtx_SYMBOL_REF (Pmode, fde->dw_fde_begin),
+		   gen_rtx_SYMBOL_REF (Pmode, fde->dw_fde_begin), true,
 		   "FDE initial location");
 	  dw2_asm_output_delta (size_of_encoded_value (fde_encoding),
 				fde->dw_fde_end, fde->dw_fde_begin,
@@ -2155,7 +2166,7 @@ output_call_frame_info (int for_eh)
 					       fde->funcdef_number);
 		  dw2_asm_output_encoded_addr_rtx (
 			lsda_encoding, gen_rtx_SYMBOL_REF (Pmode, l1),
-			"Language Specific Data Area");
+			true, "Language Specific Data Area");
 		}
 	      else
 		{
@@ -2250,6 +2261,8 @@ dwarf2out_begin_prologue (unsigned int line ATTRIBUTE_UNUSED,
   fde->dw_fde_begin = xstrdup (label);
   fde->dw_fde_current_label = NULL;
   fde->dw_fde_end = NULL;
+  fde->dw_fde_end_prologue = NULL;
+  fde->dw_fde_begin_epilogue = NULL;
   fde->dw_fde_cfi = NULL;
   fde->funcdef_number = current_function_funcdef_no;
   fde->nothrow = current_function_nothrow;
@@ -2264,6 +2277,48 @@ dwarf2out_begin_prologue (unsigned int line ATTRIBUTE_UNUSED,
   if (file)
     dwarf2out_source_line (line, file);
 #endif
+}
+
+/* Output a marker (i.e. a label) for the end of the generated code
+   for a function prologue.  This gets called *after* the prologue code has
+   been generated.  */
+
+void
+dwarf2out_end_prologue (unsigned int line ATTRIBUTE_UNUSED,
+			const char *file ATTRIBUTE_UNUSED)
+{
+  dw_fde_ref fde;
+  char label[MAX_ARTIFICIAL_LABEL_BYTES];
+
+  /* Output a label to mark the endpoint of the code generated for this
+     function.  */
+  ASM_GENERATE_INTERNAL_LABEL (label, PROLOGUE_END_LABEL,
+			       current_function_funcdef_no);
+  ASM_OUTPUT_DEBUG_LABEL (asm_out_file, PROLOGUE_END_LABEL,
+			  current_function_funcdef_no);
+  fde = &fde_table[fde_table_in_use - 1];
+  fde->dw_fde_end_prologue = xstrdup (label);
+}
+
+/* Output a marker (i.e. a label) for the beginning of the generated code
+   for a function epilogue.  This gets called *before* the prologue code has
+   been generated.  */
+
+void
+dwarf2out_begin_epilogue (unsigned int line ATTRIBUTE_UNUSED,
+			  const char *file ATTRIBUTE_UNUSED)
+{
+  dw_fde_ref fde;
+  char label[MAX_ARTIFICIAL_LABEL_BYTES];
+
+  /* Output a label to mark the endpoint of the code generated for this
+     function.  */
+  ASM_GENERATE_INTERNAL_LABEL (label, EPILOGUE_BEGIN_LABEL,
+			       current_function_funcdef_no);
+  ASM_OUTPUT_DEBUG_LABEL (asm_out_file, EPILOGUE_BEGIN_LABEL,
+			  current_function_funcdef_no);
+  fde = &fde_table[fde_table_in_use - 1];
+  fde->dw_fde_begin_epilogue = xstrdup (label);
 }
 
 /* Output a marker (i.e. a label) for the absolute end of the generated code
@@ -2308,7 +2363,12 @@ void
 dwarf2out_frame_finish (void)
 {
   /* Output call frame information.  */
-  if (write_symbols == DWARF2_DEBUG || write_symbols == VMS_AND_DWARF2_DEBUG)
+  if (write_symbols == DWARF2_DEBUG
+      || write_symbols == VMS_AND_DWARF2_DEBUG
+#ifdef DWARF2_FRAME_INFO
+      || DWARF2_FRAME_INFO
+#endif
+      )
     output_call_frame_info (0);
 
   if (! USING_SJLJ_EXCEPTIONS && (flag_unwind_tables || flag_exceptions))
@@ -2349,7 +2409,8 @@ enum dw_val_class
   dw_val_class_fde_ref,
   dw_val_class_lbl_id,
   dw_val_class_lbl_offset,
-  dw_val_class_str
+  dw_val_class_str,
+  dw_val_class_delta
 };
 
 /* Describe a double word constant value.  */
@@ -2397,6 +2458,12 @@ typedef struct dw_val_struct GTY(())
       struct indirect_string_node * GTY ((tag ("dw_val_class_str"))) val_str;
       char * GTY ((tag ("dw_val_class_lbl_id"))) val_lbl_id;
       unsigned char GTY ((tag ("dw_val_class_flag"))) val_flag;
+      struct dw_val_delta_union
+	{
+	  char * lbl1;
+	  char * lbl2;
+	  int units;
+	} GTY ((tag ("dw_val_class_delta"))) val_delta;
     }
   GTY ((desc ("%1.val_class"))) v;
 }
@@ -3266,7 +3333,8 @@ const struct gcc_debug_hooks dwarf2_debug_hooks =
   dwarf2out_ignore_block,
   dwarf2out_source_line,
   dwarf2out_begin_prologue,
-  debug_nothing_int_charstar,	/* end_prologue */
+  dwarf2out_end_prologue,
+  dwarf2out_begin_epilogue,
   dwarf2out_end_epilogue,
   debug_nothing_tree,		/* begin_function */
   debug_nothing_int,		/* end_function */
@@ -3732,7 +3800,7 @@ static dw_loc_descr_ref loc_descriptor_from_tree (tree, int);
 static HOST_WIDE_INT ceiling (HOST_WIDE_INT, unsigned int);
 static tree field_type (tree);
 static unsigned int simple_type_align_in_bits (tree);
-static unsigned int simple_decl_align_in_bits (tree);
+static unsigned int simple_field_decl_align_in_bits (tree);
 static unsigned HOST_WIDE_INT simple_type_size_in_bits (tree);
 static HOST_WIDE_INT field_byte_offset (tree);
 static void add_AT_location_description	(dw_die_ref, enum dwarf_attribute,
@@ -3746,6 +3814,9 @@ static rtx rtl_for_decl_location (tree);
 static void add_location_or_const_value_attribute (dw_die_ref, tree);
 static void tree_add_const_value_attribute (dw_die_ref, tree);
 static void add_name_attribute (dw_die_ref, const char *);
+static void add_encoding_attribute (dw_die_ref, const char *);
+static void add_artificial_attribute (dw_die_ref, tree);
+static void add_descriptive_type_attribute (dw_die_ref, tree, dw_die_ref);
 static void add_comp_dir_attribute (dw_die_ref);
 static void add_bound_info (dw_die_ref, enum dwarf_attribute, tree);
 static void add_subscript_info (dw_die_ref, tree);
@@ -3825,6 +3896,11 @@ static void prune_unused_types_walk_attribs (dw_die_ref);
 static void prune_unused_types_prune (dw_die_ref);
 static void prune_unused_types (void);
 static int maybe_emit_file (int);
+static inline const char *AT_delta1 (dw_attr_ref);
+static inline const char *AT_delta2 (dw_attr_ref);
+static inline int AT_delta_units (dw_attr_ref);
+static inline void add_AT_delta (dw_die_ref, enum dwarf_attribute,
+				 const char *, const char *, int);
 
 /* Section names used to hold DWARF debugging information.  */
 #ifndef DEBUG_INFO_SECTION
@@ -3926,11 +4002,25 @@ static char ranges_section_label[2 * MAX_ARTIFICIAL_LABEL_BYTES];
    called to "demangle" any name before it it put into a DIE.  */
 
 static const char *(*demangle_name_func) (const char *);
+static const char *(*gnat_encoding_func) (const char *);
+static tree (*gnat_descriptive_type_func) (tree);
 
 void
 dwarf2out_set_demangle_name_func (const char *(*func) (const char *))
 {
   demangle_name_func = func;
+}
+
+void
+dwarf2out_set_gnat_encoding_func (const char *(*func) (const char *))
+{
+  gnat_encoding_func = func;
+}
+
+void
+dwarf2out_set_gnat_descriptive_type_func (tree (*func) (tree))
+{
+  gnat_descriptive_type_func = func;
 }
 
 /* Test if rtl node points to a pseudo register.  */
@@ -4261,14 +4351,24 @@ dwarf_attr_name (unsigned int attr)
       return "DW_AT_MIPS_tail_loop_begin";
     case DW_AT_MIPS_epilog_begin:
       return "DW_AT_MIPS_epilog_begin";
+#if TARGET_ABI_OPEN_VMS
+    case DW_AT_HP_prologue:
+      return "DW_AT_HP_prologue";
+#else
     case DW_AT_MIPS_loop_unroll_factor:
       return "DW_AT_MIPS_loop_unroll_factor";
+#endif
     case DW_AT_MIPS_software_pipeline_depth:
       return "DW_AT_MIPS_software_pipeline_depth";
     case DW_AT_MIPS_linkage_name:
       return "DW_AT_MIPS_linkage_name";
+#if TARGET_ABI_OPEN_VMS
+    case DW_AT_HP_epilogue:
+      return "DW_AT_HP_epilogue";
+#else
     case DW_AT_MIPS_stride:
       return "DW_AT_MIPS_stride";
+#endif
     case DW_AT_MIPS_abstract_name:
       return "DW_AT_MIPS_abstract_name";
     case DW_AT_MIPS_clone_origin:
@@ -4293,6 +4393,11 @@ dwarf_attr_name (unsigned int attr)
 
     case DW_AT_VMS_rtnbeg_pd_address:
       return "DW_AT_VMS_rtnbeg_pd_address";
+
+    case DW_AT_GNAT_encoding:
+      return "DW_AT_GNAT_encoding";
+    case DW_AT_GNAT_descriptive_type:
+      return "DW_AT_GNAT_descriptive_type";
 
     default:
       return "DW_AT_<unknown>";
@@ -4815,6 +4920,22 @@ AT_addr (dw_attr_ref a)
   abort ();
 }
 
+/* Add a delta attribute value to a DIE.  */
+
+static inline void
+add_AT_delta (dw_die_ref die, enum dwarf_attribute attr_kind, const char *lbl1, const char *lbl2, int units)
+{
+  dw_attr_ref attr = ggc_alloc (sizeof (dw_attr_node));
+
+  attr->dw_attr_next = NULL;
+  attr->dw_attr = attr_kind;
+  attr->dw_attr_val.val_class = dw_val_class_delta;
+  attr->dw_attr_val.v.val_delta.lbl1 = xstrdup (lbl1);
+  attr->dw_attr_val.v.val_delta.lbl2 = xstrdup (lbl2);
+  attr->dw_attr_val.v.val_delta.units = units;
+  add_dwarf_attr (die, attr);
+}
+
 /* Add a label identifier attribute value to a DIE.  */
 
 static inline void
@@ -4871,6 +4992,39 @@ add_AT_range_list (dw_die_ref die, enum dwarf_attribute attr_kind,
   attr->dw_attr_val.val_class = dw_val_class_range_list;
   attr->dw_attr_val.v.val_offset = offset;
   add_dwarf_attr (die, attr);
+}
+
+/* Return the start label of a delta attribute  */
+
+static inline const char *
+AT_delta1 (dw_attr_ref a)
+{
+  if (a && (AT_class (a) == dw_val_class_delta))
+    return a->dw_attr_val.v.val_delta.lbl1;
+
+  abort ();
+}
+
+/* Return the end label of a delta attribute  */
+
+static inline const char *
+AT_delta2 (dw_attr_ref a)
+{
+  if (a && (AT_class (a) == dw_val_class_delta))
+    return a->dw_attr_val.v.val_delta.lbl2;
+
+  abort ();
+}
+
+/* Return the units value of a delta attribute  */
+
+static inline int
+AT_delta_units (dw_attr_ref a)
+{
+  if (a && (AT_class (a) == dw_val_class_delta))
+    return a->dw_attr_val.v.val_delta.units;
+
+  abort ();
 }
 
 static inline const char *
@@ -5331,6 +5485,10 @@ print_die (dw_die_ref die, FILE *outfile)
 	  else
 	    fprintf (outfile, "die -> <null>");
 	  break;
+	case dw_val_class_delta:
+	  fprintf (outfile, "delta: (%s-%s)/f(%d)",
+		   AT_delta2 (a), AT_delta1 (a), AT_delta_units (a));
+	  break;
 	case dw_val_class_lbl_id:
 	case dw_val_class_lbl_offset:
 	  fprintf (outfile, "label: %s", AT_lbl (a));
@@ -5552,6 +5710,7 @@ attr_checksum (dw_attr_ref at, struct md5_ctx *ctx, int *mark)
       break;
 
     case dw_val_class_fde_ref:
+    case dw_val_class_delta:
     case dw_val_class_lbl_id:
     case dw_val_class_lbl_offset:
       break;
@@ -5659,6 +5818,7 @@ same_dw_val_p (dw_val_node *v1, dw_val_node *v2, int *mark)
       return same_die_p (v1->v.val_die_ref.die, v2->v.val_die_ref.die, mark);
 
     case dw_val_class_fde_ref:
+    case dw_val_class_delta:
     case dw_val_class_lbl_id:
     case dw_val_class_lbl_offset:
       return 1;
@@ -6233,6 +6393,9 @@ size_of_die (dw_die_ref die)
 	case dw_val_class_fde_ref:
 	  size += DWARF_OFFSET_SIZE;
 	  break;
+	case dw_val_class_delta:
+	  size += 4;
+	  break;
 	case dw_val_class_lbl_id:
 	  size += DWARF2_ADDR_SIZE;
 	  break;
@@ -6424,6 +6587,8 @@ value_format (dw_attr_ref a)
 	return DW_FORM_ref;
     case dw_val_class_fde_ref:
       return DW_FORM_data;
+    case dw_val_class_delta:
+      return DW_FORM_data4;
     case dw_val_class_lbl_id:
       return DW_FORM_addr;
     case dw_val_class_lbl_offset:
@@ -6744,6 +6909,14 @@ output_die (dw_die_ref die)
 	  }
 	  break;
 
+	case dw_val_class_delta:
+	  if (AT_delta_units (a))
+	    dw2_asm_output_delta_units (4, AT_delta2 (a), AT_delta1 (a),
+				        AT_delta_units (a), "%s", name);
+	  else
+	    dw2_asm_output_delta (4, AT_delta2 (a), AT_delta1 (a), "%s", name);
+	  break;
+
 	case dw_val_class_lbl_id:
 	  dw2_asm_output_addr (DWARF2_ADDR_SIZE, AT_lbl (a), "%s", name);
 	  break;
@@ -6849,9 +7022,18 @@ output_comp_unit (dw_die_ref die, int output_if_empty)
    "A::f(int)".  Let's drop the argument list, and maybe the scope.  */
 
 static const char *
-dwarf2_name (tree decl, int scope)
+dwarf2_name (tree decl, int scope ATTRIBUTE_UNUSED)
 {
-  return (*lang_hooks.decl_printable_name) (decl, scope ? 1 : 0);
+#if 0
+ return (*lang_hooks.decl_printable_name) (decl, scope ? 1 : 0);
+#else
+  /* ??? This is a temporary kludge to prevent GNAT from generating
+     decoded names in the DWARF2 output, as the debugger needs these
+     names to follow the GNAT encoding convention. The proper change
+     is to add a language-dependent hook that would allow each language
+     to decide whether they want the names to be encoded or not */
+ return IDENTIFIER_POINTER (DECL_NAME (decl));
+#endif
 }
 
 /* Add a new entry to .debug_pubnames if appropriate.  */
@@ -7334,7 +7516,12 @@ output_file_names (void)
     if (dirs[i].used != 0)
       {
 	dirs[i].used = idx++;
-	dw2_asm_output_nstring (dirs[i].path, dirs[i].length - 1,
+	dw2_asm_output_nstring (dirs[i].path,
+#ifdef DWARF2_DIR_SHOULD_END_WITH_SEPARATOR
+				dirs[i].length,
+#else
+				dirs[i].length - 1,
+#endif
 				"Directory Entry: 0x%x", dirs[i].used);
       }
 
@@ -7712,14 +7899,15 @@ base_type_die (tree type)
   switch (TREE_CODE (type))
     {
     case INTEGER_TYPE:
-      /* Carefully distinguish the C character types, without messing
-	 up if the language is not C. Note that we check only for the names
-	 that contain spaces; other names might occur by coincidence in other
-	 languages.  */
-      if (! (TYPE_PRECISION (type) == CHAR_TYPE_SIZE
-	     && (type == char_type_node
-		 || ! strcmp (type_name, "signed char")
-		 || ! strcmp (type_name, "unsigned char"))))
+      /* Carefully distinguish the C and Ada character types, without messing
+	 up if the language is not C or Ada. Note that we check only for the
+	 names that contain spaces; other names might occur by coincidence in 
+	 other languages.  */
+      if (! TYPE_STRING_FLAG (type)
+	  && (! (TYPE_PRECISION (type) == CHAR_TYPE_SIZE
+		 && (type == char_type_node
+		     || ! strcmp (type_name, "signed char")
+		     || ! strcmp (type_name, "unsigned char")))))
 	{
 	  if (TREE_UNSIGNED (type))
 	    encoding = DW_ATE_unsigned;
@@ -7730,7 +7918,7 @@ base_type_die (tree type)
       /* else fall through.  */
 
     case CHAR_TYPE:
-      /* GNU Pascal/Ada CHAR type.  Not used in C.  */
+      /* GNU Pascal CHAR type.  Not used in C.  */
       if (TREE_UNSIGNED (type))
 	encoding = DW_ATE_unsigned_char;
       else
@@ -7761,6 +7949,9 @@ base_type_die (tree type)
     }
 
   base_type_result = new_die (DW_TAG_base_type, comp_unit_die, type);
+  
+  add_encoding_attribute (base_type_result, type_name);
+
   if (demangle_name_func)
     type_name = (*demangle_name_func) (type_name);
 
@@ -7868,15 +8059,51 @@ is_subrange_type (tree type)
 {
   tree subtype = TREE_TYPE (type);
 
-  if (TREE_CODE (type) == INTEGER_TYPE
-      && subtype != NULL_TREE)
+  /* Subrange types are identified by the fact that they are integer
+     types, and that they have a subtype which is either an integer type
+     or an enumeral type.  */
+  
+  if (TREE_CODE (type) != INTEGER_TYPE
+      || subtype == NULL)
+    return false;
+  
+  if (TREE_CODE (subtype) != INTEGER_TYPE
+      && TREE_CODE (subtype) != ENUMERAL_TYPE)
+    return false;
+  
+  if (TREE_CODE (type) == TREE_CODE (subtype)
+      && int_size_in_bytes (type) == int_size_in_bytes (subtype)
+      && TYPE_MIN_VALUE (type) != NULL
+      && TYPE_MIN_VALUE (subtype) != NULL
+      && tree_int_cst_equal (TYPE_MIN_VALUE (type), TYPE_MIN_VALUE (subtype))
+      && TYPE_MAX_VALUE (type) != NULL
+      && TYPE_MAX_VALUE (subtype) != NULL
+      && tree_int_cst_equal (TYPE_MAX_VALUE (type), TYPE_MAX_VALUE (subtype)))
     {
-      if (TREE_CODE (subtype) == INTEGER_TYPE)
-        return true;
-      if (TREE_CODE (subtype) == ENUMERAL_TYPE)
-        return true;
+      /* The type and its subtype have the same representation.  If in
+         addition the two types also have the same name, then the given
+         type is not a subrange type, but rather a plain base type.  */
+      /* FIXME: brobecker/2004-03-22:
+         Sizetype INTEGER_CSTs nodes are canonicalized.  It should
+         therefore be sufficient to check the TYPE_SIZE node pointers
+         rather than checking the actual size.  Unfortunately, we have
+         found some cases, such as in the Ada "integer" type, where
+         this is not the case.  Until this problem is solved, we need to
+         keep checking the actual size.  */
+      tree type_name = TYPE_NAME (type);
+      tree subtype_name = TYPE_NAME (subtype);
+
+      if (type_name != NULL && TREE_CODE (type_name) == TYPE_DECL)
+        type_name = DECL_NAME (type_name);
+
+      if (subtype_name != NULL && TREE_CODE (subtype_name) == TYPE_DECL)
+        subtype_name = DECL_NAME (subtype_name);
+
+      if (type_name == subtype_name)
+        return false;
     }
-  return false;
+
+  return true;
 }
 
 /*  Given a pointer to a tree node for a subrange type, return a pointer
@@ -7905,6 +8132,9 @@ subrange_type_die (tree type, dw_die_ref context_die)
       if (TREE_CODE (name) == TYPE_DECL)
         name = DECL_NAME (name);
       add_name_attribute (subrange_die, IDENTIFIER_POINTER (name));
+      add_encoding_attribute (subrange_die, IDENTIFIER_POINTER (name));
+      add_artificial_attribute (subrange_die, type);
+      add_descriptive_type_attribute (subrange_die, type, context_die);
     }
 
   if (int_size_in_bytes (TREE_TYPE (type)) != size_in_bytes)
@@ -8838,11 +9068,17 @@ loc_descriptor_from_tree (tree loc, int addressp)
       add_loc_descr (&ret, new_loc_descr (op, 0, 0));
       break;
 
+    case MIN_EXPR:
     case MAX_EXPR:
-      loc = build (COND_EXPR, TREE_TYPE (loc),
-		   build (LT_EXPR, integer_type_node,
-			  TREE_OPERAND (loc, 0), TREE_OPERAND (loc, 1)),
-		   TREE_OPERAND (loc, 1), TREE_OPERAND (loc, 0));
+      {
+        const enum tree_code code =
+          TREE_CODE (loc) == MIN_EXPR ? GT_EXPR : LT_EXPR;
+
+        loc = build (COND_EXPR, TREE_TYPE (loc),
+                     build (code, integer_type_node,
+                            TREE_OPERAND (loc, 0), TREE_OPERAND (loc, 1)),
+                     TREE_OPERAND (loc, 1), TREE_OPERAND (loc, 0));
+      }
 
       /* ... fall through ...  */
 
@@ -8966,9 +9202,27 @@ simple_type_align_in_bits (tree type)
 }
 
 static inline unsigned
-simple_decl_align_in_bits (tree decl)
+simple_field_decl_align_in_bits (tree field)
 {
-  return (TREE_CODE (decl) != ERROR_MARK) ? DECL_ALIGN (decl) : BITS_PER_WORD;
+  unsigned align;
+
+  if (TREE_CODE (field) == ERROR_MARK)
+    return BITS_PER_WORD;
+
+  align = DECL_ALIGN (field);
+
+#ifdef BIGGEST_FIELD_ALIGNMENT
+  /* Some targets (i.e. i386) limit union field alignment
+     to a lower boundary than alignment of variables unless
+     it was overridden by attribute aligned.  */
+  if (! DECL_USER_ALIGN (field))
+    align = MIN (align, (unsigned) BIGGEST_FIELD_ALIGNMENT);
+#endif
+
+#ifdef ADJUST_FIELD_ALIGN
+  align = ADJUST_FIELD_ALIGN (field, align);
+#endif
+  return align;
 }
 
 /* Given a pointer to a FIELD_DECL, compute and return the byte offset of the
@@ -9020,7 +9274,7 @@ field_byte_offset (tree decl)
 
   type_size_in_bits = simple_type_size_in_bits (type);
   type_align_in_bits = simple_type_align_in_bits (type);
-  decl_align_in_bits = simple_decl_align_in_bits (decl);
+  decl_align_in_bits = simple_field_decl_align_in_bits (decl);
 
   /* The GCC front-end doesn't make any attempt to keep track of the starting
      bit offset (relative to the start of the containing structure type) of the
@@ -9764,14 +10018,80 @@ add_name_attribute (dw_die_ref die, const char *name_string)
     }
 }
 
+/* Generate a DW_AT_gnat_encoding attribute given a name string.  */
+
+static void
+add_encoding_attribute (dw_die_ref die, const char *name_string)
+{
+  if (gnat_encoding_func && name_string != NULL && *name_string != 0)
+    {
+      name_string = (*gnat_encoding_func) (name_string);
+      
+      if (*name_string != 0)
+	add_AT_string (die, DW_AT_GNAT_encoding, name_string);
+    }
+}
+
+/* Generate a DW_AT_artificial_flag for TYPE, if it is needed.  */
+
+static void 
+add_artificial_attribute (dw_die_ref die, tree type)
+{
+  if (TYPE_NAME (type)
+      && TREE_CODE (TYPE_NAME (type)) == TYPE_DECL
+      && DECL_ARTIFICIAL (TYPE_NAME (type))
+      && ! get_AT_flag (die, DW_AT_artificial))
+    add_AT_flag (die, DW_AT_artificial, 1);
+}
+
+/* Generate a DW_AT_gnat_descriptive_type for TYPE, if needed.  */
+
+static void 
+add_descriptive_type_attribute (dw_die_ref die, tree type,
+				dw_die_ref context_die)
+{
+  if (gnat_descriptive_type_func)
+    {
+      tree descriptive_type = gnat_descriptive_type_func (type);
+
+      if (descriptive_type)
+	{
+	  dw_die_ref type_die = lookup_type_die (descriptive_type);
+
+	  if (type_die == NULL)
+	    {
+	      gen_type_die (descriptive_type, context_die);
+	      type_die = lookup_type_die (descriptive_type);
+	      if (type_die == NULL)
+		abort ();
+	    }
+
+	  add_AT_die_ref (die, DW_AT_GNAT_descriptive_type, type_die);
+	}
+    }
+}
+
 /* Generate a DW_AT_comp_dir attribute for DIE.  */
 
 static void
 add_comp_dir_attribute (dw_die_ref die)
 {
   const char *wd = get_src_pwd ();
+
   if (wd != NULL)
-    add_AT_string (die, DW_AT_comp_dir, wd);
+    {
+      int wdlen;
+      char *wd1;
+
+      wdlen = strlen (wd);
+      wd1 = alloca (wdlen + 2);
+      strcpy (wd1, wd);
+#ifdef DWARF2_DIR_SHOULD_END_WITH_SEPARATOR
+      wd1 [wdlen] = DIR_SEPARATOR;
+      wd1 [wdlen + 1] = 0;
+#endif
+      add_AT_string (die, DW_AT_comp_dir, wd1);
+    }
 }
 
 /* Given a tree node describing an array bound (either lower or upper) output
@@ -10188,6 +10508,7 @@ add_name_and_src_coords_attributes (dw_die_ref die, tree decl)
   if (decl_name != NULL && IDENTIFIER_POINTER (decl_name) != NULL)
     {
       add_name_attribute (die, dwarf2_name (decl, 0));
+      add_encoding_attribute (die, dwarf2_name (decl, 0));
       if (! DECL_ARTIFICIAL (decl))
 	add_src_coords_attributes (die, decl);
 
@@ -10330,12 +10651,11 @@ add_type_attribute (dw_die_ref object_die, tree type, int decl_const,
   enum tree_code code  = TREE_CODE (type);
   dw_die_ref type_die  = NULL;
 
-  /* ??? If this type is an unnamed subrange type of an integral or
-     floating-point type, use the inner type.  This is because we have no
-     support for unnamed types in base_type_die.  This can happen if this is
-     an Ada subrange type.  Correct solution is emit a subrange type die.  */
-  if ((code == INTEGER_TYPE || code == REAL_TYPE)
-      && TREE_TYPE (type) != 0 && TYPE_NAME (type) == 0)
+  /* ??? If this type is an unnamed subrange type of a floating-point type, 
+     use the inner type.  This is because we have no support for unnamed types
+     in base_type_die.  This can happen if this is an Ada subrange type.
+     Correct solution is emit a subrange type die.  */
+  if (code == REAL_TYPE && TREE_TYPE (type) != 0 && TYPE_NAME (type) == 0)
     type = TREE_TYPE (type), code = TREE_CODE (type);
 
   if (code == ERROR_MARK
@@ -10439,6 +10759,9 @@ gen_array_type_die (tree type, dw_die_ref context_die)
 
   array_die = new_die (DW_TAG_array_type, scope_die, type);
   add_name_attribute (array_die, type_tag (type));
+  add_encoding_attribute (array_die, type_tag (type));
+  add_artificial_attribute (array_die, type);
+  add_descriptive_type_attribute (array_die, type, context_die);
   equate_type_number_to_die (type, array_die);
 
   if (TREE_CODE (type) == VECTOR_TYPE)
@@ -10583,6 +10906,9 @@ gen_enumeration_type_die (tree type, dw_die_ref context_die)
 			  scope_die_for (type, context_die), type);
       equate_type_number_to_die (type, type_die);
       add_name_attribute (type_die, type_tag (type));
+      add_encoding_attribute (type_die, type_tag (type));
+      add_artificial_attribute (type_die, type);
+      add_descriptive_type_attribute (type_die, type, context_die);
     }
   else if (! TYPE_SIZE (type))
     return type_die;
@@ -10614,6 +10940,8 @@ gen_enumeration_type_die (tree type, dw_die_ref context_die)
 
 	  add_name_attribute (enum_die,
 			      IDENTIFIER_POINTER (TREE_PURPOSE (link)));
+	  add_encoding_attribute (enum_die, 
+				  IDENTIFIER_POINTER (TREE_PURPOSE (link)));
 
 	  if (host_integerp (value, TREE_UNSIGNED (TREE_TYPE (value))))
 	    /* DWARF2 does not provide a way of indicating whether or
@@ -10987,6 +11315,20 @@ gen_subprogram_die (tree decl, dw_die_ref context_die)
       ASM_GENERATE_INTERNAL_LABEL (label_id, FUNC_END_LABEL,
 				   current_function_funcdef_no);
       add_AT_lbl_id (subr_die, DW_AT_high_pc, label_id);
+
+#if TARGET_ABI_OPEN_VMS
+      {
+        dw_fde_ref fde = &fde_table[current_funcdef_fde];
+
+        if (fde->dw_fde_end_prologue)
+          add_AT_delta (subr_die, DW_AT_HP_prologue,
+	    fde->dw_fde_begin, fde->dw_fde_end_prologue, 1);
+
+        if (fde->dw_fde_begin_epilogue)
+          add_AT_delta (subr_die, DW_AT_HP_epilogue,
+	    fde->dw_fde_begin, fde->dw_fde_begin_epilogue, 1);
+      }
+#endif
 
       add_pubname (decl, subr_die);
       add_arange (decl, subr_die);
@@ -11421,6 +11763,9 @@ gen_compile_unit_die (const char *filename)
     strcat (producer, " -g");
 #endif
 
+  if (flag_gnat_dwarf_extensions)
+    strcat (producer, " -gdwarf+");
+
   add_AT_string (die, DW_AT_producer, producer);
 
   if (strcmp (language_string, "GNU C++") == 0)
@@ -11579,7 +11924,12 @@ gen_struct_or_union_type_die (tree type, dw_die_ref context_die)
       if (old_die)
 	add_AT_specification (type_die, old_die);
       else
-	add_name_attribute (type_die, type_tag (type));
+	{
+	  add_name_attribute (type_die, type_tag (type));
+	  add_encoding_attribute (type_die, type_tag (type));
+	  add_artificial_attribute (type_die, type);
+	  add_descriptive_type_attribute (type_die, type, context_die);
+	}
     }
   else
     remove_AT (type_die, DW_AT_declaration);
@@ -13081,11 +13431,16 @@ dwarf2out_finish (const char *filename)
 	     return type, it may be a SAVE_EXPR for which we weren't able
 	     to find a DIE previously.  So try now.  */
 	  else if (node->created_for
-		   && TREE_CODE (node->created_for) == SAVE_EXPR
-		   && 0 != (origin = (lookup_decl_die
-				      (SAVE_EXPR_CONTEXT
-				       (node->created_for)))))
-	    add_child_die (origin, die);
+		   && TREE_CODE (node->created_for) == SAVE_EXPR)
+	    {
+	      origin = lookup_decl_die
+		(SAVE_EXPR_CONTEXT (node->created_for));
+
+              if (origin)
+                add_child_die (origin, die);
+              else
+                add_child_die (comp_unit_die, die);
+	    }
 	  else if (errorcount > 0 || sorrycount > 0)
 	    /* It's OK to be confused by errors in the input.  */
 	    add_child_die (comp_unit_die, die);
@@ -13100,11 +13455,18 @@ dwarf2out_finish (const char *filename)
 		 nested function can be optimized away, which results
 		 in the nested function die being orphaned.  Likewise
 		 with the return type of that nested function.  Force
-		 this to be a child of the containing function.  */
+		 this to be a child of the containing function.
+
+		 It may happen that even the containing function got fully
+		 inlined and optimized out.  In that case we are lost and
+		 assign the empty child.  This should not be big issue as
+		 the function is likely unreachable too.  */
 	      origin = lookup_decl_die (context);
-	      if (! origin)
-		abort ();
-	      add_child_die (origin, die);
+	     
+              if (origin)
+                add_child_die (origin, die);
+              else
+                add_child_die (comp_unit_die, die);
 	    }
 	  else
 	    abort ();

@@ -32,13 +32,17 @@
 /* AIX allows r13 to be used in 32-bit mode.  */
 #define FIXED_R13 0
 
-/* AIX does not support Altivec.  */
+/* AIX does not support Altivec...  */
 #undef  TARGET_ALTIVEC
 #define TARGET_ALTIVEC 0
 #undef  TARGET_ALTIVEC_ABI
 #define TARGET_ALTIVEC_ABI 0
 #undef  TARGET_ALTIVEC_VRSAVE
 #define TARGET_ALTIVEC_VRSAVE 0
+
+/* ...so get back to the pre-Altivec setting.  And xcoff.h expects this.  */
+#undef BIGGEST_ALIGNMENT
+#define BIGGEST_ALIGNMENT 64
 
 /* The AIX linker will discard static constructors in object files before
    collect has a chance to see them, so scan the object files directly.  */
@@ -244,3 +248,6 @@
    32-bit mode.  */
 #define OS_MISSING_POWERPC64 1
 #define OS_MISSING_ALTIVEC 1
+
+/* Define this to be nonzero if static stack checking is supported.  */
+#define STACK_CHECK_STATIC_BUILTIN 1

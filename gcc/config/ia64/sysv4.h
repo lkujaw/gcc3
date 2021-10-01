@@ -70,6 +70,12 @@ do {						\
     fputc ('#', STREAM);			\
 } while (0)
 
+#undef ASM_GENERATE_INTERNAL_LABEL
+#define ASM_GENERATE_INTERNAL_LABEL(LABEL, PREFIX, NUM) \
+do {									\
+  sprintf (LABEL, (TARGET_GNU_AS ? "*.%s%d" : "*?%s%d"), PREFIX, NUM);	\
+} while (0)
+
 /* Intel assembler requires both flags and type if declaring a non-predefined
    section.  */
 #undef INIT_SECTION_ASM_OP
@@ -99,13 +105,8 @@ do {						\
 /* We redefine this to use the ia64 .proc pseudo-op.  */
 
 #undef ASM_DECLARE_FUNCTION_NAME
-#define ASM_DECLARE_FUNCTION_NAME(FILE, NAME, DECL) \
-do {									\
-  fputs ("\t.proc ", FILE);						\
-  assemble_name (FILE, NAME);						\
-  fputc ('\n', FILE);							\
-  ASM_OUTPUT_LABEL (FILE, NAME);					\
-} while (0)
+#define ASM_DECLARE_FUNCTION_NAME(FILE,NAME,DECL) \
+  ia64_start_function(FILE,NAME,DECL)
 
 /* We redefine this to use the ia64 .endp pseudo-op.  */
 

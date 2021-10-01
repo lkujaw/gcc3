@@ -1234,8 +1234,10 @@ expand_builtin_apply (rtx function, rtx arguments, rtx argsize)
     emit_stack_save (SAVE_BLOCK, &old_stack_level, NULL_RTX);
 
   /* Allocate a block of memory onto the stack and copy the memory
-     arguments to the outgoing arguments address.  */
-  allocate_dynamic_stack_space (argsize, 0, BITS_PER_UNIT);
+     arguments to the outgoing arguments address.  We can pass TRUE
+     as the 4th argument because we just saved the stack pointer
+     and will restore it right after the call.  */
+  allocate_dynamic_stack_space (argsize, 0, BITS_PER_UNIT, TRUE);
   dest = virtual_outgoing_args_rtx;
 #ifndef STACK_GROWS_DOWNWARD
   if (GET_CODE (argsize) == CONST_INT)
@@ -4291,7 +4293,7 @@ expand_builtin_alloca (tree arglist, rtx target)
   op0 = expand_expr (TREE_VALUE (arglist), NULL_RTX, VOIDmode, 0);
 
   /* Allocate the desired space.  */
-  result = allocate_dynamic_stack_space (op0, target, BITS_PER_UNIT);
+  result = allocate_dynamic_stack_space (op0, target, BITS_PER_UNIT, FALSE);
   result = convert_memory_address (ptr_mode, result);
 
   return result;

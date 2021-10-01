@@ -1,10 +1,31 @@
-# Multilibs for VxWorks.
+# Multilibs for VxWorks, including those needed for VxWorks 5.x and 6.x
+# using RTPs.
 
-MULTILIB_OPTIONS  = t403/t405/t440/t603/t604/t860
-MULTILIB_DIRNAMES = PPC403gnu PPC405gnu PPC440gnu \
-		    PPC603gnu PPC604gnu PPC860gnu
+MULTILIB_OPTIONS  = t403/t405/t440/t505/t603/t604/t860 mrtp fPIC
+MULTILIB_DIRNAMES = PPC403gnu PPC405gnu PPC440gnu PPC505gnu \
+		    PPC603gnu PPC604gnu PPC860gnu rtp fPIC
 
-MULTILIB_MATCHES  = t604=
+MULTILIB_MATCHES  = t860=msoft-float fPIC=fpic t604=
+
+MULTILIB_EXCEPTIONS = fPIC*
 
 # Put vxlib.c back in LIB2FUNCS_EXTRA (t-ppccomm clobbers it).
 LIB2FUNCS_EXTRA += $(srcdir)/config/vxlib.c
+
+# For table based unwinding on VxWorks, we use two sets of crtstuff objects:
+# one with _ctors/_dtors variables to trigger automatic table registrations by
+# the vxworks "dynamic" loader, and one without.
+
+# The first set is aimed at modules for Ada applications to be loaded in
+# separate parts (e.g. a module for the runtime library).  The second set is
+# aimed at other cases, for which another way to trigger the registration
+# should be used.  init.c/__gnat_initialize in the GNAT runtime library
+# handles that for Ada.
+
+# (crtbeginS/endS) is the (Static) set without the dynamic ctors/dtors.
+# (crtbegin/end)   is the second set, with those.
+#
+# The former is compiled with -fPIC by default, which is useless and
+# generates relocation entries that the dynamic loader cannot handle, so...
+
+CRTSTUFF_T_CFLAGS_S = $(CRTSTUFF_T_CFLAGS)

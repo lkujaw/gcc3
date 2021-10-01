@@ -448,7 +448,7 @@ extern const char *user_label_prefix;
 extern void default_function_pro_epilogue (FILE *, HOST_WIDE_INT);
 
 /* Tell assembler to switch to the section for the exception table.  */
-extern void default_exception_section (void);
+extern void default_exception_section (const char *);
 
 /* Tell assembler to switch to the section for the EH frames.  */
 extern void named_section_eh_frame_section (void);

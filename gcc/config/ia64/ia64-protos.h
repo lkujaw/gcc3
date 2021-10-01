@@ -103,6 +103,7 @@ extern enum reg_class ia64_secondary_reload_class (enum reg_class,
 extern void ia64_output_dwarf_dtprel (FILE*, int, rtx);
 extern void process_for_unwind_directive (FILE *, rtx);
 extern const char *get_bundle_name (int);
+extern const char *output_probe_stack_range (rtx, rtx);
 #endif /* RTX_CODE */
 
 #ifdef TREE_CODE
@@ -124,6 +125,7 @@ extern int ia64_function_arg_pass_by_reference (CUMULATIVE_ARGS *,
 						enum machine_mode, tree, int);
 extern int ia64_return_in_memory (tree);
 extern void ia64_asm_output_external (FILE *, tree, const char *);
+extern void ia64_start_function (FILE *, const char *, tree);
 #endif /* TREE_CODE */
 
 extern int ia64_register_move_cost (enum machine_mode, enum reg_class,
@@ -152,3 +154,4 @@ extern enum direction ia64_hpux_function_arg_padding (enum machine_mode, tree);
 #endif /* ARGS_SIZE_RTX */
 
 extern void ia64_hpux_handle_builtin_pragma (struct cpp_reader *);
+extern void ia64_output_function_profiler (FILE *, int);

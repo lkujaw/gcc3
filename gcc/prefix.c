@@ -238,16 +238,23 @@ tr (char *string, int c1, int c2)
   while (*string++);
 }
 
-/* Update PATH using KEY if PATH starts with PREFIX.  The returned
-   string is always malloc-ed, and the caller is responsible for
-   freeing it.  */
+/* Update PATH using KEY if PATH starts with PREFIX as a directory.
+   The returned string is always malloc-ed, and the caller is
+   responsible for freeing it.  */
 
 char *
 update_path (const char *path, const char *key)
 {
   char *result, *p;
+  const int len = strlen (std_prefix);
 
-  if (! strncmp (path, std_prefix, strlen (std_prefix)) && key != 0)
+  if (! strncmp (path, std_prefix, len) &&
+      (path[len] == '/' ||
+#ifdef DIR_SEPARATOR
+       path[len] == DIR_SEPARATOR ||
+#endif
+       path[len] == '\0') &&
+      key != 0)
     {
       bool free_key = false;
 
@@ -257,7 +264,7 @@ update_path (const char *path, const char *key)
 	  free_key = true;
 	}
 
-      result = concat (key, &path[strlen (std_prefix)], NULL);
+      result = concat (key, &path[len], NULL);
       if (free_key)
 	free ((char *) key);
       result = translate_name (result);

@@ -47,10 +47,12 @@ case $machine in
     i?86-*-mingw32* | \
     i?86-*-uwin* | \
     i?86-*-interix* | \
+    i?86-*-vxworks* | \
     powerpc-*-eabiaix* | \
     powerpc-*-eabisim* | \
     powerpc-*-eabi*    | \
     powerpc-*-rtems*   | \
+    powerpc-*-vxworks* | \
     powerpcle-*-eabisim* | \
     powerpcle-*-eabi* )
         #  Don't do any fixing.

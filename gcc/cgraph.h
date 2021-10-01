@@ -68,14 +68,23 @@ struct cgraph_global_info GTY(())
   bool inlined;
 };
 
+enum stack_usage_kind {
+  STATIC = 0,
+  DYNAMIC,
+  DYNAMIC_BOUNDED
+};
+
 /* Information about the function that is propagated by the RTL backend.
    Available only for functions that has been already assembled.  */
 
 struct cgraph_rtl_info GTY(())
 {
+   HOST_WIDE_INT stack_usage;
+   int preferred_incoming_stack_boundary;
+   int indirect_calls;
+   enum stack_usage_kind stack_usage_kind;
    bool const_function;
    bool pure_function;
-   int preferred_incoming_stack_boundary;
 };
 
 
@@ -159,8 +168,10 @@ extern GTY(()) struct cgraph_varpool_node *cgraph_varpool_nodes_queue;
 
 /* In cgraph.c  */
 void dump_cgraph (FILE *);
+void dump_cgraph_vcg (FILE *);
 void cgraph_remove_edge (struct cgraph_node *, struct cgraph_node *);
 void cgraph_remove_call (tree, tree);
+void cgraph_merge_calls (tree, tree);
 void cgraph_remove_node (struct cgraph_node *);
 struct cgraph_edge *cgraph_record_call (tree, tree);
 struct cgraph_node *cgraph_node (tree decl);

@@ -90,11 +90,15 @@ static int all_ones_mask_p (tree, int);
 static tree sign_bit_p (tree, tree);
 static int simple_operand_p (tree);
 static tree range_binop (enum tree_code, tree, tree, int, tree, int);
+static tree range_predecessor (tree);
+static tree range_successor (tree);
 static tree make_range (tree, int *, tree *, tree *);
 static tree build_range_check (tree, tree, int, tree, tree);
 static int merge_ranges (int *, tree *, tree *, int, tree, tree, int, tree,
 			 tree);
 static tree fold_range_test (tree);
+static tree propagate_range (tree, tree, int, tree, tree);
+static tree fold_cond_expr_with_vrp (tree);
 static tree unextend (tree, int, int, tree);
 static tree fold_truthop (enum tree_code, tree, tree, tree);
 static tree optimize_minmax_comparison (tree);
@@ -3233,6 +3237,34 @@ range_binop (enum tree_code code, tree type, tree arg0, int upper0_p,
 
   return fold_convert (type, result ? integer_one_node : integer_zero_node);
 }
+
+/* Return the predecessor of VAL in its type, handling the infinite case.  */
+
+static tree
+range_predecessor (tree val)
+{
+  tree type = TREE_TYPE (val);
+
+  if (INTEGRAL_TYPE_P (type)
+      && operand_equal_p (val, TYPE_MIN_VALUE (type), 0))
+    return 0;
+  else
+    return range_binop (MINUS_EXPR, NULL_TREE, val, 0, integer_one_node, 0);
+}
+
+/* Return the successor of VAL in its type, handling the infinite case.  */
+
+static tree
+range_successor (tree val)
+{
+  tree type = TREE_TYPE (val);
+
+  if (INTEGRAL_TYPE_P (type)
+      && operand_equal_p (val, TYPE_MAX_VALUE (type), 0))
+    return 0;
+  else
+    return range_binop (PLUS_EXPR, NULL_TREE, val, 0, integer_one_node, 0);
+}
 
 /* Given EXP, a logical expression, set the range it is testing into
    variables denoted by PIN_P, PLOW, and PHIGH.  Return the expression
@@ -3652,7 +3684,7 @@ merge_ranges (int *pin_p, tree *plow, tree *phigh, int in0_p, tree low0,
       /* If they don't overlap, the result is the first range.  If they are
 	 equal, the result is false.  If the second range is a subset of the
 	 first, and the ranges begin at the same place, we go from just after
-	 the end of the first range to the end of the second.  If the second
+	 the end of the second range to the end of the first.  If the second
 	 range is not a subset of the first, or if it is a subset and both
 	 ranges end at the same place, the range starts at the start of the
 	 first range and ends just before the second range.
@@ -3663,15 +3695,15 @@ merge_ranges (int *pin_p, tree *plow, tree *phigh, int in0_p, tree low0,
 	in_p = 0, low = high = 0;
       else if (subset && lowequal)
 	{
-	  in_p = 1, high = high0;
-	  low = range_binop (PLUS_EXPR, NULL_TREE, high1, 0,
-			     integer_one_node, 0);
+	  low = range_successor (high1);
+	  high = high0;
+	  in_p = (low != 0);
 	}
       else if (! subset || highequal)
 	{
-	  in_p = 1, low = low0;
-	  high = range_binop (MINUS_EXPR, NULL_TREE, low1, 0,
-			      integer_one_node, 0);
+	  low = low0;
+	  high = range_predecessor (low1);
+	  in_p = (high != 0);
 	}
       else
 	return 0;
@@ -3689,9 +3721,9 @@ merge_ranges (int *pin_p, tree *plow, tree *phigh, int in0_p, tree low0,
 	in_p = 0, low = high = 0;
       else
 	{
-	  in_p = 1, high = high1;
-	  low = range_binop (PLUS_EXPR, NULL_TREE, high0, 1,
-			     integer_one_node, 0);
+	  low = range_successor (high0);
+	  high = high1;
+	  in_p = (low != 0);
 	}
     }
 
@@ -3706,9 +3738,7 @@ merge_ranges (int *pin_p, tree *plow, tree *phigh, int in0_p, tree low0,
       if (no_overlap)
 	{
 	  if (integer_onep (range_binop (EQ_EXPR, integer_type_node,
-					 range_binop (PLUS_EXPR, NULL_TREE,
-						      high0, 1,
-						      integer_one_node, 1),
+					 range_successor (high0),
 					 1, low1, 0)))
 	    in_p = 0, low = low0, high = high1;
 	  else
@@ -3722,6 +3752,133 @@ merge_ranges (int *pin_p, tree *plow, tree *phigh, int in0_p, tree low0,
 
   *pin_p = in_p, *plow = low, *phigh = high;
   return 1;
+}
+
+/* This page implements a limited form of Value Range Propagation
+   on COND_EXPR trees.  It is primarily aimed at simplifying trees
+   representing the size of records with multiple levels of variant
+   parts depending on a unique discriminant.  */
+
+/* EXP is a COND_EXPR.  See if it can be simplified under the assumption
+   that VAR is restricted to the range described by IN_P, LOW and HIGH.
+
+   If so, return the new tree, otherwise return 0.  */
+
+static tree
+propagate_range (tree exp, tree var, int in_p, tree low, tree high)
+{
+  tree low0, high0;
+  int in0_p;
+  tree discr = make_range (TREE_OPERAND (exp, 0), &in0_p, &low0, &high0);
+  tree then_ = TREE_OPERAND (exp, 1);
+  tree else_ = TREE_OPERAND (exp, 2);
+  bool no_overlap_p, subset_p, superset_p;
+
+  /* Easy if the condition is always true or false.  */
+  if (discr == 0)
+    return (in0_p ? then_ : else_);
+
+  if (!operand_equal_p (discr, var, 0))
+    return 0;
+
+  no_overlap_p = (integer_onep (range_binop (LT_EXPR, integer_type_node,
+				     high0, 1, low, 0))
+		  || integer_onep (range_binop (LT_EXPR, integer_type_node,
+						high, 1, low0, 0)));
+
+  subset_p = (integer_onep (range_binop (LE_EXPR, integer_type_node,
+					  low0, 0, low, 0))
+	      && integer_onep (range_binop (LE_EXPR, integer_type_node,
+					    high, 1, high0, 1)));
+
+  superset_p = (integer_onep (range_binop (LE_EXPR, integer_type_node,
+					  low, 0, low0, 0))
+	        && integer_onep (range_binop (LE_EXPR, integer_type_node,
+					      high0, 1, high, 1)));
+
+  /* We now have four cases, depending on whether we are including or
+     excluding the two ranges.  */
+  if (in0_p && in_p)
+    {
+      /* If the first range is a subset, the COND_EXPR is always true.  */
+      if (subset_p)
+	return then_;
+      /* If they don't overlap, the COND_EXPR is always false.  */
+      else if (no_overlap_p)
+	return else_;
+    }
+  else if (in0_p && !in_p)
+    {
+      /* If the first range is a superset, the COND_EXPR is always false.  */
+      if (superset_p)
+	return else_;
+    }
+  else if (!in0_p && in_p)
+    {
+      /* If they don't overlap, the COND_EXPR is always true.  */
+      if (no_overlap_p)
+	return then_;
+      /* If the first range is a subset, the COND_EXPR is always false.  */
+      if (subset_p)
+	return else_;
+    }
+  else /* (!in0_p && !in_p) */
+    {
+      /* If the first range is a superset, the COND_EXPR is always true.  */
+      if (superset_p)
+	return then_;
+    }
+
+  return 0;
+}
+  
+/* EXP is a COND_EXPR with at least another COND_EXPR as one of its
+   value operands.  Attempt to propagate the range that can be deduced
+   from the condition of the top COND_EXPR to the child COND_EXPR and
+   see if the latter can consequently be replaced by one of its value
+   operands; if so, and if the value operand is again a COND_EXPR,
+   attempt to propagate further.
+
+   Return the new tree if at least one COND_EXPR was lifted, otherwise
+   return 0.  */
+
+static tree
+fold_cond_expr_with_vrp (tree exp)
+{
+  tree low, high, tem;
+  int in_p;
+  tree discr = make_range (TREE_OPERAND (exp, 0), &in_p, &low, &high);
+  tree then_ = TREE_OPERAND (exp, 1);
+  tree else_ = TREE_OPERAND (exp, 2);
+  bool simplified = false;
+
+  /* Easy if the condition is always true or false.  */
+  if (discr == 0)
+    return (in_p ? then_ : else_);
+
+  while (TREE_CODE (then_) == COND_EXPR)
+    {
+      tem = propagate_range (then_, discr, in_p, low, high);
+      if (!tem)
+        break;
+      then_ = tem;
+      simplified = true;
+    }
+
+  while (TREE_CODE (else_) == COND_EXPR)
+    {
+      tem = propagate_range (else_, discr, !in_p, low, high);
+      if (!tem)
+        break;
+      else_ = tem;
+      simplified = true;
+    }
+
+  if (simplified)
+    return fold (build (COND_EXPR, TREE_TYPE (exp), TREE_OPERAND (exp, 0),
+			then_, else_));
+  else
+    return 0;
 }
 
 #ifndef RANGE_TEST_NON_SHORT_CIRCUIT
@@ -5337,6 +5494,49 @@ tree_swap_operands_p (tree arg0, tree arg1, bool reorder)
     return 1;
 
   return 0;
+}
+
+/* Fold a binary expression of code CODE and type TYPE with operands
+   OP0 and OP1, containing either a MIN-MAX or a MAX-MIN combination.
+   Return the folded expression if folding is successful.  Otherwise,
+   return NULL_TREE.  */
+
+static tree
+fold_minmax (enum tree_code code, tree type, tree op0, tree op1)
+{
+  enum tree_code compl_code;
+
+  if (code == MIN_EXPR)
+    compl_code = MAX_EXPR;
+  else if (code == MAX_EXPR)
+    compl_code = MIN_EXPR;
+  else
+    abort ();
+
+  /* MIN (MAX (a, b), b) == b.  */
+  if (TREE_CODE (op0) == compl_code
+      && operand_equal_p (TREE_OPERAND (op0, 1), op1, 0))
+    return omit_one_operand (type, op1, TREE_OPERAND (op0, 0));
+
+  /* MIN (MAX (b, a), b) == b.  */
+  if (TREE_CODE (op0) == compl_code
+      && operand_equal_p (TREE_OPERAND (op0, 0), op1, 0)
+      && reorder_operands_p (TREE_OPERAND (op0, 1), op1))
+    return omit_one_operand (type, op1, TREE_OPERAND (op0, 1));
+
+  /* MIN (a, MAX (a, b)) == a.  */
+  if (TREE_CODE (op1) == compl_code
+      && operand_equal_p (op0, TREE_OPERAND (op1, 0), 0)
+      && reorder_operands_p (op0, TREE_OPERAND (op1, 1)))
+    return omit_one_operand (type, op0, TREE_OPERAND (op1, 1));
+
+  /* MIN (a, MAX (b, a)) == a.  */
+  if (TREE_CODE (op1) == compl_code
+      && operand_equal_p (op0, TREE_OPERAND (op1, 1), 0)
+      && reorder_operands_p (op0, TREE_OPERAND (op1, 0)))
+    return omit_one_operand (type, op0, TREE_OPERAND (op1, 0));
+
+  return NULL_TREE;
 }
 
 /* Perform constant folding and related simplification of EXPR.
@@ -6992,6 +7192,9 @@ fold (tree expr)
       if (INTEGRAL_TYPE_P (type)
 	  && operand_equal_p (arg1, TYPE_MIN_VALUE (type), 1))
 	return omit_one_operand (type, arg1, arg0);
+      tem = fold_minmax (MIN_EXPR, type, arg0, arg1);
+      if (tem)
+	return tem;
       goto associate;
 
     case MAX_EXPR:
@@ -7001,6 +7204,9 @@ fold (tree expr)
 	  && TYPE_MAX_VALUE (type)
 	  && operand_equal_p (arg1, TYPE_MAX_VALUE (type), 1))
 	return omit_one_operand (type, arg1, arg0);
+      tem = fold_minmax (MAX_EXPR, type, arg0, arg1);
+      if (tem)
+	return tem;
       goto associate;
 
     case TRUTH_NOT_EXPR:
@@ -7963,6 +8169,14 @@ fold (tree expr)
       return t1;
 
     case COND_EXPR:
+      if (TREE_CODE (TREE_OPERAND (t, 1)) == COND_EXPR
+	  || TREE_CODE (TREE_OPERAND (t, 2)) == COND_EXPR)
+	{
+	  tem = fold_cond_expr_with_vrp (t);
+	  if (tem)
+	    return tem;
+	}
+
       /* Pedantic ANSI C says that a conditional expression is never an lvalue,
 	 so all simple results must be passed through pedantic_non_lvalue.  */
       if (TREE_CODE (arg0) == INTEGER_CST)

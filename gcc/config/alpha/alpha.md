@@ -5067,6 +5067,24 @@
     return "call_pal 0x9f";
 }
   [(set_attr "type" "callpal")])
+
+;; Special builtins for establishing and reverting VMS condition handlers.
+
+(define_expand "builtin_establish_vms_condition_handler"
+  [(set (reg:DI 0) (match_operand:DI 0 "register_operand" ""))
+   (use (match_operand:DI 1 "address_operand" ""))]
+  "TARGET_ABI_OPEN_VMS"
+{
+  alpha_expand_builtin_establish_vms_condition_handler (operands[0],
+                                                        operands[1]);
+})
+
+(define_expand "builtin_revert_vms_condition_handler"
+  [(set (reg:DI 0) (match_operand:DI 0 "register_operand" ""))]
+  "TARGET_ABI_OPEN_VMS"
+{
+  alpha_expand_builtin_revert_vms_condition_handler (operands[0]);
+})
 
 ;; Finally, we have the basic data motion insns.  The byte and word insns
 ;; are done via define_expand.  Start with the floating-point insns, since
@@ -5173,13 +5191,7 @@
   [(set (match_dup 0) (match_dup 2))
    (set (match_dup 1) (match_dup 3))]
 {
-  alpha_split_tfmode_pair (operands);
-  if (reg_overlap_mentioned_p (operands[0], operands[3]))
-    {
-      rtx tmp;
-      tmp = operands[0], operands[0] = operands[1], operands[1] = tmp;
-      tmp = operands[2], operands[2] = operands[3], operands[3] = tmp;
-    }
+  alpha_split_tmode_pair (operands, TFmode, 1);
 })
 
 (define_expand "movsf"
@@ -5700,6 +5712,81 @@
     DONE;
   else
     FAIL;
+})
+
+;; We need to prevent reload from splitting TImode moves, because it
+;; might decide to overwrite a pointer with the value it points to.
+;; In that case we have to do the loads in the appropriate order so
+;; that the pointer is not destroyed too early.
+
+(define_insn_and_split "*movti_internal"
+  [(set (match_operand:TI 0 "nonimmediate_operand" "=r,o")
+        (match_operand:TI 1 "input_operand" "roJ,rJ"))]
+  "(register_operand (operands[0], TImode)
+    /* Prevent rematerialization of constants.  */
+    && ! CONSTANT_P (operands[1]))
+   || reg_or_0_operand (operands[1], TImode)"
+  "#"
+  "reload_completed"
+  [(set (match_dup 0) (match_dup 2))
+   (set (match_dup 1) (match_dup 3))]
+{
+  alpha_split_tmode_pair (operands, TImode, 1);
+})
+
+(define_expand "movti"
+  [(set (match_operand:TI 0 "nonimmediate_operand" "")
+        (match_operand:TI 1 "general_operand" ""))]
+  ""
+{
+  if (GET_CODE (operands[0]) == MEM
+      && ! reg_or_0_operand (operands[1], TImode))
+    operands[1] = force_reg (TImode, operands[1]);
+
+  if (operands[1] == const0_rtx)
+    ;
+  /* We must put 64-bit constants in memory.  We could keep the
+     32-bit constants in TImode and rely on the splitter, but
+     this doesn't seem to be worth the pain.  */
+  else if (GET_CODE (operands[1]) == CONST_INT
+	   || GET_CODE (operands[1]) == CONST_DOUBLE)
+    {
+      rtx in[2], out[2], target;
+
+      if (no_new_pseudos)
+	abort ();
+
+      split_double (operands[1], &in[0], &in[1]);
+
+      if (in[0] == const0_rtx)
+	out[0] = const0_rtx;
+      else
+	{
+	  out[0] = gen_reg_rtx (DImode);
+	  emit_insn (gen_movdi (out[0], in[0]));
+	}
+
+      if (in[1] == const0_rtx)
+	out[1] = const0_rtx;
+      else
+	{
+	  out[1] = gen_reg_rtx (DImode);
+	  emit_insn (gen_movdi (out[1], in[1]));
+	}
+
+      if (GET_CODE (operands[0]) != REG)
+	target = gen_reg_rtx (TImode);
+      else
+	target = operands[0];
+
+      emit_insn (gen_movdi (gen_rtx_SUBREG (DImode, target, 0), out[0]));
+      emit_insn (gen_movdi (gen_rtx_SUBREG (DImode, target, 8), out[1]));
+
+      if (target != operands[0])
+	emit_insn (gen_rtx_SET (VOIDmode, operands[0], target));
+
+      DONE;
+    }
 })
 
 ;; These are the partial-word cases.

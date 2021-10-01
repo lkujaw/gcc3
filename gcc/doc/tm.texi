@@ -1079,26 +1079,28 @@ sign-extend the result to 64 bits.  On such machines, set
 Do not define this macro if it would never modify @var{m}.
 @end defmac
 
+@defmac PROMOTE_FUNCTION_MODE
+Like @code{PROMOTE_MODE}, but is applied to outgoing function arguments or
+function return values, as specified by @code{TARGET_PROMOTE_FUNCTION_ARGS}
+and @code{TARGET_PROMOTE_FUNCTION_RETURN}, respectively.
+
+The default is @code{PROMOTE_MODE}.
+@end defmac
+
 @deftypefn {Target Hook} bool TARGET_PROMOTE_FUNCTION_ARGS (tree @var{fntype})
 This target hook should return @code{true} if the promotion described by
-@code{PROMOTE_MODE} should also be done for outgoing function arguments.
+@code{PROMOTE_FUNCTION_MODE} should be done for outgoing function
+arguments.
 @end deftypefn
 
 @deftypefn {Target Hook} bool TARGET_PROMOTE_FUNCTION_RETURN (tree @var{fntype})
 This target hook should return @code{true} if the promotion described by
-@code{PROMOTE_MODE} should also be done for the return value of
+@code{PROMOTE_FUNCTION_MODE} should be done for the return value of
 functions.
 
 If this target hook returns @code{true}, @code{FUNCTION_VALUE} must
-perform the same promotions done by @code{PROMOTE_MODE}.
+perform the same promotions done by @code{PROMOTE_FUNCTON_MODE}.
 @end deftypefn
-
-@defmac PROMOTE_FOR_CALL_ONLY
-Define this macro if the promotion described by @code{PROMOTE_MODE}
-should @emph{only} be performed for outgoing function arguments or
-function return values, as specified by @code{TARGET_PROMOTE_FUNCTION_ARGS}
-and @code{TARGET_PROMOTE_FUNCTION_RETURN}, respectively.
-@end defmac
 
 @defmac PARM_BOUNDARY
 Normal alignment required for function parameters on the stack, in
@@ -3014,6 +3016,12 @@ want to support call frame debugging information like that provided by
 DWARF 2.
 @end defmac
 
+@deftypefn {Target Hook} HOST_WIDE_INT TARGET_GET_STATIC_STACK_USAGE (void)
+This target hook should return the maximum static stack usage for the
+current function.  It is invoked just before prologue and epilogue are
+emitted for the function.
+@end deftypefn
+
 @node Exception Handling
 @subsection Exception Handling Support
 @cindex exception handling
@@ -3140,16 +3148,24 @@ be updated in @var{fs}.
 @node Stack Checking
 @subsection Specifying How Stack Checking is Done
 
-GCC will check that stack references are within the boundaries of
-the stack, if the @option{-fstack-check} is specified, in one of three ways:
+GCC will check that stack references are within the boundaries of the
+stack, if the option @option{-fstack-check} is specified, in one of
+four ways:
 
 @enumerate
 @item
 If the value of the @code{STACK_CHECK_BUILTIN} macro is nonzero, GCC
-will assume that you have arranged for stack checking to be done at
-appropriate places in the configuration files, e.g., in
-@code{TARGET_ASM_FUNCTION_PROLOGUE}.  GCC will do not other special
-processing.
+will assume that you have arranged for full stack checking to be done
+at appropriate places in the configuration files.  GCC will not do
+other special processing.
+
+@item
+If @code{STACK_CHECK_BUILTIN} is zero and the value of the
+@code{STACK_CHECK_STATIC_BUILTIN} macro is nonzero, GCC will assume
+that you have arranged for static stack checking to be done at
+appropriate places in the configuration files.  GCC will only emit
+code for doing stack checking on dynamic allocations, using the
+third or fourth approach described below.
 
 @item
 If @code{STACK_CHECK_BUILTIN} is zero and you defined a named pattern
@@ -3163,22 +3179,32 @@ If neither of the above are true, GCC will generate code to periodically
 ``probe'' the stack pointer using the values of the macros defined below.
 @end enumerate
 
-Normally, you will use the default values of these macros, so GCC
-will use the third approach.
+If you define neither STACK_CHECK_BUILTIN nor STACK_CHECK_STATIC_BUILTIN,
+GCC will change its allocation strategy for large objects if the option
+@option{-fstack-check} is specified: they will always be allocated
+dynamically if their size exceeds @code{STACK_CHECK_MAX_VAR_SIZE} bytes.
 
 @defmac STACK_CHECK_BUILTIN
 A nonzero value if stack checking is done by the configuration files in a
 machine-dependent manner.  You should define this macro if stack checking
-is require by the ABI of your machine or if you would like to have to stack
-checking in some more efficient way than GCC's portable approach.
-The default value of this macro is zero.
+is require by the ABI of your machine or if you would like to do stack
+checking in some more efficient way than the generic approach.  The default
+value of this macro is zero.
 @end defmac
 
-@defmac STACK_CHECK_PROBE_INTERVAL
-An integer representing the interval at which GCC must generate stack
-probe instructions.  You will normally define this macro to be no larger
-than the size of the ``guard pages'' at the end of a stack area.  The
-default value of 4096 is suitable for most systems.
+@defmac STACK_CHECK_STATIC_BUILTIN
+A nonzero value if static stack checking is done by the configuration files
+in a machine-dependent manner.  You should define this macro if you would
+like to do static stack checking in some more efficient way than the generic
+approach.  The default value of this macro is zero.
+@end defmac
+
+@defmac STACK_CHECK_PROBE_INTERVAL_EXP
+An integer specifying the interval at which GCC must generate stack probe
+instructions, defined as 2 raised to this integer.  You will normally
+define this macro so that the interval be no larger than the size of
+the ``guard pages'' at the end of a stack area.  The default value
+of 12 (4096-byte interval) is suitable for most systems.
 @end defmac
 
 @defmac STACK_CHECK_PROBE_LOAD
@@ -3192,6 +3218,10 @@ The number of bytes of stack needed to recover from a stack overflow,
 for languages where such a recovery is supported.  The default value of
 75 words should be adequate for most machines.
 @end defmac
+
+The following three macros are relevant only if neither STACK_CHECK_BUILTIN
+nor STACK_CHECK_STATIC_BUILTIN is defined; you can omit them altogether
+in the opposite case.
 
 @defmac STACK_CHECK_MAX_FRAME_SIZE
 The maximum size of a stack frame, in bytes.  GCC will generate probe
@@ -6793,6 +6823,11 @@ is defined, the default definition is @samp{1}; otherwise, it is
 with a compiler flag such as @option{-melf}.
 @end defmac
 
+@defmac PTHREAD_ACTIVE_FUNCTION
+Defines the pthread library function used to detect if a program is using
+the pthread library.  The default is @code{pthread_create}.
+@end defmac
+
 @defmac MAKE_DECL_ONE_ONLY (@var{decl})
 A C statement (sans semicolon) to mark @var{decl} to be emitted as a
 public symbol such that extra copies in multiple translation units will
@@ -8134,9 +8169,20 @@ line debug info sections.  This will result in much more compact line number
 tables, and hence is desirable if it works.
 @end defmac
 
+@defmac DWARF2_DIR_SHOULD_END_WITH_SEPARATOR
+Define this macro to be a nonzero value if the directory specifications which
+are output in the debug info should end with a separator.
+@end defmac
+
 @defmac ASM_OUTPUT_DWARF_DELTA (@var{stream}, @var{size}, @var{label1}, @var{label2})
 A C statement to issue assembly directives that create a difference
 between the two given labels, using an integer of the given size.
+@end defmac
+
+@defmac ASM_OUTPUT_DWARF_DELTA_UNITS (@var{stream}, @var{size}, @var{label1}, @var{label2}, @var{units})
+A C statement to issue assembly directives that create a difference
+between the two given labels in system defined units, e.g. instruction
+slots on IA64 VMS, using an integer of the given size.
 @end defmac
 
 @defmac ASM_OUTPUT_DWARF_OFFSET (@var{stream}, @var{size}, @var{label})

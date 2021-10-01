@@ -188,10 +188,28 @@ initialization when @code{collect2} is being initialized.
 If defined, a C statement (sans semicolon) that performs host-dependent
 initialization when a compilation driver is being initialized.
 
+@item DELETE_IF_ORDINARY
+Define this macro to be a C statement (sans semicolon) that performs
+host-dependent removal of ordinary temp files in the compilation driver.
+
+If you do not define this macro, GCC will use the default version. You
+should define this macro if the default version does not reliably remove
+the temp file as, for example, on VMS which allows multiple versions
+of a file.
+
 @item SMALL_ARG_MAX
 Define this macro if the host system has a small limit on the total
 size of an argument vector.  This causes the driver to take more care
 not to pass unnecessary arguments to subprocesses.
+
+@item HOST_LONG_LONG_FORMAT
+If defined, the string used to indicate an argument of type @code{long
+long} to functions like @code{printf}.  The default value is
+@code{"ll"}. 
+
+@item HOST_LONG_FORMAT
+If defined, the string used to indicate an argument of type @code{long}
+to functions like @code{printf}.  The default value is @code{"l"}. 
 @end ftable
 
 In addition, if @command{configure} generates an incorrect definition of

@@ -1,0 +1,4 @@
+# For EABI systems, this will build libgcc.a with long calls instead
+# of the default relative branches.
+
+TARGET_LIBGCC2_CFLAGS = -mlongcall

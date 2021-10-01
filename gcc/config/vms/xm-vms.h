@@ -1,6 +1,5 @@
-/* Configuration for GNU C-compiler for openVMS/Alpha.
-   Copyright (C) 1996, 1997, 2001 Free Software Foundation, Inc.
-   Contributed by Klaus Kaempf (kkaempf@progis.de).
+/* Configuration for GNU C-compiler for OpenVMS/Integrity.
+   Copyright (C) 2005 Free Software Foundation, Inc.
 
 This file is part of GCC.
 
@@ -24,9 +23,6 @@ Boston, MA 02111-1307, USA.  */
 #define VMS
 #endif
 
-/* Define a local equivalent (sort of) for unlink */
-#define unlink remove
-
 /* Causes exit() to be redefined to __posix_exit() and
    Posix compatible failure and success codes to be used */
 #define _POSIX_EXIT 1
@@ -43,3 +39,19 @@ Boston, MA 02111-1307, USA.  */
 #define HOST_OBJECT_SUFFIX ".obj"
 
 #define DUMPFILE_FORMAT "_%02d_"
+
+#define DELETE_IF_ORDINARY(NAME,ST,VERBOSE_FLAG)           \
+do                                                         \
+  {                                                        \
+    while (stat (NAME, &ST) >= 0 && S_ISREG (ST.st_mode))  \
+      if (unlink (NAME) < 0)                               \
+	{                                                  \
+	  if (VERBOSE_FLAG)                                \
+	    perror_with_name (NAME);                       \
+	  break;                                           \
+	}                                                  \
+  } while (0)
+
+#define STANDARD_EXEC_PREFIX "/gnu/libexec/gcc/"
+#define STANDARD_STARTFILE_PREFIX "/gnu/lib/"
+#define STANDARD_INCLUDE_DIR "/gnu/include"

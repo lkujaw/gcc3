@@ -91,21 +91,39 @@ FUNC_START(__trampoline_setup)
 	stw	r5,.Lfunc(r3)
 	stw	r6,.Lchain(r3)
 
-	/* Now flush both caches */
+#if defined (_NO_ICACHE) && defined (_NO_DCACHE)
+	/* No caches, so no need to flush anything */
+#else
+	/* Now flush the cache(s) */
 	mtctr	r4
 .Lcache:
-	icbi	0,r3
-	dcbf	0,r3
+#ifndef _NO_ICACHE
+	icbi	0,r3		/* invalidate instruction cache */
+#endif
+#ifndef _NO_DCACHE
+	dcbf	0,r3		/* flush data cache */
+#endif
 	addi	r3,r3,4
 	bdnz	.Lcache
-
+#endif
+	
 	/* Finally synchronize things & return */
-	sync
-	isync
+	sync			/* ensure update is in main memory */
+	isync			/* discard prefetched instructions */
 	blr
 
 .Labort:
-	bl	JUMP_TARGET(abort)
+/* Use a longcall sequence in the simple non PIC case.  This allows the
+   non-pic code to be mlongcall compliant.  The PIC+longcall case would
+   be much harder to handle, and there is no real need as of today.  */
+#if defined __PIC__ || defined __pic__
+        bl JUMP_TARGET(abort)
+#else
+        addis 11, 0,JUMP_TARGET(abort)@ha
+        addi  12,11,JUMP_TARGET(abort)@l
+        mtlr  12
+        blrl
+#endif
 FUNC_END(__trampoline_setup)
 
 #endif

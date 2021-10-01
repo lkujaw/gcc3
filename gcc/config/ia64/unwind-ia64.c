@@ -207,6 +207,9 @@ struct _Unwind_Context
   unsigned long *pfs_loc;	/* Save location for pfs in current
   				   (corr. to sp) frame.  Target
   				   contains cfm for caller.	*/
+  unsigned long *signal_pfs_loc;/* Save location for pfs in current
+				   signal frame.  Target contains
+				   pfs for caller.  */
   unsigned long *pri_unat_loc;
   unsigned long *unat_loc;
   unsigned long *lc_loc;
@@ -1726,14 +1729,14 @@ _Unwind_GetRegionStart (struct _Unwind_Context *context)
 void *
 _Unwind_FindEnclosingFunction (void *pc)
 {
-  struct unw_table_entry *ent;
+  struct unw_table_entry *entp, ent;
   unsigned long segment_base, gp;
 
-  ent = _Unwind_FindTableEntry (pc, &segment_base, &gp);
-  if (ent == NULL)
+  entp = _Unwind_FindTableEntry (pc, &segment_base, &gp, &ent);
+  if (entp == NULL)
     return NULL;
   else
-    return (void *)(segment_base + ent->start_offset);
+    return (void *)(segment_base + entp->start_offset);
 }
 
 /* Get the value of the CFA as saved in CONTEXT.  In GCC/Dwarf2 parlance,
@@ -1755,10 +1758,23 @@ _Unwind_GetBSP (struct _Unwind_Context *context)
 }
 
 
+#ifdef MD_FALLBACK_FRAME_STATE_FOR_SOURCE
+
+#include MD_FALLBACK_FRAME_STATE_FOR_SOURCE
+
+#undef MD_FALLBACK_FRAME_STATE_FOR
+#define MD_FALLBACK_FRAME_STATE_FOR(CONTEXT,FS,SUCCESS) \
+do { \
+  if (md_fallback_frame_state_for ((CONTEXT), (FS)) != 0) \
+     goto SUCCESS; \
+} while (0);
+
+#endif
+
 static _Unwind_Reason_Code
 uw_frame_state_for (struct _Unwind_Context *context, _Unwind_FrameState *fs)
 {
-  struct unw_table_entry *ent;
+  struct unw_table_entry *entp, ent;
   unsigned long *unw, header, length;
   unsigned char *insn, *insn_end;
   unsigned long segment_base;
@@ -1769,15 +1785,16 @@ uw_frame_state_for (struct _Unwind_Context *context, _Unwind_FrameState *fs)
     r->when = UNW_WHEN_NEVER;
   context->lsda = 0;
 
-  ent = _Unwind_FindTableEntry ((void *) context->rp,
-				&segment_base, &context->gp);
-  if (ent == NULL)
+  entp = _Unwind_FindTableEntry ((void *) context->rp,
+				&segment_base, &context->gp, &ent);
+  if (entp == NULL)
     {
       /* Couldn't find unwind info for this function.  Try an
 	 os-specific fallback mechanism.  This will necessarily
 	 not provide a personality routine or LSDA.  */
 #ifdef MD_FALLBACK_FRAME_STATE_FOR
       MD_FALLBACK_FRAME_STATE_FOR (context, fs, success);
+#endif
 
       /* [SCRA 11.4.1] A leaf function with no memory stack, no exception
 	 handlers, and which keeps the return value in B0 does not need
@@ -1786,28 +1803,19 @@ uw_frame_state_for (struct _Unwind_Context *context, _Unwind_FrameState *fs)
 	 This can only happen in the frame after unwinding through a signal
 	 handler.  Avoid infinite looping by requiring that B0 != RP.
 	 RP == 0 terminates the chain.  */
-      if (context->br_loc[0] && *context->br_loc[0] != context->rp
+      if (context->br_loc[0]
+	  && *context->br_loc[0] != context->rp
 	  && context->rp != 0)
-	{
-	  fs->curr.reg[UNW_REG_RP].where = UNW_WHERE_BR;
-	  fs->curr.reg[UNW_REG_RP].when = -1;
-	  fs->curr.reg[UNW_REG_RP].val = 0;
-	  goto success;
-	}
+	goto skip_unwind_info;
 
       return _URC_END_OF_STACK;
-    success:
-      return _URC_NO_REASON;
-#else
-      return _URC_END_OF_STACK;
-#endif
     }
 
-  context->region_start = ent->start_offset + segment_base;
+  context->region_start = entp->start_offset + segment_base;
   fs->when_target = ((context->rp & -16) - context->region_start) / 16 * 3
 		    + (context->rp & 15);
 
-  unw = (unsigned long *) (ent->info_offset + segment_base);
+  unw = (unsigned long *) (entp->info_offset + segment_base);
   header = *unw;
   length = UNW_LENGTH (header);
 
@@ -1847,7 +1855,8 @@ uw_frame_state_for (struct _Unwind_Context *context, _Unwind_FrameState *fs)
 	  r->where = UNW_WHERE_NONE;
     }
 
-  /* If RP did't get saved, generate entry for the return link register.  */
+skip_unwind_info:
+  /* If RP didn't get saved, generate entry for the return link register.  */
   if (fs->curr.reg[UNW_REG_RP].when >= fs->when_target)
     {
       fs->curr.reg[UNW_REG_RP].where = UNW_WHERE_BR;
@@ -1855,6 +1864,28 @@ uw_frame_state_for (struct _Unwind_Context *context, _Unwind_FrameState *fs)
       fs->curr.reg[UNW_REG_RP].val = fs->return_link_reg;
     }
 
+  /* There is a subtlety for the frame after unwinding through a signal
+     handler: should we restore the cfm as usual or the pfs?  We can't
+     restore both because we use br.ret to resume execution of user code.
+     For other frames the procedure is by definition non-leaf so the pfs
+     is saved and restored and thus effectively dead in the body; only
+     the cfm need therefore be restored.
+     
+     Here we have 2 cases:
+       - either the pfs is saved and restored and thus effectively dead
+	 like in regular frames; then we do nothing special and restore
+	 the cfm.
+       - or the pfs is not saved and thus live; but in that case the
+	 procedure is necessarily leaf so the cfm is effectively dead
+	 and we restore the pfs.  */
+  if (context->signal_pfs_loc)
+    {
+      if (fs->curr.reg[UNW_REG_PFS].when >= fs->when_target)
+	context->pfs_loc = context->signal_pfs_loc;
+      context->signal_pfs_loc = NULL;
+    }
+
+success:
   return _URC_NO_REASON;
 }
 

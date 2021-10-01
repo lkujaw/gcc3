@@ -1,5 +1,5 @@
 /* VMS DEC C wrapper.
-   Copyright (C) 2001, 2003 Free Software Foundation, Inc.
+   Copyright (C) 2005 Free Software Foundation, Inc.
    Contributed by Douglas B. Rupp (rupp@gnat.com).
 
 This file is part of GCC.
@@ -23,15 +23,28 @@ Boston, MA 02111-1307, USA.  */
    It translates Unix style command line options into corresponding
    VMS style qualifiers and then spawns the DEC C compiler.  */
 
+#define _POSIX_EXIT 1
+
 #include "config.h"
 #include "system.h"
 #include "coretypes.h"
 #include "tm.h"
 
+# define WIFEXITED(s)   (((s)&0x7F)==0)
+# define WEXITSTATUS(s) (((s)>>8)&0xFF)
 #undef PATH_SEPARATOR
 #undef PATH_SEPARATOR_STR
 #define PATH_SEPARATOR ','
 #define PATH_SEPARATOR_STR ","
+
+static char *rcp_target;
+static char *rcp_username;
+
+#ifdef CROSS_COMPILE
+static int remote = 1;
+#else
+static int remote = 0;
+#endif
 
 /* These can be set by command line arguments */
 static int verbose = 0;
@@ -41,6 +54,7 @@ static int comp_arg_max = -1;
 static const char **comp_args = 0;
 static int comp_arg_index = -1;
 static char *objfilename = 0;
+static char *objfileshortname = 0;
 
 static char *system_search_dirs = (char *) "";
 static char *search_dirs;
@@ -100,6 +114,13 @@ static void
 preprocess_args (int *p_argc, char *argv[])
 {
   int i;
+  char *cc_program = "cc";
+
+  for (i = 1; i < *p_argc; i++)
+    if (strstr (argv [i], "--cc=") != NULL)
+      cc_program = argv[i] + 5;
+
+  addarg (cc_program);
 
   for (i = 1; i < *p_argc; i++)
     {
@@ -110,7 +131,12 @@ preprocess_args (int *p_argc, char *argv[])
 	  i++;
 	  ptr = to_host_file_spec (argv[i]);
 	  objfilename = xstrdup (ptr);
-	  buff = concat ("/obj=", ptr, NULL);
+          objfileshortname = basename (objfilename);
+
+	  if (remote)
+	    buff = concat ("/obj=", objfileshortname, NULL);
+	  else
+	    buff = concat ("/obj=", objfilename, NULL);
 	  addarg (buff);
 	}
     }
@@ -175,25 +201,42 @@ process_args (int *p_argc, char *argv[])
 /* The main program.  Spawn the VMS DEC C compiler after fixing up the
    Unix-like flags and args to be what VMS DEC C wants.  */
 
-typedef struct dsc {unsigned short len, mbz; char *adr; } Descr;
-
 int
 main (int argc, char **argv)
 {
-  int i;
+  int i, len;
   char cwdev [128], *devptr;
   int devlen;
-  char *cwd = getcwd (0, 1024);
+  char *cwd, *rcpfile;
+  char *allargs;
+  int status;
+
+  rcp_target = getenv ("GCC_CROSS_TARGET");
+  rcp_username = getenv ("GCC_CROSS_TARGET_USER");
+  if (remote && (!rcp_target || !rcp_username))
+    {
+      fputs ("GCC_CROSS_TARGET or GCC_CROSS_TARGET_USER undefined\n", stderr);
+      return 1;
+    }
+ 
+#ifdef VMS
+  cwd = getcwd (0, 1024, 1);
+#else
+  cwd = getcwd (0, 1024);
+  strcat (cwd, "/");
+#endif
 
   devptr = strchr (cwd, ':');
-  devlen = (devptr - cwd) + 1;
+  if (devptr)
+    devlen = (devptr - cwd) + 1;
+  else
+    devlen = 0;
   strncpy (cwdev, cwd, devlen);
   cwdev [devlen] = '\0';
 
   search_dirs = xstrdup (system_search_dirs);
   defines = xstrdup (default_defines);
 
-  addarg ("cc");
   preprocess_args (&argc , argv);
   process_args (&argc , argv);
 
@@ -222,6 +265,7 @@ main (int argc, char **argv)
 	       || strcmp (argv[i], "-c") == 0
 	       || strncmp (argv[i], "-g", 2 ) == 0
 	       || strncmp (argv[i], "-O", 2 ) == 0
+	       || strncmp (argv[i], "--cc=", 5 ) == 0
 	       || strcmp (argv[i], "-save-temps") == 0
 	       || (arg_len > 2 && strncmp (argv[i], "-I", 2) == 0)
 	       || (arg_len > 2 && strncmp (argv[i], "-D", 2) == 0))
@@ -240,15 +284,23 @@ main (int argc, char **argv)
 	  ptr = to_host_file_spec (argv[i]);
 	  arg_len = strlen (ptr);
 
+#ifdef VMS
 	  if (ptr[0] == '[')
 	    sprintf (buff, "%s%s", cwdev, ptr);
 	  else if (strchr (ptr, ':'))
 	    sprintf (buff, "%s", ptr);
 	  else
 	    sprintf (buff, "%s%s", cwd, ptr);
+#else
+	  strcpy (buff, ptr);
+#endif
 
 	  ptr = xstrdup (buff);
-	  addarg (ptr);
+	  if (remote)
+	    addarg (basename (ptr));
+	  else
+	    addarg (ptr);
+          rcpfile = ptr;
 	}
     }
 
@@ -264,46 +316,69 @@ main (int argc, char **argv)
       putchar ('\n');
     }
 
-  {
-    int i;
-    int len = 0;
+  for (i = 0, len = 0; comp_args[i]; i++)
+    len = len + strlen (comp_args[i]) + 1;
 
-    for (i = 0; comp_args[i]; i++)
-      len = len + strlen (comp_args[i]) + 1;
+  allargs = (char *) xmalloc (len + 1);
 
+  for (i = 0; i < len + 1; i++)
+    allargs [i] = 0;
+
+  for (i = 0; comp_args [i]; i++)
     {
-      char *allargs = (char *) alloca (len + 1);
-      Descr cmd;
-      int status;
-      int status1 = 1;
-
-      for (i = 0; i < len + 1; i++)
-	allargs [i] = 0;
-
-      for (i = 0; comp_args [i]; i++)
-	{
-	  strcat (allargs, comp_args [i]);
-	  strcat (allargs, " ");
-	}
-
-      cmd.adr = allargs;
-      cmd.len = len;
-      cmd.mbz = 0;
-
-      i = LIB$SPAWN (&cmd, 0, 0, 0, 0, 0, &status);
-
-      if ((i & 1) != 1)
-	{
-	  LIB$SIGNAL (i);
-	  exit (1);
-	}
-
-      if ((status & 1) == 1 && (status1 & 1) == 1)
-	exit (0);
-
-      exit (1);
+      strcat (allargs, comp_args [i]);
+      strcat (allargs, " ");
     }
-  }
+
+  if (remote)
+    {
+      char buff [256];
+
+      sprintf (buff, "rcp %s \"%s@%s:\"\n", rcpfile, rcp_username, rcp_target);
+      system (buff);
+
+      sprintf (buff, "rsh %s -l %s \"%s\"\n", rcp_target, rcp_username, allargs);
+      system (buff);
+
+      /* Alpha objects have to be converted to udf before rcp otherwise
+	 the variable length record counts are lost. Itanium objects
+	 are udf anyway. */
+      sprintf (buff, "rsh %s -l %s \"set file/attr=(rfm:udf,rat=none) %s\"\n",
+	       rcp_target, rcp_username, objfileshortname);
+      system (buff);
+
+      sprintf (buff, "rcp \"%s@%s:%s\" %s\n",
+        rcp_username, rcp_target, objfileshortname, objfilename);
+      system (buff);
+
+      status = 0;
+    }
+  else
+    {
+      FILE *ccfile;
+      char buff [256];
+
+      ccfile = popen (allargs, "r");
+      if (!ccfile)
+        {
+          perror ("cc popen link");
+	  exit (1);
+        }
+
+      fgets (buff, sizeof (buff), ccfile);
+      while (!feof (ccfile) ) {
+        fputs (buff, stdout);
+        fgets (buff, sizeof (buff), ccfile);
+      }
+      status = WEXITSTATUS (pclose (ccfile));
+      if ((status & 1) != 1)
+        {
+          perror ("cc pclose link");
+          exit (1);
+        }
+    }
+
+  exit (0);
 }
 
 static char new_host_filespec [255];
@@ -333,7 +408,11 @@ to_host_dir_spec (char *dirspec)
       len--;
     }
 
+#ifdef VMS
   decc$to_vms (new_host_dirspec, translate_unix, 1, 2);
+#else
+  strcpy (filename_buff, dirspec);
+#endif
   strcpy (new_host_dirspec, filename_buff);
 
   return new_host_dirspec;
@@ -348,7 +427,11 @@ to_host_file_spec (char *filespec)
     strcpy (new_host_filespec, filespec);
   else
     {
+#ifdef VMS
       decc$to_vms (filespec, translate_unix, 1, 1);
+#else
+      strcpy (filename_buff, filespec);
+#endif
       strcpy (new_host_filespec, filename_buff);
     }
 

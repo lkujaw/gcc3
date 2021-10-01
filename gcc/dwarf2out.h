@@ -26,4 +26,6 @@ extern void debug_dwarf (void);
 struct die_struct;
 extern void debug_dwarf_die (struct die_struct *);
 extern void dwarf2out_set_demangle_name_func (const char *(*) (const char *));
+extern void dwarf2out_set_gnat_encoding_func (const char *(*) (const char *));
+extern void dwarf2out_set_gnat_descriptive_type_func (tree (*) (tree));
 extern void dwarf2out_add_library_unit_info (const char *, const char *);

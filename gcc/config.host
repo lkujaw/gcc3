@@ -78,15 +78,13 @@ esac
 
 # Machine-specific settings.
 case ${host} in
-  alpha*-dec-*vms*)
-    host_xm_file=alpha/xm-vms.h
-    host_xmake_file=alpha/x-vms
+  alpha64-dec-*vms*)
+    host_xm_file="vms/xm-vms.h vms/xm-vms64.h"
+    host_xmake_file=vms/x-vms
     host_exeext=.exe
-    # This removes the cpu type and manufacturer components and
-    #  replaces "." with "_" in the operating system version.
-    target_noncanonical=`echo $host | sed 's/.*-.*-\(.*\)$/\1/' | sed 's/\./_/g'`
+    host_can_use_collect2=no
     prefix=/gnu
-    local_prefix=/gnu
+    local_prefix=/gnu/local
     ;;
   hppa1.1-*-pro*)
     host_xmake_file="pa/x-ada"
@@ -153,6 +151,14 @@ case ${host} in
     ;;
   i860-*-sysv4*)
     host_xmake_file=i860/x-sysv4
+    ;;
+  ia64-hp-*vms*)
+    host_xm_file="vms/xm-vms.h vms/xm-vms64.h"
+    host_xmake_file=vms/x-vms
+    host_exeext=.exe
+    host_can_use_collect2=no
+    prefix=/gnu
+    local_prefix=/gnu/local
     ;;
   powerpc-*-darwin*)
     # powerpc-darwin host support.

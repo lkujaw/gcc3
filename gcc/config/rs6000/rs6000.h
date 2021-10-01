@@ -362,13 +362,15 @@ extern int target_flags;
   {"no-mfcrf",		- MASK_MFCRF,					\
 			N_("Do not generate single field mfcr instruction")},\
   SUBTARGET_SWITCHES							\
-  {"",			TARGET_DEFAULT | MASK_SCHED_PROLOG,		\
+  {"",			TARGET_DEFAULT | SUBTARGET_DEFAULT \
+			| MASK_SCHED_PROLOG,               \
 			""}}
 
 #define TARGET_DEFAULT (MASK_POWER | MASK_MULTIPLE | MASK_STRING)
 
 /* This is meant to be redefined in the host dependent files */
 #define SUBTARGET_SWITCHES
+#define SUBTARGET_DEFAULT  0
 
 /* Processor type.  Order must match cpu attribute in MD file.  */
 enum processor_type
@@ -475,6 +477,9 @@ enum group_termination
     N_("Specify alignment of structure fields default/natural"), 0},	\
    {"prioritize-restricted-insns=", &rs6000_sched_restricted_insns_priority_str, \
     N_("Specify scheduling priority for dispatch slot restricted insns"), 0}, \
+   {"rtp", &rs6000_rtp_switch,						\
+    N_("Assume the VxWorks RTP environment") },				\
+   {"no-rtp", &rs6000_rtp_switch, "" },					\
    SUBTARGET_OPTIONS							\
 }
 
@@ -537,6 +542,12 @@ extern enum rs6000_nop_insertion rs6000_sched_insert_nops;
 
 extern int rs6000_warn_altivec_long;
 extern const char *rs6000_warn_altivec_long_switch;
+
+/* Since rs6000.h is out of space in target_flags, we have to do a hack
+   similar to -m[no-]longcall.  This means the macro in vxworks.h needs
+   to be redefined.  */
+extern const char *rs6000_rtp_switch;
+extern int rs6000_rtp;
 
 /* Alignment options for fields in structures for sub-targets following
    AIX-like ABI.
@@ -2158,6 +2169,9 @@ do {								\
 #define PIC_OFFSET_TABLE_REGNUM (flag_pic ? RS6000_PIC_OFFSET_TABLE_REGNUM : INVALID_REGNUM)
 
 #define TOC_REGISTER (TARGET_MINIMAL_TOC ? RS6000_PIC_OFFSET_TABLE_REGNUM : 2)
+
+#define TOC_REGISTER_P(X) \
+  (TARGET_TOC && REG_P (X) && REGNO (X) == TOC_REGISTER)
 
 /* Define this macro if the register defined by
    `PIC_OFFSET_TABLE_REGNUM' is clobbered by calls.  Do not define

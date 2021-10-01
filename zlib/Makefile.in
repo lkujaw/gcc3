@@ -247,10 +247,12 @@ uninstall-toolexeclibLIBRARIES:
 .c.o:
 	$(COMPILE) -c $<
 
-# FIXME: We should only use cygpath when building on Windows,
-# and only if it is available.
 .c.obj:
-	$(COMPILE) -c `cygpath -w $<`
+	if (cygpath --version) >/dev/null 2>&1 ; then \
+	  $(COMPILE) -c `cygpath -w $<` ; \
+	else \
+	  $(COMPILE) -c $< ;\
+	fi 
 
 .s.o:
 	$(COMPILE) -c $<

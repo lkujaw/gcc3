@@ -37,6 +37,7 @@ Boston, MA 02111-1307, USA.  */
 #include "insn-attr.h"
 #include "flags.h"
 #include "function.h"
+#include "except.h"
 #include "expr.h"
 #include "optabs.h"
 #include "recog.h"
@@ -47,17 +48,6 @@ Boston, MA 02111-1307, USA.  */
 #include "target.h"
 #include "target-def.h"
 #include "cfglayout.h"
-
-/* 1 if the caller has placed an "unimp" insn immediately after the call.
-   This is used in v8 code when calling a function that returns a structure.
-   v9 doesn't have this.  Be careful to have this test be the same as that
-   used on the call.  */
-
-#define SKIP_CALLERS_UNIMP_P  \
-(!TARGET_ARCH64 && current_function_returns_struct			\
- && ! integer_zerop (DECL_SIZE (DECL_RESULT (current_function_decl)))	\
- && (TREE_CODE (DECL_SIZE (DECL_RESULT (current_function_decl)))	\
-     == INTEGER_CST))
 
 /* Global variables for machine-dependent things.  */
 
@@ -74,6 +64,9 @@ static HOST_WIDE_INT actual_fsize;
    saved (as 4-byte quantities).  */
 static int num_gfregs;
 
+/* The alias set for the structure return value.  */
+static GTY(()) int struct_value_alias_set;
+
 /* Save the operands last given to a compare for use when we
    generate a scc or bcc insn.  */
 rtx sparc_compare_op0, sparc_compare_op1;
@@ -81,6 +74,7 @@ rtx sparc_compare_op0, sparc_compare_op1;
 /* Coordinate with the md file wrt special insns created by
    sparc_nonflat_function_epilogue.  */
 bool sparc_emitting_epilogue;
+bool sparc_skip_caller_unimp;
 
 /* Vector to say how input registers are mapped to output registers.
    HARD_FRAME_POINTER_REGNUM cannot be remapped by this function to
@@ -119,12 +113,6 @@ char sparc_leaf_regs[] =
   1, 1, 1, 1, 1, 1, 1, 1,
   1, 1, 1, 1, 1};
 
-struct machine_function GTY(())
-{
-  /* Some local-dynamic TLS symbol name.  */
-  const char *some_ld_name;
-};
-
 /* Name of where we pretend to think the frame pointer points.
    Normally, this is "%fp", but if we are in a leaf procedure,
    this is "%sp+something".  We record "something" separately as it may be
@@ -152,6 +140,7 @@ static int epilogue_renumber (rtx *, int);
 static bool sparc_assemble_integer (rtx, unsigned int, int);
 static int set_extends (rtx);
 static void output_restore_regs (FILE *, int);
+static HOST_WIDE_INT sparc_get_static_stack_usage (void);
 static void sparc_output_function_prologue (FILE *, HOST_WIDE_INT);
 static void sparc_output_function_epilogue (FILE *, HOST_WIDE_INT);
 static void sparc_flat_function_epilogue (FILE *, HOST_WIDE_INT);
@@ -196,6 +185,7 @@ static rtx sparc_tls_got (void);
 static const char *get_some_local_dynamic_name (void);
 static int get_some_local_dynamic_name_1 (rtx *, void *);
 static bool sparc_rtx_costs (rtx, int, int, int *);
+static rtx sparc_struct_value_rtx (tree, int);
 
 /* Option handling.  */
 
@@ -274,10 +264,16 @@ enum processor_type sparc_cpu;
 #undef TARGET_ASM_CAN_OUTPUT_MI_THUNK
 #define TARGET_ASM_CAN_OUTPUT_MI_THUNK sparc_can_output_mi_thunk
 
+#undef TARGET_GET_STATIC_STACK_USAGE
+#define TARGET_GET_STATIC_STACK_USAGE sparc_get_static_stack_usage
+
 #undef TARGET_RTX_COSTS
 #define TARGET_RTX_COSTS sparc_rtx_costs
 #undef TARGET_ADDRESS_COST
 #define TARGET_ADDRESS_COST hook_int_rtx_0
+
+#undef TARGET_STRUCT_VALUE_RTX
+#define TARGET_STRUCT_VALUE_RTX sparc_struct_value_rtx
 
 struct gcc_target targetm = TARGET_INITIALIZER;
 
@@ -477,6 +473,9 @@ sparc_override_options (void)
 
   /* Do various machine dependent initializations.  */
   sparc_init_modes ();
+
+  /* Acquire unique alias sets for our private stuff.  */
+  struct_value_alias_set = new_alias_set ();
 
   /* Set up function hooks.  */
   init_machine_status = sparc_init_machine_status;
@@ -4247,6 +4246,18 @@ compute_frame_size (HOST_WIDE_INT size, int leaf_function)
   return SPARC_STACK_ALIGN (actual_fsize);
 }
 
+/* Return the maximum static stack usage for the current function.  */
+
+static HOST_WIDE_INT
+sparc_get_static_stack_usage (void)
+{
+  if (TARGET_FLAT)
+    return sparc_flat_compute_frame_size (get_frame_size ());
+  else
+    return compute_frame_size (get_frame_size (),
+			       current_function_uses_only_leaf_regs);
+}
+
 /* Build big number NUM in register REG and output the result to FILE.
    REG is guaranteed to be the only clobbered register.  The function
    will very likely emit several instructions, so it must not be called
@@ -4391,6 +4402,130 @@ sparc_output_function_prologue (FILE *file, HOST_WIDE_INT size)
 				     current_function_uses_only_leaf_regs);
 }
 
+/* Probe a range of stack addresses from FIRST to FIRST+SIZE, inclusive.
+   These are offsets from the current stack pointer.  */
+
+#define PROBE_INTERVAL (1 << STACK_CHECK_PROBE_INTERVAL_EXP)
+
+#if PROBE_INTERVAL > 4096
+#error Cannot use indexed addressing mode for stack probing
+#endif
+
+static void
+sparc_probe_stack_range (FILE *file, HOST_WIDE_INT first, HOST_WIDE_INT size)
+{
+  static int labelno = 0;
+  HOST_WIDE_INT rounded_size;
+  char loop_lab[32], end_lab[32];
+
+  /* The probe offsets are counted negatively whereas the stack bias is
+     counted positively.  */
+  first -= SPARC_STACK_BIAS;
+
+  /* See if we have a constant small number of them to generate.  If so,
+     that's the easy case.  */
+  if (size <= PROBE_INTERVAL)
+    {
+      build_big_number (file, first, "%g1");
+      fputs ("\tsub\t%sp, %g1, %g1\n", file);
+      fprintf (file, "\tst\t%%g0, [%%g1-"HOST_WIDE_INT_PRINT_DEC"]\n", size);
+    }
+
+  /* The run-time loop is made up of 10 insns in the generic case while this
+     compile-time loop is made up of 4+2*(n-2) insns for n # of intervals.  */
+  else if (size <= 5 * PROBE_INTERVAL)
+    {
+      HOST_WIDE_INT i;
+
+      build_big_number (file, first + PROBE_INTERVAL, "%g1");
+      fputs ("\tsub\t%sp, %g1, %g1\n", file);
+      fputs ("\tst\t%g0, [%g1]\n", file);
+
+      /* Probe at FIRST + N * PROBE_INTERVAL for values of N from 2 until
+	 it exceeds SIZE.  If only two probes are needed, this will not
+	 generate any code.  Then probe at SIZE.  */
+      for (i = 2 * PROBE_INTERVAL; i < size; i += PROBE_INTERVAL)
+	{
+	  fprintf (file, "\tadd\t%%g1, -%d, %%g1\n", PROBE_INTERVAL);
+	  fputs ("\tst\t%g0, [%g1]\n", file);
+	}
+
+      fprintf (file, "\tst\t%%g0, [%%g1-"HOST_WIDE_INT_PRINT_DEC"]\n",
+	       size - (i - PROBE_INTERVAL));
+    }
+
+  /* Otherwise, do the same as above, but in a loop.  Note that we must be
+     extra careful with variables wrapping around because we might be at
+     the very top (or the very bottom) of the address space and we have
+     to be able to handle this case properly; in particular, we use an
+     equality test for the loop condition.  */
+  else
+    {
+      /* Step 1: round SIZE to the previous multiple of the interval.  */
+
+      rounded_size = size & -PROBE_INTERVAL;
+
+
+      /* Step 2: compute initial and final value of the loop counter.  */
+
+      /* TEST_ADDR = SP + FIRST.  */
+      build_big_number (file, first, "%g1");
+      fputs ("\tsub\t%sp, %g1, %g1\n", file);
+
+      /* LAST_ADDR = SP + FIRST + ROUNDED_SIZE.  */
+      build_big_number (file, rounded_size, "%g4");
+      fputs ("\tsub\t%g1, %g4, %g4\n", file);
+
+
+      /* Step 3: the loop
+
+        while (TEST_ADDR != LAST_ADDR)
+	  {
+	    TEST_ADDR = TEST_ADDR + PROBE_INTERVAL
+	    probe at TEST_ADDR
+	  }
+
+        probes at FIRST + N * PROBE_INTERVAL for values of N from 1
+        until it exceeds ROUNDED_SIZE.  */
+
+      ASM_GENERATE_INTERNAL_LABEL (loop_lab, "LPSRL", labelno);
+      ASM_OUTPUT_LABEL (file, loop_lab);
+
+       /* Jump to END_LAB if TEST_ADDR == LAST_ADDR.  */
+      fputs ("\tcmp\t%g1, %g4\n", file);
+      ASM_GENERATE_INTERNAL_LABEL (end_lab, "LPSRE", labelno++);
+      if (TARGET_ARCH64)
+	fputs ("\tbe,pn\t%xcc,", file);
+      else
+	fputs ("\tbe\t", file);
+      assemble_name (file, end_lab);
+      fputc ('\n', file);
+
+      /* TEST_ADDR = TEST_ADDR + PROBE_INTERVAL.  */
+      fprintf (file, "\t add\t%%g1, -%d, %%g1\n", PROBE_INTERVAL);
+
+      /* Probe at TEST_ADDR and branch.  */
+      if (TARGET_ARCH64)
+	fputs ("\tba,pt\t%xcc,", file);
+      else
+	fputs ("\tba\t", file);
+      assemble_name (file, loop_lab);
+      fputc ('\n', file);
+      fputs ("\t st\t%g0, [%g1]\n", file);
+
+      ASM_OUTPUT_LABEL (file, end_lab);
+
+
+      /* Step 4: probe at SIZE if we cannot assert at compile-time that
+	 it is equal to ROUNDED_SIZE.  */
+
+      /* TEMP = SIZE - ROUNDED_SIZE.  */
+      if (size != rounded_size)
+	fprintf (file, "\tst\t%%g0, [%%g4-"HOST_WIDE_INT_PRINT_DEC"]\n",
+		 size - rounded_size);
+    }
+}
+
 /* Output code for the function prologue.  */
 
 static void
@@ -4416,6 +4551,9 @@ sparc_nonflat_function_prologue (FILE *file, HOST_WIDE_INT size,
 
   /* This is only for the human reader.  */
   fprintf (file, "\t%s#PROLOGUE# 0\n", ASM_COMMENT_START);
+
+  if (flag_stack_check == 2 && actual_fsize)
+    sparc_probe_stack_range (file, STACK_CHECK_PROTECT, actual_fsize);
 
   if (actual_fsize == 0)
     /* do nothing.  */ ;
@@ -4565,6 +4703,17 @@ sparc_nonflat_function_epilogue (FILE *file,
 {
   const char *ret;
 
+  /* True if the caller has placed an "unimp" insn immediately after the call.
+     This insn is used in the 32-bit ABI when calling a function that returns
+     a non zero-sized structure. The 64-bit ABI doesn't have it.  Be careful
+     to have this test be the same as that used on the call.  */
+  sparc_skip_caller_unimp
+    = ! TARGET_ARCH64
+      && current_function_returns_struct
+      && (TREE_CODE (DECL_SIZE (DECL_RESULT (current_function_decl)))
+	  == INTEGER_CST)
+      && ! integer_zerop (DECL_SIZE (DECL_RESULT (current_function_decl)));
+
   if (current_function_epilogue_delay_list == 0)
     {
       /* If code does not drop into the epilogue, we need
@@ -4599,9 +4748,9 @@ sparc_nonflat_function_epilogue (FILE *file,
 
   /* Work out how to skip the caller's unimp instruction if required.  */
   if (leaf_function)
-    ret = (SKIP_CALLERS_UNIMP_P ? "jmp\t%o7+12" : "retl");
+    ret = (sparc_skip_caller_unimp ? "jmp\t%o7+12" : "retl");
   else
-    ret = (SKIP_CALLERS_UNIMP_P ? "jmp\t%i7+12" : "ret");
+    ret = (sparc_skip_caller_unimp ? "jmp\t%i7+12" : "ret");
 
   if (! leaf_function)
     {
@@ -4609,7 +4758,7 @@ sparc_nonflat_function_epilogue (FILE *file,
 	{
 	  if (current_function_epilogue_delay_list)
 	    abort ();
-	  if (SKIP_CALLERS_UNIMP_P)
+	  if (sparc_skip_caller_unimp)
 	    abort ();
 
 	  fputs ("\trestore\n\tretl\n\tadd\t%sp, %g1, %sp\n", file);
@@ -4622,7 +4771,7 @@ sparc_nonflat_function_epilogue (FILE *file,
 	  if (TARGET_V9 && ! epilogue_renumber (&delay, 1))
 	    {
 	      epilogue_renumber (&delay, 0);
-	      fputs (SKIP_CALLERS_UNIMP_P
+	      fputs (sparc_skip_caller_unimp
 		     ? "\treturn\t%i7+12\n"
 		     : "\treturn\t%i7+8\n", file);
 	      final_scan_insn (XEXP (current_function_epilogue_delay_list, 0),
@@ -4655,7 +4804,7 @@ sparc_nonflat_function_epilogue (FILE *file,
 	      sparc_emitting_epilogue = false;
 	    }
 	}
-      else if (TARGET_V9 && ! SKIP_CALLERS_UNIMP_P)
+      else if (TARGET_V9 && ! sparc_skip_caller_unimp)
 	fputs ("\treturn\t%i7+8\n\tnop\n", file);
       else
 	fprintf (file, "\t%s\n\trestore\n", ret);
@@ -5031,7 +5180,8 @@ function_arg_slotno (const struct sparc_args *cum, enum machine_mode mode,
 	}
 
       if (TARGET_ARCH32
-	  || (type && TREE_CODE (type) == UNION_TYPE))
+	  || !type
+	  || TREE_CODE (type) != RECORD_TYPE)
 	{
 	  if (slotno >= SPARC_INT_ARG_MAX)
 	    return -1;
@@ -5485,48 +5635,45 @@ function_arg (const struct sparc_args *cum, enum machine_mode mode,
 		 ? SPARC_INCOMING_INT_ARG_FIRST
 		 : SPARC_OUTGOING_INT_ARG_FIRST);
   int slotno, regno, padding;
-  rtx reg;
 
   slotno = function_arg_slotno (cum, mode, type, named, incoming_p,
 				&regno, &padding);
-
   if (slotno == -1)
     return 0;
 
   if (TARGET_ARCH32)
-    {
-      reg = gen_rtx_REG (mode, regno);
-      return reg;
-    }
-    
+    return gen_rtx_REG (mode, regno);
+
+  /* Structures up to 16 bytes in size are passed in arg slots on the stack
+     and are promoted to registers if possible.  */
   if (type && TREE_CODE (type) == RECORD_TYPE)
     {
-      /* Structures up to 16 bytes in size are passed in arg slots on the
-	 stack and are promoted to registers where possible.  */
-
-      if (int_size_in_bytes (type) > 16)
-	abort (); /* shouldn't get here */
+      HOST_WIDE_INT size = int_size_in_bytes (type);
+      if (size > 16)
+	abort ();
 
       return function_arg_record_value (type, mode, slotno, named, regbase);
     }
+
+  /* Unions up to 16 bytes in size are passed in integer registers.  */
   else if (type && TREE_CODE (type) == UNION_TYPE)
     {
       HOST_WIDE_INT size = int_size_in_bytes (type);
-
       if (size > 16)
-	abort (); /* shouldn't get here */
+	abort ();
 
       return function_arg_union_value (size, mode, slotno, regno);
     }
+
   /* v9 fp args in reg slots beyond the int reg slots get passed in regs
      but also have the slot allocated for them.
      If no prototype is in scope fp values in register slots get passed
      in two places, either fp regs and int regs or fp regs and memory.  */
   else if ((GET_MODE_CLASS (mode) == MODE_FLOAT
 	    || GET_MODE_CLASS (mode) == MODE_COMPLEX_FLOAT)
-      && SPARC_FP_REG_P (regno))
+	   && SPARC_FP_REG_P (regno))
     {
-      reg = gen_rtx_REG (mode, regno);
+      rtx reg = gen_rtx_REG (mode, regno);
       if (cum->prototype_p || cum->libcall_p)
 	{
 	  /* "* 2" because fp reg numbers are recorded in 4 byte
@@ -5587,13 +5734,19 @@ function_arg (const struct sparc_args *cum, enum machine_mode mode,
 	    }
 	}
     }
-  else
+
+  /* All other aggregate types are passed in an integer register in a mode
+     corresponding to the size of the type.  */
+  else if (type && AGGREGATE_TYPE_P (type))
     {
-      /* Scalar or complex int.  */
-      reg = gen_rtx_REG (mode, regno);
+      HOST_WIDE_INT size = int_size_in_bytes (type);
+      if (size > 16)
+	abort ();
+
+      mode = mode_for_size (size * BITS_PER_UNIT, MODE_INT, 0);
     }
 
-  return reg;
+  return gen_rtx_REG (mode, regno);
 }
 
 /* Handle the FUNCTION_ARG_PARTIAL_NREGS macro.
@@ -5678,8 +5831,7 @@ function_arg_partial_nregs (const struct sparc_args *cum,
 /* Handle the FUNCTION_ARG_PASS_BY_REFERENCE macro.
    !v9: The SPARC ABI stipulates passing struct arguments (of any size) and
    quad-precision floats by invisible reference.
-   v9: Aggregates greater than 16 bytes are passed by reference.
-   For Pascal, also pass arrays by reference.  */
+   v9: Aggregates greater than 16 bytes are passed by reference.  */
 
 int
 function_arg_pass_by_reference (const struct sparc_args *cum ATTRIBUTE_UNUSED,
@@ -5687,21 +5839,15 @@ function_arg_pass_by_reference (const struct sparc_args *cum ATTRIBUTE_UNUSED,
 				int named ATTRIBUTE_UNUSED)
 {
   if (TARGET_ARCH32)
-    {
-      return ((type && AGGREGATE_TYPE_P (type))
-	      || mode == SCmode
-	      || GET_MODE_SIZE (mode) > 8);
-    }
+    return ((type && AGGREGATE_TYPE_P (type))
+	    || mode == SCmode
+	    || GET_MODE_SIZE (mode) > 8);
   else
-    {
-      return ((type && TREE_CODE (type) == ARRAY_TYPE)
-	      /* Consider complex values as aggregates, so care
-		 for CTImode and TCmode.  */
-	      || GET_MODE_SIZE (mode) > 16
-	      || (type
-		  && AGGREGATE_TYPE_P (type)
-		  && (unsigned HOST_WIDE_INT) int_size_in_bytes (type) > 16));
-    }
+    return ((type && AGGREGATE_TYPE_P (type)
+	     && (unsigned HOST_WIDE_INT) int_size_in_bytes (type) > 16)
+	    /* Consider complex values as aggregates, so care
+	       for CTImode and TCmode.  */
+	    || GET_MODE_SIZE (mode) > 16);
 }
 
 /* Handle the FUNCTION_ARG_ADVANCE macro.
@@ -5764,6 +5910,30 @@ function_arg_padding (enum machine_mode mode, tree type)
   return DEFAULT_FUNCTION_ARG_PADDING (mode, type);
 }
 
+/* Handle the TARGET_STRUCT_VALUE target hook.
+   Return where to find the structure return value address.  */
+
+static rtx
+sparc_struct_value_rtx (tree fndecl ATTRIBUTE_UNUSED, int incoming)
+{
+  if (TARGET_ARCH64)
+    return 0;
+  else
+    {
+      rtx mem;
+
+      if (incoming)
+	mem = gen_rtx_MEM (Pmode, plus_constant (frame_pointer_rtx,
+						 STRUCT_VALUE_OFFSET));
+      else
+	mem = gen_rtx_MEM (Pmode, plus_constant (stack_pointer_rtx,
+						 STRUCT_VALUE_OFFSET));
+
+      set_mem_alias_set (mem, struct_value_alias_set);
+      return mem;
+    }
+}
+
 /* Handle FUNCTION_VALUE, FUNCTION_OUTGOING_VALUE, and LIBCALL_VALUE macros.
    For v9, function return values are subject to the same rules as arguments,
    except that up to 32-bytes may be returned in registers.  */
@@ -5779,35 +5949,40 @@ function_value (tree type, enum machine_mode mode, int incoming_p)
 		     ? SPARC_OUTGOING_INT_ARG_FIRST
 		     : SPARC_INCOMING_INT_ARG_FIRST);
 
+      /* Structures up to 32 bytes in size are returned in registers.  */
       if (TREE_CODE (type) == RECORD_TYPE)
 	{
-	  /* Structures up to 32 bytes in size are passed in registers,
-	     promoted to fp registers where possible.  */
-
-	  if (int_size_in_bytes (type) > 32)
-	    abort (); /* shouldn't get here */
+	  HOST_WIDE_INT size = int_size_in_bytes (type);
+	  if (size > 32)
+	    abort ();
 
 	  return function_arg_record_value (type, mode, 0, 1, regbase);
 	}
+
+      /* Unions up to 32 bytes in size are returned in integer registers.  */
       else if (TREE_CODE (type) == UNION_TYPE)
 	{
 	  HOST_WIDE_INT size = int_size_in_bytes (type);
-
 	  if (size > 32)
-	    abort (); /* shouldn't get here */
+	    abort ();
 
 	  return function_arg_union_value (size, mode, 0, regbase);
 	}
+
+      /* Objects that require it are returned in FP registers.  */
+      else if (GET_MODE_CLASS (mode) == MODE_FLOAT
+	       || GET_MODE_CLASS (mode) == MODE_COMPLEX_FLOAT)
+	;
+
+      /* All other aggregate types are returned in an integer register in a
+	 mode corresponding to the size of the type.  */
       else if (AGGREGATE_TYPE_P (type))
 	{
-	  /* All other aggregate types are passed in an integer register
-	     in a mode corresponding to the size of the type.  */
-	  HOST_WIDE_INT bytes = int_size_in_bytes (type);
-
-	  if (bytes > 32)
+	  HOST_WIDE_INT size = int_size_in_bytes (type);
+	  if (size > 32)
 	    abort ();
 
-	  mode = mode_for_size (bytes * BITS_PER_UNIT, MODE_INT, 0);
+	  mode = mode_for_size (size * BITS_PER_UNIT, MODE_INT, 0);
 
 	  /* ??? We probably should have made the same ABI change in
 	     3.4.0 as the one we made for unions.   The latter was
@@ -5819,8 +5994,10 @@ function_value (tree type, enum machine_mode mode, int incoming_p)
 	     try to be unduly clever, and simply follow the ABI
 	     for unions in that case.  */
 	  if (mode == BLKmode)
-	    return function_arg_union_value (bytes, mode, 0, regbase);
+	    return function_arg_union_value (size, mode, 0, regbase);
 	}
+
+      /* This must match PROMOTE_FUNCTION_MODE.  */
       else if (GET_MODE_CLASS (mode) == MODE_INT
 	       && GET_MODE_SIZE (mode) < UNITS_PER_WORD)
 	mode = word_mode;
@@ -6443,14 +6620,12 @@ sparc_emit_float_lib_cmp (rtx x, rtx y, enum rtx_code comparison)
    optabs would emit if we didn't have TFmode patterns.  */
 
 void
-sparc_emit_floatunsdi (rtx *operands)
+sparc_emit_floatunsdi (rtx *operands, enum machine_mode mode)
 {
   rtx neglab, donelab, i0, i1, f0, in, out;
-  enum machine_mode mode;
 
   out = operands[0];
   in = force_reg (DImode, operands[1]);
-  mode = GET_MODE (out);
   neglab = gen_label_rtx ();
   donelab = gen_label_rtx ();
   i0 = gen_reg_rtx (DImode);
@@ -6470,6 +6645,47 @@ sparc_emit_floatunsdi (rtx *operands)
   emit_insn (gen_iordi3 (i0, i0, i1));
   emit_insn (gen_rtx_SET (VOIDmode, f0, gen_rtx_FLOAT (mode, i0)));
   emit_insn (gen_rtx_SET (VOIDmode, out, gen_rtx_PLUS (mode, f0, f0)));
+
+  emit_label (donelab);
+}
+
+/* Generate an FP to unsigned DImode conversion.  This is the same code
+   optabs would emit if we didn't have TFmode patterns.  */
+
+void
+sparc_emit_fixunsdi (rtx *operands, enum machine_mode mode)
+{
+  rtx neglab, donelab, i0, i1, f0, in, out, limit;
+
+  out = operands[0];
+  in = force_reg (mode, operands[1]);
+  neglab = gen_label_rtx ();
+  donelab = gen_label_rtx ();
+  i0 = gen_reg_rtx (DImode);
+  i1 = gen_reg_rtx (DImode);
+  limit = gen_reg_rtx (mode);
+  f0 = gen_reg_rtx (mode);
+
+  emit_move_insn (limit,
+		  CONST_DOUBLE_FROM_REAL_VALUE (
+		    REAL_VALUE_ATOF ("9223372036854775808.0", mode), mode));
+  emit_cmp_and_jump_insns (in, limit, GE, NULL_RTX, mode, 0, neglab);
+
+  emit_insn (gen_rtx_SET (VOIDmode,
+			  out,
+			  gen_rtx_FIX (DImode, gen_rtx_FIX (mode, in))));
+  emit_jump_insn (gen_jump (donelab));
+  emit_barrier ();
+
+  emit_label (neglab);
+
+  emit_insn (gen_rtx_SET (VOIDmode, f0, gen_rtx_MINUS (mode, in, limit)));
+  emit_insn (gen_rtx_SET (VOIDmode,
+			  i0,
+			  gen_rtx_FIX (DImode, gen_rtx_FIX (mode, f0))));
+  emit_insn (gen_movdi (i1, const1_rtx));
+  emit_insn (gen_ashldi3 (i1, i1, GEN_INT (63)));
+  emit_insn (gen_xordi3 (out, i0, i1));
 
   emit_label (donelab);
 }

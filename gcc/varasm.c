@@ -1,6 +1,7 @@
 /* Output variables, constants and external declarations, for GNU compiler.
    Copyright (C) 1987, 1988, 1989, 1992, 1993, 1994, 1995, 1996, 1997,
-   1998, 1999, 2000, 2001, 2002, 2003, 2004 Free Software Foundation, Inc.
+   1998, 1999, 2000, 2001, 2002, 2003, 2004, 2005
+   Free Software Foundation, Inc.
 
 This file is part of GCC.
 
@@ -2331,6 +2332,7 @@ compare_constant (const tree t1, const tree t2)
     case NOP_EXPR:
     case CONVERT_EXPR:
     case NON_LVALUE_EXPR:
+    case VIEW_CONVERT_EXPR:
       return compare_constant (TREE_OPERAND (t1, 0), TREE_OPERAND (t2, 0));
 
     default:
@@ -3424,6 +3426,7 @@ compute_reloc_for_constant (tree exp)
 
     case NOP_EXPR:
     case CONVERT_EXPR:
+    case VIEW_CONVERT_EXPR:
     case NON_LVALUE_EXPR:
       reloc = compute_reloc_for_constant (TREE_OPERAND (exp, 0));
       break;
@@ -3772,7 +3775,7 @@ output_constant (tree exp, unsigned HOST_WIDE_INT size, unsigned int align)
     }
 
   /* Now output the underlying data.  If we've handling the padding, return.
-     Otherwise, break and ensure THISSIZE is the size written.  */
+     Otherwise, break and ensure SIZE is the size written.  */
   switch (code)
     {
     case CHAR_TYPE:
@@ -3784,7 +3787,7 @@ output_constant (tree exp, unsigned HOST_WIDE_INT size, unsigned int align)
     case OFFSET_TYPE:
       if (! assemble_integer (expand_expr (exp, NULL_RTX, VOIDmode,
 					   EXPAND_INITIALIZER),
-			      size, align, 0))
+			      MIN (thissize, size), align, 0))
 	error ("initializer for integer value is too complicated");
       break;
 
@@ -4671,19 +4674,22 @@ default_section_type_flags_1 (tree decl, const char *name, int reloc,
 
   if (strcmp (name, ".bss") == 0
       || strncmp (name, ".bss.", 5) == 0
+      || strcmp (name, ".persistent.bss") == 0
       || strncmp (name, ".gnu.linkonce.b.", 16) == 0
       || strcmp (name, ".sbss") == 0
       || strncmp (name, ".sbss.", 6) == 0
-      || strncmp (name, ".gnu.linkonce.sb.", 17) == 0
-      || strcmp (name, ".tbss") == 0
-      || strncmp (name, ".gnu.linkonce.tb.", 17) == 0)
+      || strncmp (name, ".gnu.linkonce.sb.", 17) == 0)
     flags |= SECTION_BSS;
 
   if (strcmp (name, ".tdata") == 0
-      || strcmp (name, ".tbss") == 0
-      || strncmp (name, ".gnu.linkonce.td.", 17) == 0
-      || strncmp (name, ".gnu.linkonce.tb.", 17) == 0)
+      || strncmp (name, ".tdata", 7) == 0
+      || strncmp (name, ".gnu.linkonce.td.", 17) == 0)
     flags |= SECTION_TLS;
+
+  if (strcmp (name, ".tbss") == 0
+      || strncmp (name, ".tbss", 6) == 0
+      || strncmp (name, ".gnu.linkonce.tb.", 17) == 0)
+    flags |= SECTION_TLS | SECTION_BSS;
 
   /* These three sections have special ELF types.  They are neither
      SHT_PROGBITS nor SHT_NOBITS, so when changing sections we don't

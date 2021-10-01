@@ -121,6 +121,7 @@ extern rtx rs6000_emit_set_const (rtx, enum machine_mode, rtx, int);
 extern int rs6000_emit_cmove (rtx, rtx, rtx, rtx);
 extern void rs6000_emit_minmax (rtx, enum rtx_code, rtx, rtx);
 extern void output_toc (FILE *, rtx, int, enum machine_mode);
+extern const char *output_probe_stack_range (rtx, rtx);
 extern void rs6000_initialize_trampoline (rtx, rtx, rtx);
 extern struct rtx_def *rs6000_longcall_ref (rtx);
 extern void rs6000_fatal_bad_address (rtx);
@@ -136,6 +137,7 @@ extern rtx rs6000_legitimize_reload_address (rtx, enum machine_mode,
 			    int, int, int, int *);
 extern int rs6000_legitimate_address (enum machine_mode, rtx, int);
 extern bool rs6000_mode_dependent_address (rtx);
+extern bool rs6000_offsettable_memref_p (rtx);
 extern rtx rs6000_return_addr (int, rtx);
 extern void rs6000_output_symbol_ref (FILE*, rtx);
 extern HOST_WIDE_INT rs6000_initial_elimination_offset (int, int);

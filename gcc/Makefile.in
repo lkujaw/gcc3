@@ -297,8 +297,10 @@ GCC_CFLAGS=$(INTERNAL_CFLAGS) $(X_CFLAGS) $(T_CFLAGS) $(LOOSE_WARN) -Wold-style-
 # Programs which produce files for the target machine
 # ---------------------------------------------------
 
-AR_FOR_TARGET = ` \
-  if [ -f $(objdir)/../binutils/ar ] ; then \
+AR_FOR_TARGET := $(shell \
+  if [ -f $(objdir)/ar ] ; then \
+    echo $(objdir)/ar ; \
+  elif [ -f $(objdir)/../binutils/ar ] ; then \
     echo $(objdir)/../binutils/ar ; \
   else \
     if [ "$(host)" = "$(target)" ] ; then \
@@ -306,11 +308,11 @@ AR_FOR_TARGET = ` \
     else \
        t='$(program_transform_name)'; echo ar | sed -e $$t ; \
     fi; \
-  fi`
+  fi)
 AR_FLAGS_FOR_TARGET =
 AR_CREATE_FOR_TARGET = $(AR_FOR_TARGET) $(AR_FLAGS_FOR_TARGET) rc
 AR_EXTRACT_FOR_TARGET = $(AR_FOR_TARGET) $(AR_FLAGS_FOR_TARGET) x
-RANLIB_FOR_TARGET = ` \
+RANLIB_FOR_TARGET := $(shell \
   if [ -f $(objdir)/../binutils/ranlib ] ; then \
     echo $(objdir)/../binutils/ranlib ; \
   else \
@@ -319,8 +321,8 @@ RANLIB_FOR_TARGET = ` \
     else \
        t='$(program_transform_name)'; echo ranlib | sed -e $$t ; \
     fi; \
-  fi`
-NM_FOR_TARGET = ` \
+  fi)
+NM_FOR_TARGET := $(shell \
   if [ -f ./nm ] ; then \
     echo ./nm ; \
   elif [ -f $(objdir)/../binutils/nm-new ] ; then \
@@ -331,7 +333,7 @@ NM_FOR_TARGET = ` \
     else \
        t='$(program_transform_name)'; echo nm | sed -e $$t ; \
     fi; \
-  fi`
+  fi)
 
 # --------
 # UNSORTED
@@ -462,6 +464,9 @@ man1dir = $(mandir)/man1
 man7dir = $(mandir)/man7
 # Dir for temp files.
 tmpdir = /tmp
+
+# Default number of bytes to skip in stage compare
+skip_bytes = 16
 
 # Whether we were configured with NLS.
 USE_NLS = @USE_NLS@
@@ -953,11 +958,6 @@ LIB2_DIVMOD_FUNCS = _divdi3 _moddi3 _udivdi3 _umoddi3 _udiv_w_sdiv _udivmoddi4
 # Set up library path if needed.
 @set_gcc_lib_path@
 
-# per-language makefile fragments
-ifneq ($(LANG_MAKEFRAGS),)
-include $(LANG_MAKEFRAGS)
-endif
-
 # target and host overrides must follow the per-language makefile fragments
 # so they can override or augment language-specific variables
 
@@ -969,6 +969,11 @@ endif
 # host overrides
 ifneq ($(xmake_file),)
 include $(xmake_file)
+endif
+
+# per-language makefile fragments
+ifneq ($(LANG_MAKEFRAGS),)
+include $(LANG_MAKEFRAGS)
 endif
 
 #
@@ -1237,6 +1242,7 @@ stmp-multilib: $(LIBGCC_DEPS)
 	$(MAKE) \
 	  CFLAGS="$(CFLAGS) $(WARN_CFLAGS)" \
 	  CONFIG_H="$(CONFIG_H)" \
+	  INCLUDES="$(INCLUDES)" \
 	  MAKEOVERRIDES= \
 	  -f libgcc.mk all
 	$(STAMP) stmp-multilib
@@ -1615,7 +1621,7 @@ expmed.o : expmed.c $(CONFIG_H) $(SYSTEM_H) coretypes.h $(TM_H) $(RTL_H) $(TREE_
    toplev.h $(TM_P_H) langhooks.h
 explow.o : explow.c $(CONFIG_H) $(SYSTEM_H) coretypes.h $(TM_H) $(RTL_H) $(TREE_H) \
    flags.h hard-reg-set.h insn-config.h $(EXPR_H) $(OPTABS_H) $(RECOG_H) \
-   toplev.h function.h $(GGC_H) $(TM_P_H) langhooks.h gt-explow.h
+   toplev.h function.h $(GGC_H) $(TM_P_H) langhooks.h
 optabs.o : optabs.c $(CONFIG_H) $(SYSTEM_H) coretypes.h $(TM_H) $(RTL_H) $(TREE_H) \
    flags.h insn-config.h $(EXPR_H) $(OPTABS_H) libfuncs.h $(RECOG_H) reload.h \
    toplev.h $(GGC_H) real.h $(TM_P_H) except.h gt-optabs.h $(BASIC_BLOCK_H) \
@@ -1932,7 +1938,7 @@ insn-conditions.o : insn-conditions.c $(CONFIG_H) $(SYSTEM_H) coretypes.h \
   $(GTM_H) $(RTL_H) $(TM_P_H) $(REGS_H) function.h $(RECOG_H) real.h output.h \
   flags.h hard-reg-set.h resource.h toplev.h reload.h gensupport.h \
   insn-constants.h
-	$(CC_FOR_BUILD) -c $(BUILD_CFLAGS) $(BUILD_CPPFLAGS) $(INCLUDES) insn-conditions.c
+	$(CC_FOR_BUILD) -c $(BUILD_CFLAGS) $(BUILD_CPPFLAGS) $(INCLUDES) insn-conditions.c $(OUTPUT_OPTION)
 
 dummy-conditions.o : dummy-conditions.c $(BCONFIG_H) $(SYSTEM_H) \
   coretypes.h $(GTM_H) gensupport.h
@@ -2103,7 +2109,7 @@ GTFILES_SRCDIR = @srcdir@
 
 gt-cgraph.h gt-coverage.h gtype-desc.h gtype-desc.c gt-except.h \
 gt-function.h gt-integrate.h gt-stmt.h gt-tree.h gt-varasm.h \
-gt-emit-rtl.h gt-explow.h gt-stor-layout.h gt-regclass.h \
+gt-emit-rtl.h gt-stor-layout.h gt-regclass.h \
 gt-lists.h gt-alias.h gt-cselib.h gt-fold-const.h gt-gcse.h \
 gt-expr.h gt-sdbout.h gt-optabs.h gt-bitmap.h gt-dojump.h \
 gt-dwarf2out.h gt-ra-build.h gt-reg-stack.h gt-dwarf2asm.h \
@@ -3578,16 +3584,16 @@ fastcompare fastcompare3 fastcompare4 fastcompare-lean fastcompare3-lean fastcom
 	    for file in $$dir/*$(objext); do \
 	      case "$@" in \
 		slowcompare* ) \
-		  tail +16c ./$$file > tmp-foo1; \
-		  tail +16c stage$$stage/$$file > tmp-foo2 \
+		  tail +$(skip_bytes)c ./$$file > tmp-foo1; \
+		  tail +$(skip_bytes)c stage$$stage/$$file > tmp-foo2 \
 		    && (cmp tmp-foo1 tmp-foo2 > /dev/null 2>&1 || echo $$file differs >> .bad_compare) || true; \
 		  ;; \
 		fastcompare* ) \
-		  cmp $$file stage$$stage/$$file 16 16 > /dev/null 2>&1; \
+		  cmp $$file stage$$stage/$$file $(skip_bytes) $(skip_bytes) > /dev/null 2>&1; \
 		  test $$? -eq 1 && echo $$file differs >> .bad_compare || true; \
 		  ;; \
 		gnucompare* ) \
-		  cmp --ignore-initial=16 $$file stage$$stage/$$file > /dev/null 2>&1; \
+		  cmp --ignore-initial=$(skip_bytes) $$file stage$$stage/$$file > /dev/null 2>&1; \
 		  test $$? -eq 1 && echo $$file differs >> .bad_compare || true; \
 		  ;; \
 	      esac ; \

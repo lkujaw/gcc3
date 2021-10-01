@@ -9155,10 +9155,13 @@ arm_compute_initial_elimination_offset (unsigned int from, unsigned int to)
 	     frame pointer and the arg pointer coincide.  */
 	  if (stack_frame == 0 && call_saved_registers != 0)
 	    return 0;
-	  /* FIXME:  Not sure about this.  Maybe we should always return 0 ?  */
+	  
+	  /* Otherwise, check arm_expand_prologue for the conditions which
+	     may lead to an offset.  */
 	  return (frame_pointer_needed
-		  && current_function_needs_context
-		  && ! cfun->machine->uses_anonymous_args) ? 4 : 0;
+		  && IS_NESTED (func_type)
+		  && regs_ever_live [3]
+		  && current_function_pretend_args_size == 0) ? 4 : 0;
 
 	case STACK_POINTER_REGNUM:
 	  /* If nothing has been pushed on the stack at all
@@ -9343,13 +9346,19 @@ arm_expand_prologue (void)
 	       1. The last argument register.
 	       2. A slot on the stack above the frame.  (This only
 	          works if the function is not a varargs function).
-	       3. Register r3, after pushing the argument registers
+	       3. Part of the room we make but do not fill for the
+	          argument registers when !cfun->uses_anonymous_args.
+	       4. Register r3, after pushing the argument registers
 	          onto the stack.
 
 	     Note - we only need to tell the dwarf2 backend about the SP
 	     adjustment in the second variant; the static chain register
 	     doesn't need to be unwound, as it doesn't contain a value
-	     inherited from the caller.  */
+	     inherited from the caller.
+
+	     Note - case 2 introduces a 4 bytes offset between the argument
+	     pointer and the hard frame pointer, which needs to be accounted
+	     for in the initial elimination offsets. */
 
 	  if (regs_ever_live[3] == 0)
 	    {
@@ -9375,16 +9384,40 @@ arm_expand_prologue (void)
 	      REG_NOTES (insn) = gen_rtx_EXPR_LIST (REG_FRAME_RELATED_EXPR,
 						    dwarf, REG_NOTES (insn));
 	    }
+	  else if (!cfun->machine->uses_anonymous_args)
+	    {
+	      /* We might get there e.g. when an argument is passed partially
+		 in reg and partially in stack. In such a case, assign_parms
+		 emits the code to push the register part in room we are
+		 setting up here.
+
+		 We can't use r3 to temporarily save ip in this case, because
+		 we would clobber it before the push emitted by assign_parms,
+		 so we use part of the room we make instead.  */
+
+	      /* Make the room we are expected to make.  */
+	      insn = emit_insn
+		(gen_addsi3 (stack_pointer_rtx, stack_pointer_rtx, 
+			     GEN_INT (- args_to_push)));
+
+	      RTX_FRAME_RELATED_P (insn) = 1;
+
+	      saved_pretend_args = 1;
+	      fp_offset = args_to_push;
+	      args_to_push = 0;
+
+	      /* Reuse the last of these slots to preserve IP. args_to_push
+		 is at least 4 in any case.  */
+	      insn = gen_rtx_MEM (SImode, stack_pointer_rtx);
+	      insn = gen_rtx_SET (SImode, insn, ip_rtx);
+	      (void) emit_insn (insn);
+
+	    }
 	  else
 	    {
-	      /* Store the args on the stack.  */
-	      if (cfun->machine->uses_anonymous_args)
-		insn = emit_multi_reg_push
-		  ((0xf0 >> (args_to_push / 4)) & 0xf);
-	      else
-		insn = emit_insn
-		  (gen_addsi3 (stack_pointer_rtx, stack_pointer_rtx, 
-			       GEN_INT (- args_to_push)));
+	      /* Store the args on the stack.  */	      
+	      insn = emit_multi_reg_push
+		((0xf0 >> (args_to_push / 4)) & 0xf);
 
 	      RTX_FRAME_RELATED_P (insn) = 1;
 
@@ -9515,16 +9548,22 @@ arm_expand_prologue (void)
       if (IS_NESTED (func_type))
 	{
 	  /* Recover the static chain register.  */
-	  if (regs_ever_live [3] == 0
-	      || saved_pretend_args)
+	  if (regs_ever_live [3] == 0)
 	    insn = gen_rtx_REG (SImode, 3);
-	  else /* if (current_function_pretend_args_size == 0) */
+	  else if (current_function_pretend_args_size == 0)
 	    {
 	      insn = gen_rtx_PLUS (SImode, hard_frame_pointer_rtx,
 				   GEN_INT (4));
 	      insn = gen_rtx_MEM (SImode, insn);
 	    }
-
+	  else if (!cfun->machine->uses_anonymous_args)
+	    {
+	      insn = gen_rtx_PLUS (SImode, ip_rtx, GEN_INT (-fp_offset));
+	      insn = gen_rtx_MEM (SImode, insn);
+	    }
+	  else
+	    insn = gen_rtx_REG (SImode, 3);
+	    
 	  emit_insn (gen_rtx_SET (SImode, ip_rtx, insn));
 	  /* Add a USE to stop propagate_one_insn() from barfing.  */
 	  emit_insn (gen_prologue_use (ip_rtx));

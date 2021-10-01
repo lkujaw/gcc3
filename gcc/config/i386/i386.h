@@ -128,6 +128,7 @@ extern int target_flags;
 #define MASK_64BIT		0x00100000	/* Produce 64bit code */
 #define MASK_MS_BITFIELD_LAYOUT 0x00200000	/* Use native (MS) bitfield layout */
 #define MASK_TLS_DIRECT_SEG_REFS 0x00400000	/* Avoid adding %gs:0  */
+#define MASK_RTP                0x00800000      /* RTP mode */
 
 /* Unused:			0x03e0000	*/
 
@@ -318,6 +319,8 @@ extern int x86_prefetch_sse;
 #define TARGET_GNU_TLS (ix86_tls_dialect == TLS_DIALECT_GNU)
 #define TARGET_SUN_TLS (ix86_tls_dialect == TLS_DIALECT_SUN)
 
+#define TARGET_RTP (target_flags & MASK_RTP)
+
 /* WARNING: Do not mark empty strings for translation, as calling
             gettext on an empty string does NOT return an empty
             string.  */
@@ -425,6 +428,10 @@ extern int x86_prefetch_sse;
     N_("Use direct references against %gs when accessing tls data") },	      \
   { "no-tls-direct-seg-refs",	-MASK_TLS_DIRECT_SEG_REFS,		      \
     N_("Do not use direct references against %gs when accessing tls data") }, \
+  {"rtp",                       -MASK_RTP,				      \
+    N_("Use VxWorks RTPs") },						      \
+  {"no-rtp",                    MASK_RTP,				      \
+    N_("Do not use VxWorks RTPs") },					      \
   SUBTARGET_SWITCHES							      \
   { "",									      \
     TARGET_DEFAULT | TARGET_64BIT_DEFAULT | TARGET_SUBTARGET_DEFAULT	      \
@@ -3186,6 +3193,9 @@ struct machine_function GTY(())
 /* Control behavior of x86_file_start.  */
 #define X86_FILE_START_VERSION_DIRECTIVE false
 #define X86_FILE_START_FLTUSED false
+
+/* Define this to be nonzero if static stack checking is supported.  */
+#define STACK_CHECK_STATIC_BUILTIN 1
 
 /*
 Local variables:

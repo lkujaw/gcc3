@@ -23,6 +23,7 @@ Boston, MA 02111-1307, USA.  */
 extern void override_options (void);
 extern void optimization_options (int, int);
 
+extern bool ix86_target_stack_probe (void);
 extern int ix86_can_use_return_insn_p (void);
 extern int ix86_frame_pointer_required (void);
 extern void ix86_setup_frame_addresses (void);
@@ -120,6 +121,7 @@ extern const char *output_set_got (rtx);
 extern const char *output_387_binary_op (rtx, rtx*);
 extern const char *output_fix_trunc (rtx, rtx*);
 extern const char *output_fp_compare (rtx, rtx*, int, int);
+extern const char *output_probe_stack_range (rtx, rtx);
 
 extern void i386_dwarf_output_addr_const (FILE*, rtx);
 extern void i386_output_dwarf_dtprel (FILE*, int, rtx);

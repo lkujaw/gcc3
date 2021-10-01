@@ -35,6 +35,7 @@ Software Foundation, 59 Temple Place - Suite 330, Boston, MA
 #include "target.h"
 #include "ggc.h"
 #include "alloc-pool.h"
+#include "flags.h"
 
 /* The contents of the current function definition are allocated
    in this obstack, and all are freed at the end of the function.  */
@@ -258,6 +259,8 @@ insn_locators_initialize (void)
   int line_number = 0, last_line_number = 0;
   char *file_name = NULL, *last_file_name = NULL;
 
+  int insn_found_for_last_block = 1;
+
   prologue_locator = epilogue_locator = 0;
 
   VARRAY_INT_INIT (block_locators_locs, 32, "block_locators_locs");
@@ -277,6 +280,8 @@ insn_locators_initialize (void)
 	  || !NEXT_INSN (insn)
 	  || (!prologue_locator && file_name))
 	{
+	  insn_found_for_last_block = 1;
+
 	  if (last_block != block)
 	    {
 	      loc++;
@@ -311,13 +316,41 @@ insn_locators_initialize (void)
 	    {
 	    case NOTE_INSN_BLOCK_BEG:
 	      block = NOTE_BLOCK (insn);
+	      insn_found_for_last_block = 0;
 	      delete_insn (insn);
 	      break;
 	    case NOTE_INSN_BLOCK_END:
-	      block = BLOCK_SUPERCONTEXT (block);
-	      if (block && TREE_CODE (block) == FUNCTION_DECL)
-		block = 0;
-	      delete_insn (insn);
+	      /* If we have reached the end of a block but have not found an
+		 active instruction in this block, emit a dummy instruction, so
+		 that the block information does not get lost. 
+ 
+	         Note that
+		    - we cannot re-use the line number note in the block,
+		      since all its field are used
+		    - the insn we introduce must not be optimized out before
+		      the call to reemit_insn_block_notes.  */
+	      if (!optimize && ! insn_found_for_last_block)
+		{
+		  rtx flag;
+
+		  start_sequence ();
+		  emit_insn (gen_nop ());
+		  flag = get_insns();
+		  end_sequence();
+
+		  NOTE_BLOCK (flag) = block;
+		  insn = emit_insn_before (flag, insn);
+		  
+		  next = insn;
+		} 
+	      else
+		{
+		  block = BLOCK_SUPERCONTEXT (block);
+		  insn_found_for_last_block = 0;
+		  if (block && TREE_CODE (block) == FUNCTION_DECL)
+		    block = 0;
+		  delete_insn (insn);
+		}
 	      break;
 	    default:
 	      if (NOTE_LINE_NUMBER (insn) > 0)
@@ -661,38 +694,13 @@ fixup_reorder_chain (void)
 		continue;
 
 	      /* The degenerated case of conditional jump jumping to the next
-		 instruction can happen on target having jumps with side
-		 effects.
-
-		 Create temporarily the duplicated edge representing branch.
-		 It will get unidentified by force_nonfallthru_and_redirect
-		 that would otherwise get confused by fallthru edge not pointing
-		 to the next basic block.  */
+		 instruction can happen for jumps with side effects.  We need
+		 to construct a forwarder block and this will be done just
+		 fine by force_nonfallthru below.  */
 	      if (!e_taken)
-		{
-		  rtx note;
-		  edge e_fake;
+		;
 
-		  e_fake = unchecked_make_edge (bb, e_fall->dest, 0);
-
-		  if (!redirect_jump (BB_END (bb), block_label (bb), 0))
-		    abort ();
-		  note = find_reg_note (BB_END (bb), REG_BR_PROB, NULL_RTX);
-		  if (note)
-		    {
-		      int prob = INTVAL (XEXP (note, 0));
-
-		      e_fake->probability = prob;
-		      e_fake->count = e_fall->count * prob / REG_BR_PROB_BASE;
-		      e_fall->probability -= e_fall->probability;
-		      e_fall->count -= e_fake->count;
-		      if (e_fall->probability < 0)
-			e_fall->probability = 0;
-		      if (e_fall->count < 0)
-			e_fall->count = 0;
-		    }
-		}
-	      /* There is one special case: if *neither* block is next,
+	      /* There is another special case: if *neither* block is next,
 		 such as happens at the very end of a function, then we'll
 		 need to add a new unconditional jump.  Choose the taken
 		 edge based on known or assumed probability.  */

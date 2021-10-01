@@ -56,6 +56,7 @@ extern const char *output_mul_insn (int, rtx);
 extern const char *output_div_insn (rtx *, int, rtx);
 extern const char *output_mod_insn (int, rtx);
 extern const char *singlemove_string (rtx *);
+extern const char *output_probe_stack_range (rtx, rtx);
 extern void output_arg_descriptor (rtx);
 extern void output_global_address (FILE *, rtx, int);
 extern void print_operand (FILE *, rtx, int);

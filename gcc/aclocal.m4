@@ -322,7 +322,6 @@ gcc_cv_cc_supports_ada=no
 errors=`(${CC} -c conftest.adb) 2>&1 || echo failure`
 if test x"$errors" = x && test -f conftest.$ac_objext; then
   gcc_cv_cc_supports_ada=yes
-  break
 fi
 rm -f conftest.*])
 

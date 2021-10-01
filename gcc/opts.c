@@ -26,6 +26,7 @@ Software Foundation, 59 Temple Place - Suite 330, Boston, MA
 #include "tm.h"
 #include "tree.h"
 #include "rtl.h"
+#include "expr.h"
 #include "ggc.h"
 #include "output.h"
 #include "langhooks.h"
@@ -570,7 +571,6 @@ decode_options (unsigned int argc, const char **argv)
   if (optimize >= 3)
     {
       flag_inline_functions = 1;
-      flag_rename_registers = 1;
       flag_unswitch_loops = 1;
       flag_web = 1;
     }
@@ -904,6 +904,20 @@ common_handle_option (size_t scode, const char *arg,
 
     case OPT_fbranch_target_load_optimize2:
       flag_branch_target_load_optimize2 = value;
+      break;
+
+    case OPT_fcallgraph_info:
+      flag_callgraph_info = CALLGRAPH_INFO_NAKED;
+      break;
+
+    case OPT_fcallgraph_info_:
+      if (strcmp (arg, "su") == 0)
+	{
+	  flag_callgraph_info = CALLGRAPH_INFO_STACK_USAGE;
+	  flag_stack_usage_info = 1;
+	}
+      else
+	return 0;
       break;
 
     case OPT_fcall_used_:
@@ -1336,8 +1350,22 @@ common_handle_option (size_t scode, const char *arg,
       flag_single_precision_constant = value;
       break;
 
+    case OPT_fold_stack_check:
+      flag_stack_check = value
+			 ? STACK_CHECK_BUILTIN
+			   ? 3 /* full back-end stack checking */
+			   : 1 /* full middle-end stack checking */
+			 : 0; /* no stack checking */
+      break;
+
     case OPT_fstack_check:
-      flag_stack_check = value;
+      flag_stack_check = value
+			 ? STACK_CHECK_BUILTIN
+			   ? 3 /* full back-end stack checking */
+			   : STACK_CHECK_STATIC_BUILTIN
+			     ? 2 /* static back-end stack checking */
+			     : 1 /* full middle-end stack checking */
+			 : 0; /* no stack checking */
       break;
 
     case OPT_fstack_limit:
@@ -1359,6 +1387,11 @@ common_handle_option (size_t scode, const char *arg,
 
     case OPT_fstack_limit_symbol_:
       stack_limit_rtx = gen_rtx_SYMBOL_REF (Pmode, ggc_strdup (arg));
+      break;
+
+    case OPT_fstack_usage:
+      flag_stack_usage = value;
+      flag_stack_usage_info = 1;
       break;
 
     case OPT_fstrength_reduce:
@@ -1467,6 +1500,10 @@ common_handle_option (size_t scode, const char *arg,
       set_debug_level (SDB_DEBUG, false, arg);
       break;
 
+    case OPT_gdwarf_:
+      flag_gnat_dwarf_extensions = 1;
+
+      /* Fallthrough.  */
     case OPT_gdwarf_2:
       set_debug_level (DWARF2_DEBUG, false, arg);
       break;

@@ -683,6 +683,15 @@ struct sparc_cpu_select
 
 extern struct sparc_cpu_select sparc_select[];
 
+struct machine_function GTY(())
+{
+  /* Some local-dynamic TLS symbol name.  */
+  const char *some_ld_name;
+
+  /* # of dynamic stack allocations.  */
+  int dynamic_alloc_count;
+};
+
 /* target machine storage layout */
 
 /* Define this if most significant bit is lowest numbered
@@ -744,43 +753,25 @@ extern struct sparc_cpu_select sparc_select[];
    if ptr_mode and Pmode are the same.  */
 #define POINTERS_EXTEND_UNSIGNED 1
 
-/* A macro to update MODE and UNSIGNEDP when an object whose type
-   is TYPE and which has the specified mode and signedness is to be
-   stored in a register.  This macro is only called when TYPE is a
-   scalar type.  */
-#define PROMOTE_MODE(MODE, UNSIGNEDP, TYPE) \
+/* For TARGET_ARCH64 we need this, as we don't have instructions
+   for arithmetic operations which do zero/sign extension at the same time,
+   so without this we end up with a srl/sra after every assignment to an
+   user variable,  which means very very bad code.  */
+#define PROMOTE_FUNCTION_MODE(MODE, UNSIGNEDP, TYPE) \
 if (TARGET_ARCH64				\
     && GET_MODE_CLASS (MODE) == MODE_INT	\
     && GET_MODE_SIZE (MODE) < UNITS_PER_WORD)	\
   (MODE) = DImode;
 
-/* Define this macro if the promotion described by PROMOTE_MODE
-   should also be done for outgoing function arguments.  */
-/* This is only needed for TARGET_ARCH64, but since PROMOTE_MODE is a no-op
-   for TARGET_ARCH32 this is ok.  Otherwise we'd need to add a runtime test
-   for this value.  */
+/* This is only needed for TARGET_ARCH64, but since PROMOTE_FUNCTION_MODE is a
+   no-op for TARGET_ARCH32 this is ok.  Otherwise we'd need to add a runtime
+   test for this value.  */
 #define PROMOTE_FUNCTION_ARGS
 
-/* Define this macro if the promotion described by PROMOTE_MODE
-   should also be done for the return value of functions.
-   If this macro is defined, FUNCTION_VALUE must perform the same
-   promotions done by PROMOTE_MODE.  */
-/* This is only needed for TARGET_ARCH64, but since PROMOTE_MODE is a no-op
-   for TARGET_ARCH32 this is ok.  Otherwise we'd need to add a runtime test
-   for this value.  */
+/* This is only needed for TARGET_ARCH64, but since PROMOTE_FUNCTION_MODE is a
+   no-op for TARGET_ARCH32 this is ok.  Otherwise we'd need to add a runtime
+   test for this value.  */
 #define PROMOTE_FUNCTION_RETURN
-
-/* Define this macro if the promotion described by PROMOTE_MODE
-   should _only_ be performed for outgoing function arguments or
-   function return values, as specified by PROMOTE_FUNCTION_ARGS
-   and PROMOTE_FUNCTION_RETURN, respectively.  */
-/* This is only needed for TARGET_ARCH64, but since PROMOTE_MODE is a no-op
-   for TARGET_ARCH32 this is ok.  Otherwise we'd need to add a runtime test
-   for this value.  For TARGET_ARCH64 we need it, as we don't have instructions
-   for arithmetic operations which do zero/sign extension at the same time,
-   so without this we end up with a srl/sra after every assignment to an
-   user variable,  which means very very bad code.  */
-#define PROMOTE_FOR_CALL_ONLY
 
 /* Allocation boundary (in *bits*) for storing arguments in argument list.  */
 #define PARM_BOUNDARY (TARGET_ARCH64 ? 64 : 32)
@@ -1172,20 +1163,7 @@ extern int sparc_mode_class[];
    Must reserve 64 bytes for the in and local registers.
    v9: Functions which return large structures get the address to place the
    wanted value from an invisible first argument.  */
-/* Used only in other #defines in this file.  */
 #define STRUCT_VALUE_OFFSET 64
-
-#define STRUCT_VALUE \
-  (TARGET_ARCH64					\
-   ? 0							\
-   : gen_rtx_MEM (Pmode, plus_constant (stack_pointer_rtx, \
-					STRUCT_VALUE_OFFSET)))
-
-#define STRUCT_VALUE_INCOMING \
-  (TARGET_ARCH64						\
-   ? 0								\
-   : gen_rtx_MEM (Pmode, plus_constant (frame_pointer_rtx,	\
-					STRUCT_VALUE_OFFSET)))
 
 /* Define the classes of registers for register constraints in the
    machine description.  Also define ranges of constants.

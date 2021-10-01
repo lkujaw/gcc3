@@ -102,7 +102,8 @@ static unsigned int file_info_table_in_use;
    table.  */
 #define FILE_TABLE_INCREMENT 64
 
-static char **func_table;
+static char **funcnam_table;
+static unsigned int *funcnum_table;
 static unsigned int func_table_allocated;
 static unsigned int func_table_in_use;
 #define FUNC_TABLE_INCREMENT 256
@@ -181,6 +182,7 @@ const struct gcc_debug_hooks vmsdbg_debug_hooks
    vmsdbgout_source_line,
    vmsdbgout_begin_prologue,
    vmsdbgout_end_prologue,
+   debug_nothing_int_charstar,	/* begin_epilogue */
    vmsdbgout_end_epilogue,
    vmsdbgout_begin_function,
    vmsdbgout_end_function,
@@ -776,7 +778,7 @@ write_rtnbeg (int rtnnum, int dosizeonly)
   DST_ROUTINE_BEGIN rtnbeg;
   DST_PROLOG prolog;
 
-  rtnname = func_table[rtnnum];
+  rtnname = funcnam_table [rtnnum];
   rtnnamelen = strlen (rtnname);
   rtnentryname = concat (rtnname, "..en", NULL);
 
@@ -847,7 +849,8 @@ write_rtnbeg (int rtnnum, int dosizeonly)
       totsize += write_debug_header (&prolog.dst_a_prolog_header, "prolog",
 				     dosizeonly);
 
-      ASM_GENERATE_INTERNAL_LABEL (label, FUNC_PROLOG_LABEL, rtnnum);
+      ASM_GENERATE_INTERNAL_LABEL (label, FUNC_PROLOG_LABEL,
+				   funcnum_table [rtnnum]);
       totsize += write_debug_addr (label, "prolog breakpoint addr",
 				   dosizeonly);
     }
@@ -879,8 +882,10 @@ write_rtnend (int rtnnum, int dosizeonly)
   totsize += write_debug_data1 (rtnend.dst_b_rtnend_unused, "unused",
 				dosizeonly);
 
-  ASM_GENERATE_INTERNAL_LABEL (label1, FUNC_BEGIN_LABEL, rtnnum);
-  ASM_GENERATE_INTERNAL_LABEL (label2, FUNC_END_LABEL, rtnnum);
+  ASM_GENERATE_INTERNAL_LABEL (label1, FUNC_BEGIN_LABEL,
+			       funcnum_table [rtnnum]);
+  ASM_GENERATE_INTERNAL_LABEL (label2, FUNC_END_LABEL,
+			       funcnum_table [rtnnum]);
   totsize += write_debug_delta4 (label2, label1, "routine size", dosizeonly);
 
   return totsize;
@@ -1349,7 +1354,7 @@ vmsdbgout_ignore_block (tree block)
   return retval;
 }
 
-/* Add an entry for function DECL into the func_table.  */
+/* Add an entry for function DECL into the funcnam_table.  */
 
 static void
 vmsdbgout_begin_function (tree decl)
@@ -1362,12 +1367,16 @@ vmsdbgout_begin_function (tree decl)
   if (func_table_in_use == func_table_allocated)
     {
       func_table_allocated += FUNC_TABLE_INCREMENT;
-      func_table = xrealloc (func_table,
+      funcnam_table = xrealloc (funcnam_table,
 			     func_table_allocated * sizeof (char *));
+      funcnum_table = xrealloc (funcnum_table,
+			     func_table_allocated * sizeof (unsigned int));
     }
 
   /* Add the new entry to the end of the function name table.  */
-  func_table[func_table_in_use++] = xstrdup (name);
+  funcnam_table[func_table_in_use] = xstrdup (name);
+  funcnum_table[func_table_in_use] = current_function_funcdef_no;
+  func_table_in_use++;
 }
 
 static char fullname_buff [4096];
@@ -1384,13 +1393,9 @@ full_name (const char *filename)
   fgetname (fp, fullname_buff, 1);
   fclose (fp);
 #else
-  getcwd (fullname_buff, sizeof (fullname_buff));
-
-  strcat (fullname_buff, "/");
-  strcat (fullname_buff, filename);
-
-  /* ??? Insert hairy code here to translate Unix style file specification
-     to VMS style.  */
+  /* Unix paths really mess up VMS debug. Better to just output the
+     base filename */
+  strcpy (fullname_buff, filename);
 #endif
 
   return fullname_buff;
@@ -1578,7 +1583,8 @@ vmsdbgout_init (const char *main_input_filename)
   /* Skip the first entry - file numbers begin at 1 */
   file_info_table_in_use = 1;
 
-  func_table = xcalloc (FUNC_TABLE_INCREMENT, sizeof (char *));
+  funcnam_table = xcalloc (FUNC_TABLE_INCREMENT, sizeof (char *));
+  funcnum_table = xcalloc (FUNC_TABLE_INCREMENT, sizeof (unsigned int));
   func_table_allocated = FUNC_TABLE_INCREMENT;
   func_table_in_use = 1;
 

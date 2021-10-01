@@ -957,6 +957,7 @@ extern int fixuplabelno;
 /* Override rs6000.h definition.  */
 #undef	CPP_SPEC
 #define	CPP_SPEC "%{posix: -D_POSIX_SOURCE} \
+%{mcpu=505: -D_NO_ICACHE -D_NO_DCACHE }  \
 %{mads         : %(cpp_os_ads)         ; \
   myellowknife : %(cpp_os_yellowknife) ; \
   mmvme        : %(cpp_os_mvme)        ; \

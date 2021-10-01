@@ -50,4 +50,8 @@
 /* Tru64 v5.1 has the float and long double forms of math functions.  */
 #undef TARGET_C99_FUNCTIONS
 #define TARGET_C99_FUNCTIONS  1
-
+ 
+/* Include the support for unwinding past signal handler frames.  This is
+   in a separate file to ease the debugging process by avoiding the need
+   to recompile the whole compiler after every change.  */
+#define MD_FALLBACK_FRAME_STATE_FOR_SOURCE "config/alpha/osf5-ehfb.h"

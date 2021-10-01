@@ -1436,7 +1436,7 @@ extern rtx expand_builtin_expect_jump (tree, rtx, rtx);
 extern void purge_builtin_constant_p (void);
 
 /* In explow.c */
-extern void set_stack_check_libfunc (rtx);
+extern GTY(()) rtx stack_check_libfunc;
 extern HOST_WIDE_INT trunc_int_for_mode	(HOST_WIDE_INT, enum machine_mode);
 extern rtx plus_constant_wide (rtx, HOST_WIDE_INT);
 extern rtx plus_constant_for_output_wide (rtx, HOST_WIDE_INT);
@@ -2249,8 +2249,9 @@ enum libcall_type
   LCT_PURE_MAKE_BLOCK = 4,
   LCT_NORETURN = 5,
   LCT_THROW = 6,
-  LCT_ALWAYS_RETURN = 7,
-  LCT_RETURNS_TWICE = 8
+  LCT_MAY_THROW = 7,
+  LCT_ALWAYS_RETURN = 8,
+  LCT_RETURNS_TWICE = 9
 };
 
 extern void emit_library_call (rtx, enum libcall_type, enum machine_mode, int,

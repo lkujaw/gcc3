@@ -1,0 +1,1 @@
+	.global LIB$INITIALIZE#

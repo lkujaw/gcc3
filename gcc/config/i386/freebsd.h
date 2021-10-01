@@ -135,8 +135,3 @@ Boston, MA 02111-1307, USA.  */
 
 #undef  DEFAULT_PCC_STRUCT_RETURN
 #define DEFAULT_PCC_STRUCT_RETURN 0
-
-/* FreeBSD sets the rounding precision of the FPU to 53 bits.  Let the
-   compiler get the contents of <float.h> and std::numeric_limits correct.  */
-#undef TARGET_96_ROUND_53_LONG_DOUBLE
-#define TARGET_96_ROUND_53_LONG_DOUBLE (!TARGET_64BIT)

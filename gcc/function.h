@@ -208,6 +208,14 @@ struct function GTY(())
      defined, the needed space is pushed by the prologue.  */
   int outgoing_args_size;
 
+  /* # of bytes of space pushed onto the stack after the prologue.  If
+     !ACCUMULATE_OUTGOING_ARGS, it contains the outgoing arguments.  */
+  int pushed_stack_size;
+
+  /* # of bytes of dynamic stack space allocated by the function.  This is
+     meaningful only if has_unbounded_dynamic_stack_size is zero.  */
+  HOST_WIDE_INT dynamic_stack_size;
+
   /* This is the offset from the arg pointer to the place where the first
      anonymous arg can be found, if there is one.  */
   rtx arg_offset_rtx;
@@ -457,6 +465,10 @@ struct function GTY(())
   /* Nonzero if the function being compiled issues a computed jump.  */
   unsigned int has_computed_jump : 1;
 
+  /* Nonzero if the amount of stack space allocated dynamically cannot
+     be bounded at compile-time.  */
+  unsigned int has_unbounded_dynamic_stack_size : 1;
+
   /* Nonzero if the current function is a thunk, i.e., a lightweight
      function implemented by the output_mi_thunk hook) that just
      adjusts one of its arguments and forwards to another
@@ -543,12 +555,23 @@ extern int trampolines_created;
 #define current_function_calls_eh_return (cfun->calls_eh_return)
 #define current_function_calls_constant_p (cfun->calls_constant_p)
 #define current_function_has_computed_jump (cfun->has_computed_jump)
+#define current_function_has_unbounded_dynamic_stack_size \
+  (cfun->has_unbounded_dynamic_stack_size)
 #define current_function_contains_functions (cfun->contains_functions)
 #define current_function_is_thunk (cfun->is_thunk)
 #define current_function_args_info (cfun->args_info)
 #define current_function_args_size (cfun->args_size)
 #define current_function_pretend_args_size (cfun->pretend_args_size)
 #define current_function_outgoing_args_size (cfun->outgoing_args_size)
+#define current_function_pushed_stack_size (cfun->pushed_stack_size)
+#define current_function_dynamic_stack_size (cfun->dynamic_stack_size)
+#define current_function_allocates_dynamic_stack_space	\
+  (current_function_dynamic_stack_size != 0		\
+   || current_function_has_unbounded_dynamic_stack_size)
+#ifdef SETJMP_VIA_SAVE_AREA
+#define current_function_dynamic_alloc_count \
+  (cfun->machine->dynamic_alloc_count)
+#endif
 #define current_function_arg_offset_rtx (cfun->arg_offset_rtx)
 #define current_function_stdarg (cfun->stdarg)
 #define current_function_internal_arg_pointer (cfun->internal_arg_pointer)
@@ -613,6 +636,13 @@ extern void number_blocks (tree);
 extern HOST_WIDE_INT get_frame_size (void);
 /* Likewise, but for a different than the current function.  */
 extern HOST_WIDE_INT get_func_frame_size (struct function *);
+
+/* Returns the value of STACK_DYNAMIC_OFFSET computed in this file.  */
+extern int get_stack_dynamic_offset (tree);
+
+/* Emit code at the beginning of the function to force a dynamic stack pointer
+   adjustment on an ALIGN byte boundary, which must be a power of two.  */
+extern void align_function_stack_to (int);
 
 /* A pointer to a function to create target specific, per-function
    data structures.  */

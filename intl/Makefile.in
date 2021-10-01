@@ -38,6 +38,8 @@ datadir = @datadir@
 localedir = $(datadir)/locale
 aliaspath = $(localedir)
 
+OUTPUT_OPTION = @OUTPUT_OPTION@
+
 AR = ar
 CC = @CC@
 RANLIB = @RANLIB@
@@ -129,7 +131,7 @@ libintl.h: $(srcdir)/libgnuintl.h
 .SUFFIXES: .c .y .o
 
 .c.o:
-	$(COMPILE) $<
+	$(COMPILE) $< $(OUTPUT_OPTION)
 
 .y.c:
 	$(YACC) $(YFLAGS) --output $@ $<

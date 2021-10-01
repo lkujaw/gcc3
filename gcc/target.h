@@ -98,7 +98,7 @@ struct gcc_target
     void (* named_section) (const char *, unsigned int);
 
     /* Switch to the section that holds the exception table.  */
-    void (* exception_section) (void);
+    void (* exception_section) (const char *);
 
     /* Switch to the section that holds the exception frames.  */
     void (* eh_frame_section) (void);
@@ -414,6 +414,9 @@ struct gcc_target
   */
   void * (* get_pch_validity) (size_t *);
   const char * (* pch_valid_p) (const void *, size_t);
+
+  /* Return the maximum static stack usage for the current function.  */
+  HOST_WIDE_INT (* get_static_stack_usage) (void);
 
   /* Functions relating to calls - argument passing, returns, etc.  */
   struct calls {

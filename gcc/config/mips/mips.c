@@ -40,6 +40,7 @@ Boston, MA 02111-1307, USA.  */
 #include "output.h"
 #include "tree.h"
 #include "function.h"
+#include "except.h"
 #include "expr.h"
 #include "optabs.h"
 #include "flags.h"
@@ -246,6 +247,7 @@ static void mips_save_restore_reg (enum machine_mode, int, HOST_WIDE_INT,
 static void mips_for_each_saved_reg (HOST_WIDE_INT, mips_save_restore_fn);
 static void mips_output_cplocal (void);
 static void mips_emit_loadgp (void);
+static HOST_WIDE_INT mips_get_static_stack_usage (void);
 static void mips_output_function_prologue (FILE *, HOST_WIDE_INT);
 static void mips_set_frame_expr (rtx);
 static rtx mips_frame_set (rtx, rtx);
@@ -799,6 +801,9 @@ const struct mips_cpu_info mips_cpu_info_table[] = {
 #define TARGET_BUILD_BUILTIN_VA_LIST mips_build_builtin_va_list
 #undef TARGET_RETURN_IN_MSB
 #define TARGET_RETURN_IN_MSB mips_return_in_msb
+
+#undef TARGET_GET_STATIC_STACK_USAGE
+#define TARGET_GET_STATIC_STACK_USAGE mips_get_static_stack_usage
 
 #undef TARGET_ASM_OUTPUT_MI_THUNK
 #define TARGET_ASM_OUTPUT_MI_THUNK mips_output_mi_thunk
@@ -6523,6 +6528,14 @@ compute_frame_size (HOST_WIDE_INT size)
   /* Ok, we're done.  */
   return total_size;
 }
+
+/* Return the maximum static stack usage for the current function.  */
+
+static HOST_WIDE_INT
+mips_get_static_stack_usage (void)
+{
+  return compute_frame_size (get_frame_size ());
+}
 
 /* Implement INITIAL_ELIMINATION_OFFSET.  FROM is either the frame
    pointer or argument pointer.  TO is either the stack pointer or
@@ -6659,6 +6672,135 @@ mips_emit_loadgp (void)
     }
 }
 
+/* Emit code to probe a range of stack addresses from FIRST to FIRST+SIZE,
+   inclusive.  These are offsets from the current stack pointer.  */
+
+static void
+mips_emit_probe_stack_range (HOST_WIDE_INT first, HOST_WIDE_INT size)
+{
+  if (stack_check_libfunc)
+    abort (); /* Not implemented.  */
+
+  else
+    emit_insn (gen_probe_stack_range (GEN_INT (first), GEN_INT (size)));
+}
+
+/* Probe a range of stack addresses from FIRST to FIRST+SIZE, inclusive.
+   These are offsets from the current stack pointer.  */
+
+#define PROBE_INTERVAL (1 << STACK_CHECK_PROBE_INTERVAL_EXP)
+
+#if PROBE_INTERVAL > 32768
+#error Cannot use indexed addressing mode for stack probing
+#endif
+
+const char *
+mips_output_probe_stack_range (rtx first_rtx, rtx size_rtx)
+{
+  static int labelno = 0;
+  HOST_WIDE_INT first = INTVAL (first_rtx);
+  HOST_WIDE_INT size = INTVAL (size_rtx);
+  HOST_WIDE_INT rounded_size;
+  char loop_lab[32], end_lab[32];
+
+  /* See if we have a constant small number of them to generate.  If so,
+     that's the easy case.  */
+  if (first + size <= 32768)
+    {
+      HOST_WIDE_INT i;
+
+      /* Probe at FIRST + N * PROBE_INTERVAL for values of N from 1 until
+	 it exceeds SIZE.  If only one probe is needed, this will not
+	 generate any code.  Then probe at SIZE.  */
+      for (i = PROBE_INTERVAL; i < size; i += PROBE_INTERVAL)
+	fprintf (asm_out_file, "\tsd\t$0,-"HOST_WIDE_INT_PRINT_DEC"($sp)\n",
+		 first + i);
+
+      fprintf (asm_out_file, "\tsd\t$0,-"HOST_WIDE_INT_PRINT_DEC"($sp)\n",
+	       first + size);
+    }
+
+  /* Otherwise, do the same as above, but in a loop.  Note that we must be
+     extra careful with variables wrapping around because we might be at
+     the very top (or the very bottom) of the address space and we have
+     to be able to handle this case properly; in particular, we use an
+     equality test for the loop condition.  */
+  else
+    {
+      /* Sanity check for the addressing mode we're going to use.  */
+      if (first > 32768)
+	abort();
+
+      /* Step 1: round SIZE to the previous multiple of the interval.  */
+
+      rounded_size = size & -PROBE_INTERVAL;
+
+
+      /* Step 2: compute initial and final value of the loop counter.  */
+
+      /* TEST_ADDR = SP + FIRST.  */
+      fprintf (asm_out_file, "\taddiu\t$3,$sp,-"HOST_WIDE_INT_PRINT_DEC"\n",
+	       first);
+
+      /* LAST_ADDR = SP + FIRST + ROUNDED_SIZE.  */
+      if (rounded_size > 32768)
+	{
+	  int high = (-rounded_size) & ~0xffff;
+	  int low = (-rounded_size) & 0xffff;
+
+	  if (high)
+	    fprintf (asm_out_file, "\tli\t$12,%d\n", high);
+	  if (low)
+	    fprintf (asm_out_file, "\tori\t$12,$12,0x%x\n", low);
+	  fputs ("\taddu\t$12,$3,$12\n", asm_out_file);
+	}
+      else
+	fprintf (asm_out_file, "\taddiu\t$12,$3,-"HOST_WIDE_INT_PRINT_DEC"\n",
+		 rounded_size);
+
+
+      /* Step 3: the loop
+
+        while (TEST_ADDR != LAST_ADDR)
+	  {
+	    TEST_ADDR = TEST_ADDR + PROBE_INTERVAL
+	    probe at TEST_ADDR
+	  }
+
+        probes at FIRST + N * PROBE_INTERVAL for values of N from 1
+        until it exceeds ROUNDED_SIZE.  */
+
+      ASM_GENERATE_INTERNAL_LABEL (loop_lab, "LPSRL", labelno);
+      ASM_OUTPUT_LABEL (asm_out_file, loop_lab);
+
+       /* Jump to END_LAB if TEST_ADDR == LAST_ADDR.  */
+      ASM_GENERATE_INTERNAL_LABEL (end_lab, "LPSRE", labelno++);
+      fputs ("\tbeq\t$3,$12,", asm_out_file); assemble_name (asm_out_file, end_lab);
+      fputc ('\n', asm_out_file);
+ 
+      /* TEST_ADDR = TEST_ADDR + PROBE_INTERVAL.  */
+      fprintf (asm_out_file, "\t addiu\t$3,$3,-%d\n", PROBE_INTERVAL);
+  
+      /* Probe at TEST_ADDR and branch.  */
+      fprintf (asm_out_file, "\tb\t"); assemble_name (asm_out_file, loop_lab);
+      fputc ('\n', asm_out_file);
+      fputs ("\t sd\t$0,0($3)\n", asm_out_file);
+
+      ASM_OUTPUT_LABEL (asm_out_file, end_lab);
+
+
+      /* Step 4: probe at SIZE if we cannot assert at compile-time that
+	 it is equal to ROUNDED_SIZE.  */
+
+      /* TEMP = SIZE - ROUNDED_SIZE.  */
+      if (size != rounded_size)
+	fprintf (asm_out_file, "\tsd\t$0,-"HOST_WIDE_INT_PRINT_DEC"($12)\n",
+		 size - rounded_size);
+    }
+
+  return "";
+}
+
 /* Set up the stack and frame (if desired) for the function.  */
 
 static void
@@ -6776,8 +6918,18 @@ mips_set_frame_expr (rtx frame_pattern)
 static rtx
 mips_frame_set (rtx mem, rtx reg)
 {
-  rtx set = gen_rtx_SET (VOIDmode, mem, reg);
+  rtx set;
+
+  /* If we're saving the return address register and the dwarf return
+     address column differs from the hard register number, adjust the
+     note reg to refer to the former.  */
+  if (REGNO (reg) == GP_REG_FIRST + 31
+      && DWARF_FRAME_RETURN_COLUMN != GP_REG_FIRST + 31)
+    reg = gen_rtx_REG (GET_MODE (reg), DWARF_FRAME_RETURN_COLUMN);
+
+  set = gen_rtx_SET (VOIDmode, mem, reg);
   RTX_FRAME_RELATED_P (set) = 1;
+
   return set;
 }
 
@@ -6831,6 +6983,9 @@ mips_expand_prologue (void)
     REGNO (pic_offset_table_rtx) = cfun->machine->global_pointer;
 
   size = compute_frame_size (get_frame_size ());
+
+  if (flag_stack_check == 2 && size)
+    mips_emit_probe_stack_range (STACK_CHECK_PROTECT, size);
 
   /* Save the registers.  Allocate up to MIPS_MAX_FIRST_STACK_STEP
      bytes beforehand; this is enough to cover the register save area

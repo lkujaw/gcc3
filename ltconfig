@@ -1388,6 +1388,12 @@ sysv4*MP*)
   fi
   ;;
 
+lynxos*)
+  version_type=linux
+  library_names_spec='$libname.so.$versuffix $libname.so.$major $libname.so'
+  soname_spec='$libname.so.$major'
+  shlibpath_var=LD_LIBRARY_PATH
+  ;;
 *)
   dynamic_linker=no
   ;;

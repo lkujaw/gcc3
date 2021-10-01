@@ -326,6 +326,8 @@ Foundation, 59 Temple Place - Suite 330, Boston, MA 02111-1307, USA.
 #define TARGET_GET_PCH_VALIDITY default_get_pch_validity
 #define TARGET_PCH_VALID_P default_pch_valid_p
 
+#define TARGET_GET_STATIC_STACK_USAGE 0
+
 #define TARGET_PROMOTE_FUNCTION_ARGS default_promote_function_args
 #define TARGET_PROMOTE_FUNCTION_RETURN default_promote_function_return
 #define TARGET_PROMOTE_PROTOTYPES default_promote_prototypes
@@ -395,6 +397,7 @@ Foundation, 59 Temple Place - Suite 330, Boston, MA 02111-1307, USA.
   TARGET_BUILD_BUILTIN_VA_LIST,			\
   TARGET_GET_PCH_VALIDITY,			\
   TARGET_PCH_VALID_P,				\
+  TARGET_GET_STATIC_STACK_USAGE,		\
   TARGET_CALLS,					\
   TARGET_HAVE_NAMED_SECTIONS,			\
   TARGET_HAVE_CTORS_DTORS,			\

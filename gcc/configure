@@ -9957,14 +9957,15 @@ gcc_cv_gas_minor_version=
 gcc_cv_as_gas_srcdir=`echo $srcdir | sed -e 's,/gcc$,,'`/gas
 if test -x "$DEFAULT_ASSEMBLER"; then
 	gcc_cv_as="$DEFAULT_ASSEMBLER"
-elif test -x "$AS"; then
-	gcc_cv_as="$AS"
 elif test -x as$host_exeext; then
 	# Build using assembler in the current directory.
 	gcc_cv_as=./as$host_exeext
 elif test -f $gcc_cv_as_gas_srcdir/configure.in \
-     && test -f ../gas/Makefile; then
-  # Single tree build which includes gas.
+     && test -f ../gas/Makefile \
+     && test x$build = x$host; then
+  # Single tree build which includes gas.  We want to prefer it
+  # over whatever linker top-level may have detected, since
+  # we'll use what we're building after installation anyway.
   in_tree_gas=yes
   gcc_cv_as_bfd_srcdir=`echo $srcdir | sed -e 's,/gcc$,,'`/bfd
 for f in $gcc_cv_as_bfd_srcdir/configure \
@@ -9995,6 +9996,10 @@ gcc_cv_gas_vers=`expr \( \( $gcc_cv_gas_major_version \* 1000 \) \
   then
     in_tree_gas_is_elf=yes
   fi
+elif test -x "$AS_FOR_TARGET"; then
+        gcc_cv_as="$AS_FOR_TARGET"
+elif test -x "$AS" && test x$host = x$target; then
+	gcc_cv_as="$AS"
 fi
 
 if test "x$gcc_cv_as" = x; then
@@ -10084,14 +10089,15 @@ gcc_cv_ld_gld_srcdir=`echo $srcdir | sed -e 's,/gcc$,,'`/ld
 gcc_cv_ld_bfd_srcdir=`echo $srcdir | sed -e 's,/gcc$,,'`/bfd
 if test -x "$DEFAULT_LINKER"; then
 	gcc_cv_ld="$DEFAULT_LINKER"
-elif test -x "$LD"; then
-	gcc_cv_ld="$LD"
 elif test -x collect-ld$host_exeext; then
 	# Build using linker in the current directory.
 	gcc_cv_ld=./collect-ld$host_exeext
 elif test -f $gcc_cv_ld_gld_srcdir/configure.in \
-     && test -f ../ld/Makefile; then
-	# Single tree build which includes ld.
+     && test -f ../ld/Makefile \
+     && test x$build = x$host; then
+	# Single tree build which includes ld.  We want to prefer it
+	# over whatever linker top-level may have detected, since
+	# we'll use what we're building after installation anyway.
 	in_tree_ld=yes
 	in_tree_ld_is_elf=no
 	if (grep 'EMUL = .*elf' ../ld/Makefile \
@@ -10110,6 +10116,10 @@ elif test -f $gcc_cv_ld_gld_srcdir/configure.in \
 	rm -f collect-ld$host_exeext
 	$symbolic_link ../ld/ld-new$host_exeext collect-ld$host_exeext \
 		2>/dev/null
+elif test -x "$LD_FOR_TARGET"; then
+        gcc_cv_ld="$LD_FOR_TARGET"
+elif test -x "$LD" && test x$host = x$target; then
+	gcc_cv_ld="$LD"
 fi
 
 if test "x$gcc_cv_ld" = x; then
@@ -10724,7 +10734,20 @@ fi
   echo "$as_me:$LINENO: \$? = $ac_status" >&5
   (exit $ac_status); }; }
     then
-	gcc_cv_as_shf_merge=yes
+	gcc_cv_as_shf_merge=no
+if test $in_tree_ld = yes ; then
+  gcc_cv_as_shf_merge=yes
+elif test x$gcc_cv_ld != x -a x$gcc_cv_objdump != x ; then
+  # Check that the linker can merge marked and non-marked sections.
+  echo '.section .my_str, "aMS", @progbits, 1' > conftest1.s
+  echo '.section .my_str, "a", @progbits' > conftest2.s
+  if $gcc_cv_as -o conftest1.o conftest1.s > /dev/null 2>&1 \
+     && $gcc_cv_as -o conftest2.o conftest2.s > /dev/null 2>&1 \
+     && $gcc_cv_ld -o conftest conftest1.o conftest2.o > /dev/null 2>&1 \
+     && $gcc_cv_objdump -h conftest | grep my_str | wc -l | grep 1 > /dev/null; then
+    gcc_cv_as_shf_merge=yes
+  fi
+fi
     else
       echo "configure: failed program was" >&5
       cat conftest.s >&5
@@ -10934,7 +10957,7 @@ foo:	.long	25
 	tls_first_minor=13
 	tls_as_opt=--fatal-warnings
 	;;
-  sparc*-*-*)
+  sparc*-*-* | erc32-*-*)
     case "$target" in
       sparc*-sun-solaris2.*)
 	on_solaris=yes
@@ -11171,7 +11194,7 @@ _ACEOF
 fi
     ;;
 
-  sparc*-*-*)
+  sparc*-*-* | erc32-*-*)
     echo "$as_me:$LINENO: checking assembler for .register" >&5
 echo $ECHO_N "checking assembler for .register... $ECHO_C" >&6
 if test "${gcc_cv_as_sparc_register_op+set}" = set; then
@@ -11625,9 +11648,9 @@ esac
 # ??? Once 2.11 is released, probably need to add first known working
 # version to the per-target configury.
 case "$target" in
-  i?86*-*-* | mips*-*-* | alpha*-*-* | powerpc*-*-* | sparc*-*-* | m68*-*-* \
-  | x86_64*-*-* | hppa*-*-* | arm*-*-* | strongarm*-*-* | xscale*-*-* \
-  | xstormy16*-*-* | cris-*-* | xtensa-*-*)
+  i?86*-*-* | mips*-*-* | alpha*-*-* | powerpc*-*-* | sparc*-*-* | erc32-*-* \
+  | m68*-*-* | x86_64*-*-* | hppa*-*-* | arm*-*-* | strongarm*-*-* \
+  | xscale*-*-* | xstormy16*-*-* | cris-*-* | xtensa-*-*)
     insn="nop"
     ;;
   ia64*-*-* | s390*-*-*)
@@ -11920,7 +11943,7 @@ echo "$as_me:$LINENO: result: $gcc_cv_ld_static_dynamic" >&5
 echo "${ECHO_T}$gcc_cv_ld_static_dynamic" >&6
 
 case "$target" in
-  *-*-linux*)
+  do-not-match-any-platform)
     echo "$as_me:$LINENO: checking linker --as-needed support" >&5
 echo $ECHO_N "checking linker --as-needed support... $ECHO_C" >&6
 if test "${gcc_cv_ld_as_needed+set}" = set; then
@@ -11951,6 +11974,37 @@ _ACEOF
     fi
     ;;
 esac
+
+echo "$as_me:$LINENO: checking linker EH-compatible garbage collection of sections" >&5
+echo $ECHO_N "checking linker EH-compatible garbage collection of sections... $ECHO_C" >&6
+gcc_cv_ld_eh_gc_sections=no
+if test $in_tree_ld = yes ; then
+  if test "$gcc_cv_gld_major_version" -eq 2 -a "$gcc_cv_gld_minor_version" -ge 16 -o "$gcc_cv_gld_major_version" -gt 2 \
+     && test $in_tree_ld_is_elf = yes; then
+    gcc_cv_ld_eh_gc_sections=yes
+  fi
+elif test x$gcc_cv_as != x -a x$gcc_cv_ld != x -a x$gcc_cv_objdump != x ; then
+  echo '.section .gcc_except_table.foo, "a"' > conftest.s
+  echo '.byte 0' >> conftest.s
+  if $gcc_cv_as -o conftest.o conftest.s > /dev/null 2>&1 \
+     && $gcc_cv_ld -shared -o conftest.so conftest.o > /dev/null 2>&1; then
+    if $gcc_cv_objdump -h conftest.so | grep .gcc_except_table.foo > /dev/null; then
+      gcc_cv_ld_eh_gc_sections=no
+    else
+      gcc_cv_ld_eh_gc_sections=yes
+    fi
+  fi
+  rm -f conftest.*
+fi
+if test x$gcc_cv_ld_eh_gc_sections = xyes; then
+
+cat >>confdefs.h <<\_ACEOF
+#define HAVE_LD_EH_GC_SECTIONS 1
+_ACEOF
+
+fi
+echo "$as_me:$LINENO: result: $gcc_cv_ld_eh_gc_sections" >&5
+echo "${ECHO_T}$gcc_cv_ld_eh_gc_sections" >&6
 
 if test x$with_sysroot = x && test x$host = x$target \
    && test "$prefix" != "/usr" && test "x$prefix" != "x$local_prefix" ; then

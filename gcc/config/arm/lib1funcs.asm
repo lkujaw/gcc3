@@ -45,8 +45,9 @@ Boston, MA 02111-1307, USA.  */
 #define SYM(x) CONCAT1 (__USER_LABEL_PREFIX__, x)
 
 #ifdef __ELF__
-#ifdef __thumb__
+#if defined (__thumb__) || defined (__vxworks)
 #define __PLT__  /* Not supported in Thumb assembler (for now).  */
+/* Not supported by the VxWorks loader either.  */
 #else
 #define __PLT__ (PLT)
 #endif

@@ -54,6 +54,7 @@ extern int lhd_staticp (tree);
 extern int lhd_unsafe_for_reeval (tree);
 extern void lhd_clear_binding_stack (void);
 extern void lhd_print_tree_nothing (FILE *, tree, int);
+extern void lhd_print_decl_source_location (FILE *, tree, int);
 extern const char *lhd_decl_printable_name (tree, int);
 extern rtx lhd_expand_expr (tree, rtx, enum machine_mode, int, rtx *);
 extern void lhd_print_error_function (struct diagnostic_context *,
@@ -67,6 +68,7 @@ extern void lhd_register_builtin_type (tree, const char *);
 extern bool lhd_decl_ok_for_sibcall (tree);
 extern tree lhd_expr_size (tree);
 extern bool lhd_decl_uninit (tree);
+extern bool lhd_can_promote_packed_bit_field_p (tree, unsigned);
 extern tree lhd_get_callee_fndecl (tree);
 extern size_t lhd_tree_size (enum tree_code);
 
@@ -116,13 +118,16 @@ extern tree lhd_callgraph_analyze_expr (tree *, int *, tree);
 #define LANG_HOOKS_PRINT_STATISTICS	lhd_do_nothing
 #define LANG_HOOKS_PRINT_XNODE		lhd_print_tree_nothing
 #define LANG_HOOKS_PRINT_DECL		lhd_print_tree_nothing
+#define LANG_HOOKS_PRINT_DECL_SOURCE_LOCATION lhd_print_decl_source_location
 #define LANG_HOOKS_PRINT_TYPE		lhd_print_tree_nothing
 #define LANG_HOOKS_PRINT_IDENTIFIER	lhd_print_tree_nothing
 #define LANG_HOOKS_PRINT_ERROR_FUNCTION lhd_print_error_function
 #define LANG_HOOKS_DECL_PRINTABLE_NAME	lhd_decl_printable_name
 #define LANG_HOOKS_GET_CALLEE_FNDECL	lhd_return_null_tree
 #define LANG_HOOKS_EXPR_SIZE		lhd_expr_size
+#define LANG_HOOKS_TYPE_MAX_SIZE	lhd_return_null_tree
 #define LANG_HOOKS_DECL_UNINIT		lhd_decl_uninit
+#define LANG_HOOKS_CAN_PROMOTE_PACKED_BIT_FIELD_P lhd_can_promote_packed_bit_field_p
 #define LANG_HOOKS_TREE_SIZE		lhd_tree_size
 
 #define LANG_HOOKS_FUNCTION_INIT	lhd_do_nothing_f
@@ -296,13 +301,16 @@ extern int lhd_tree_dump_type_quals (tree);
   LANG_HOOKS_PRINT_STATISTICS, \
   LANG_HOOKS_PRINT_XNODE, \
   LANG_HOOKS_PRINT_DECL, \
+  LANG_HOOKS_PRINT_DECL_SOURCE_LOCATION, \
   LANG_HOOKS_PRINT_TYPE, \
   LANG_HOOKS_PRINT_IDENTIFIER, \
   LANG_HOOKS_DECL_PRINTABLE_NAME, \
   LANG_HOOKS_GET_CALLEE_FNDECL, \
   LANG_HOOKS_PRINT_ERROR_FUNCTION, \
   LANG_HOOKS_EXPR_SIZE, \
+  LANG_HOOKS_TYPE_MAX_SIZE, \
   LANG_HOOKS_DECL_UNINIT, \
+  LANG_HOOKS_CAN_PROMOTE_PACKED_BIT_FIELD_P, \
   LANG_HOOKS_ATTRIBUTE_TABLE, \
   LANG_HOOKS_COMMON_ATTRIBUTE_TABLE, \
   LANG_HOOKS_FORMAT_ATTRIBUTE_TABLE, \

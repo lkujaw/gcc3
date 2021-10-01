@@ -514,8 +514,16 @@ ac_compile='${CC-cc} -c $CFLAGS $CPPFLAGS conftest.$ac_ext 1>&5'
 ac_link='${CC-cc} -o conftest${ac_exeext} $CFLAGS $CPPFLAGS $LDFLAGS conftest.$ac_ext $LIBS 1>&5'
 cross_compiling=$ac_cv_prog_cc_cross
 
-ac_exeext=
-ac_objext=o
+case "${host}" in
+*-*-*vms*)
+  ac_exeext=.exe
+  ac_objext=obj
+  ;;
+*-*-*)
+  ac_exeext=
+  ac_objext=o
+  ;;
+esac
 if (echo "testing\c"; echo 1,2,3) | grep c >/dev/null; then
   # Stardent Vistra SVR4 grep lacks -e, says ghazi@caip.rutgers.edu.
   if (echo -n testing; echo 1,2,3) | sed s/-n/xn/ | grep xn >/dev/null; then
@@ -2141,15 +2149,15 @@ if test "${build}" != "${host}" ; then
     IFS="${IFS= 	}"; save_ifs="$IFS"; IFS="${IFS}:"
     for dir in $PATH; do
       test -z "$dir" && dir=.
-      if test -f $dir/bison; then
+      if test -f $dir/bison${ac_exeext}; then
 	YACC="bison -y"
 	break
       fi
-      if test -f $dir/byacc; then
+      if test -f $dir/byacc${ac_exeext}; then
 	YACC=byacc
 	break
       fi
-      if test -f $dir/yacc; then
+      if test -f $dir/yacc${ac_exeext}; then
 	YACC=yacc
 	break
       fi
@@ -2164,11 +2172,11 @@ if test "${build}" != "${host}" ; then
     IFS="${IFS= 	}"; save_ifs="$IFS"; IFS="${IFS}:"
     for dir in $PATH; do
       test -z "$dir" && dir=.
-      if test -f $dir/flex; then
+      if test -f $dir/flex${ac_exeext}; then
 	LEX=flex
 	break
       fi
-      if test -f $dir/lex; then
+      if test -f $dir/lex${ac_exeext}; then
 	LEX=lex
 	break
       fi
@@ -2201,7 +2209,7 @@ else
     IFS="${IFS= 	}"; save_ifs="$IFS"; IFS="${IFS}:"
     for dir in $PATH; do
       test -z "$dir" && dir=.
-      if test -f $dir/gcc; then
+      if test -f $dir/gcc${ac_exeext}; then
 	CC="gcc"
 	cc_prog_is_gcc=yes
 	echo 'void f(){}' > conftest.c
@@ -2873,7 +2881,7 @@ else
   ac_dummy="$PATH"
   for ac_dir in $ac_dummy; do
     test -z "$ac_dir" && ac_dir=.
-    if test -f $ac_dir/$ac_word; then
+    if test -f $ac_dir/$ac_word${ac_exeext}; then
       ac_cv_prog_AR="${ncn_tool_prefix}ar"
       break
     fi
@@ -2906,7 +2914,7 @@ else
   ac_dummy="$PATH"
   for ac_dir in $ac_dummy; do
     test -z "$ac_dir" && ac_dir=.
-    if test -f $ac_dir/$ac_word; then
+    if test -f $ac_dir/$ac_word${ac_exeext}; then
       ac_cv_prog_ncn_cv_AR="ar"
       break
     fi
@@ -2945,7 +2953,7 @@ else
   ac_dummy="$PATH"
   for ac_dir in $ac_dummy; do
     test -z "$ac_dir" && ac_dir=.
-    if test -f $ac_dir/$ac_word; then
+    if test -f $ac_dir/$ac_word${ac_exeext}; then
       ac_cv_prog_AS="${ncn_tool_prefix}as"
       break
     fi
@@ -2978,7 +2986,7 @@ else
   ac_dummy="$PATH"
   for ac_dir in $ac_dummy; do
     test -z "$ac_dir" && ac_dir=.
-    if test -f $ac_dir/$ac_word; then
+    if test -f $ac_dir/$ac_word${ac_exeext}; then
       ac_cv_prog_ncn_cv_AS="as"
       break
     fi
@@ -3017,7 +3025,7 @@ else
   ac_dummy="$PATH"
   for ac_dir in $ac_dummy; do
     test -z "$ac_dir" && ac_dir=.
-    if test -f $ac_dir/$ac_word; then
+    if test -f $ac_dir/$ac_word${ac_exeext}; then
       ac_cv_prog_DLLTOOL="${ncn_tool_prefix}dlltool"
       break
     fi
@@ -3050,7 +3058,7 @@ else
   ac_dummy="$PATH"
   for ac_dir in $ac_dummy; do
     test -z "$ac_dir" && ac_dir=.
-    if test -f $ac_dir/$ac_word; then
+    if test -f $ac_dir/$ac_word${ac_exeext}; then
       ac_cv_prog_ncn_cv_DLLTOOL="dlltool"
       break
     fi
@@ -3089,7 +3097,7 @@ else
   ac_dummy="$PATH"
   for ac_dir in $ac_dummy; do
     test -z "$ac_dir" && ac_dir=.
-    if test -f $ac_dir/$ac_word; then
+    if test -f $ac_dir/$ac_word${ac_exeext}; then
       ac_cv_prog_LD="${ncn_tool_prefix}ld"
       break
     fi
@@ -3122,7 +3130,7 @@ else
   ac_dummy="$PATH"
   for ac_dir in $ac_dummy; do
     test -z "$ac_dir" && ac_dir=.
-    if test -f $ac_dir/$ac_word; then
+    if test -f $ac_dir/$ac_word${ac_exeext}; then
       ac_cv_prog_ncn_cv_LD="ld"
       break
     fi
@@ -3161,7 +3169,7 @@ else
   ac_dummy="$PATH"
   for ac_dir in $ac_dummy; do
     test -z "$ac_dir" && ac_dir=.
-    if test -f $ac_dir/$ac_word; then
+    if test -f $ac_dir/$ac_word${ac_exeext}; then
       ac_cv_prog_NM="${ncn_tool_prefix}nm"
       break
     fi
@@ -3194,7 +3202,7 @@ else
   ac_dummy="$PATH"
   for ac_dir in $ac_dummy; do
     test -z "$ac_dir" && ac_dir=.
-    if test -f $ac_dir/$ac_word; then
+    if test -f $ac_dir/$ac_word${ac_exeext}; then
       ac_cv_prog_ncn_cv_NM="nm"
       break
     fi
@@ -3233,7 +3241,7 @@ else
   ac_dummy="$PATH"
   for ac_dir in $ac_dummy; do
     test -z "$ac_dir" && ac_dir=.
-    if test -f $ac_dir/$ac_word; then
+    if test -f $ac_dir/$ac_word${ac_exeext}; then
       ac_cv_prog_RANLIB="${ncn_tool_prefix}ranlib"
       break
     fi
@@ -3266,7 +3274,7 @@ else
   ac_dummy="$PATH"
   for ac_dir in $ac_dummy; do
     test -z "$ac_dir" && ac_dir=.
-    if test -f $ac_dir/$ac_word; then
+    if test -f $ac_dir/$ac_word${ac_exeext}; then
       ac_cv_prog_ncn_cv_RANLIB="ranlib"
       break
     fi
@@ -3305,7 +3313,7 @@ else
   ac_dummy="$PATH"
   for ac_dir in $ac_dummy; do
     test -z "$ac_dir" && ac_dir=.
-    if test -f $ac_dir/$ac_word; then
+    if test -f $ac_dir/$ac_word${ac_exeext}; then
       ac_cv_prog_WINDRES="${ncn_tool_prefix}windres"
       break
     fi
@@ -3338,7 +3346,7 @@ else
   ac_dummy="$PATH"
   for ac_dir in $ac_dummy; do
     test -z "$ac_dir" && ac_dir=.
-    if test -f $ac_dir/$ac_word; then
+    if test -f $ac_dir/$ac_word${ac_exeext}; then
       ac_cv_prog_ncn_cv_WINDRES="windres"
       break
     fi
@@ -3377,7 +3385,7 @@ else
   ac_dummy="$PATH"
   for ac_dir in $ac_dummy; do
     test -z "$ac_dir" && ac_dir=.
-    if test -f $ac_dir/$ac_word; then
+    if test -f $ac_dir/$ac_word${ac_exeext}; then
       ac_cv_prog_OBJCOPY="${ncn_tool_prefix}objcopy"
       break
     fi
@@ -3410,7 +3418,7 @@ else
   ac_dummy="$PATH"
   for ac_dir in $ac_dummy; do
     test -z "$ac_dir" && ac_dir=.
-    if test -f $ac_dir/$ac_word; then
+    if test -f $ac_dir/$ac_word${ac_exeext}; then
       ac_cv_prog_ncn_cv_OBJCOPY="objcopy"
       break
     fi
@@ -3449,7 +3457,7 @@ else
   ac_dummy="$PATH"
   for ac_dir in $ac_dummy; do
     test -z "$ac_dir" && ac_dir=.
-    if test -f $ac_dir/$ac_word; then
+    if test -f $ac_dir/$ac_word${ac_exeext}; then
       ac_cv_prog_OBJDUMP="${ncn_tool_prefix}objdump"
       break
     fi
@@ -3482,7 +3490,7 @@ else
   ac_dummy="$PATH"
   for ac_dir in $ac_dummy; do
     test -z "$ac_dir" && ac_dir=.
-    if test -f $ac_dir/$ac_word; then
+    if test -f $ac_dir/$ac_word${ac_exeext}; then
       ac_cv_prog_ncn_cv_OBJDUMP="objdump"
       break
     fi

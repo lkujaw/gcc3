@@ -24,11 +24,10 @@ Boston, MA 02111-1307, USA.  */
 #undef  TARGET_VERSION
 #define TARGET_VERSION fprintf (stderr, " (80586, VxWorks syntax)");
 
-/* Prefix for internally generated assembler labels.  If we aren't using
-   underscores, we are using prefix `.'s to identify labels that should
-   be ignored, as in `i386/gas.h' --karl@cs.umb.edu  */
+/* Prefix for internally generated assembler labels, which must agree
+   with ASM_GENERATE_INTERNAL_LABEL. */
 
-#define LPREFIX "L"
+#define LPREFIX ".L"
 
 /* Assembler pseudos to introduce constants of various size.  */
 
@@ -71,4 +70,10 @@ Boston, MA 02111-1307, USA.  */
     }                                                   \
   while (0)
 
+#undef  CPP_SPEC
+#define CPP_SPEC ADDITIONAL_CPP_SPEC
 
+/* Add crt0.o when using RTPs. */
+
+#undef  STARTFILE_SPEC
+#define STARTFILE_SPEC "%{mrtp:%{!shared:crt0.o%s}}"

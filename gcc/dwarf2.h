@@ -244,7 +244,12 @@ enum dwarf_attribute
     DW_AT_body_end   = 0x2106,
     DW_AT_GNU_vector = 0x2107,
     /* VMS Extensions.  */
-    DW_AT_VMS_rtnbeg_pd_address = 0x2201
+    DW_AT_HP_prologue = 0x2005,
+    DW_AT_HP_epilogue = 0x2008,
+    DW_AT_VMS_rtnbeg_pd_address = 0x2201,
+    /* GNAT Extensions.  */
+    DW_AT_GNAT_encoding = 0x2301,
+    DW_AT_GNAT_descriptive_type = 0x2302
   };
 
 #define DW_AT_lo_user	0x2000	/* Implementation-defined range start.  */

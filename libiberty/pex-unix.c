@@ -44,6 +44,41 @@ extern int errno;
 #define waitpid(pid, status, flags) wait(status)
 #endif
 
+#if defined(VMS) && defined (__LONG_POINTERS)
+#ifndef __CHAR_PTR32
+typedef char * __char_ptr32
+__attribute__ ((mode (SI)));
+#endif
+
+typedef __char_ptr32 *__char_ptr_char_ptr32
+__attribute__ ((mode (SI)));
+
+/* Return a 32 bit pointer to an array of 32 bit pointers 
+   given a 64 bit pointer to an array of 64 bit pointers */
+
+static __char_ptr_char_ptr32
+to_ptr32 (char **ptr64)
+{
+  int argc;
+  __char_ptr_char_ptr32 short_argv;
+
+  for (argc=0; ptr64[argc]; argc++);
+
+  /* Reallocate argv with 32 bit pointers. */
+  short_argv = (__char_ptr_char_ptr32) decc$malloc
+    (sizeof (__char_ptr32) * (argc + 1));
+
+  for (argc=0; ptr64[argc]; argc++)
+    short_argv[argc] = (__char_ptr32) decc$strdup (ptr64[argc]);
+
+  short_argv[argc] = (__char_ptr32) 0;
+  return short_argv;
+
+}
+#else
+#define to_ptr32(argv) argv
+#endif
+
 extern int execv ();
 extern int execvp ();
 
@@ -131,7 +166,7 @@ pexecute (program, argv, this_pname, temp_base, errmsg_fmt, errmsg_arg, flags)
 	close (last_pipe_input);
 
       /* Exec the program.  */
-      (*func) (program, argv);
+      (*func) (program, to_ptr32 (argv));
 
       fprintf (stderr, "%s: ", this_pname);
       fprintf (stderr, install_error_msg, program);

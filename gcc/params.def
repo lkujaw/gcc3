@@ -284,6 +284,12 @@ DEFPARAM(PARAM_MAX_RELOAD_SEARCH_INSNS,
 	 "The maximum number of instructions to search backward when looking for equivalent reload",
 	 100)
 
+DEFPARAM(PARAM_MAX_SCHED_READY_INSNS,
+	 "max-sched-ready-insns",
+	 "The maximum number of instructions ready to be issued to be \
+considered by the scheduler during the first scheduling pass",
+	 100)
+
 /*
 Local variables:
 mode:c

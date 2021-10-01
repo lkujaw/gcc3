@@ -146,6 +146,7 @@ extern const char *mips_output_load_label (void);
 extern const char *mips_output_conditional_branch (rtx, rtx *, int, int,
 						   int, int);
 extern const char *mips_output_division (const char *, rtx *);
+extern const char *mips_output_probe_stack_range (rtx, rtx);
 extern unsigned int mips_hard_regno_nregs (int, enum machine_mode);
 extern int mips_return_in_memory (tree);
 extern const char *mips_emit_prefetch (rtx *);

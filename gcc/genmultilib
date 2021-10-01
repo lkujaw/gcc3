@@ -125,9 +125,9 @@ enable_multilib=$8
 
 echo "static const char *const multilib_raw[] = {"
 
-mkdir tmpmultilib.$$ || exit 1
+mkdir tmpmultilib_$$ || exit 1
 # Use cd ./foo to avoid CDPATH output.
-cd ./tmpmultilib.$$ || exit 1
+cd ./tmpmultilib_$$ || exit 1
 
 # What we want to do is select all combinations of the sets in
 # options.  Each combination which includes a set of mutually
@@ -411,6 +411,6 @@ if [ "x${disable_multilib}" = xyes ]; then
 fi
 
 cd ..
-rm -r tmpmultilib.$$
+rm -r tmpmultilib_$$
 
 exit 0

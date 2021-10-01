@@ -32,7 +32,7 @@ Boston, MA 02111-1307, USA.  */
 %{!shared: %{!non_shared: %{!call_shared:%{!r: -call_shared -no_unresolved}}}} \
 %{rpath} -init __do_global_ctors -fini __do_global_dtors \
 %{shared:-hidden_symbol __do_global_ctors,__do_global_ctors_1,__do_global_dtors} \
--_SYSTYPE_SVR4 -woff 131 \
+-_SYSTYPE_SVR4 -w \
 %{mabi=32: -32}%{mabi=n32: -n32}%{mabi=64: -64}%{!mabi*: -n32}"
 
 /* Disable SHF_MERGE support.  Even if gas supports it, the IRIX 6 O32 ld

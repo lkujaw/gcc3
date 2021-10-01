@@ -19,14 +19,29 @@ along with GCC; see the file COPYING.  If not, write to
 the Free Software Foundation, 59 Temple Place - Suite 330,
 Boston, MA 02111-1307, USA.  */
 
-/* Defaults to BITS_PER_WORD, e.g. 64 which is what is wanted.
-  This is incompatible with DEC C, but matches DEC Ada */
+#undef TARGET_OS_CPP_BUILTINS
+#define TARGET_OS_CPP_BUILTINS()                \
+    do {                                        \
+        builtin_define_std ("vms");             \
+        builtin_define_std ("VMS");             \
+        builtin_define ("__ALPHA");             \
+        builtin_assert ("system=vms");          \
+        builtin_define ("__IEEE_FLOAT");        \
+        builtin_define ("__LONG_POINTERS=0");   \
+    } while (0)
+
 #undef LONG_TYPE_SIZE
+#define LONG_TYPE_SIZE 64
+
+#undef POINTER_SIZE
+#define POINTER_SIZE 64
+
+/* Eventhough pointers are 64bits, only 32bit ever remain significant in code
+   addresses.  */
+#define MASK_RETURN_ADDR (GEN_INT (0xffffffff))
 
 /* Defaults to "long int" */
 #undef SIZE_TYPE
 #undef PTRDIFF_TYPE
 
-#undef POINTERS_EXTEND_UNSIGNED
-#undef POINTER_SIZE
-#define POINTER_SIZE 64
+#  include "config/vms/vms-crtl-64.h"

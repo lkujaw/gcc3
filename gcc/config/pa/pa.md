@@ -6677,6 +6677,16 @@
   [(set_attr "type" "branch")
    (set_attr "length" "12")])
 
+(define_insn "probe_stack_range"
+  [(unspec_volatile:SI [(match_operand:SI 0 "const_int_operand" "")
+			(match_operand:SI 1 "const_int_operand" "")]
+    10)
+   (clobber (reg:SI 1))
+   (clobber (reg:SI 20))]
+  "!TARGET_64BIT"
+  "* return output_probe_stack_range (operands[0], operands[1]);"
+  [(set_attr "length" "8")])
+
 (define_expand "prologue"
   [(const_int 0)]
   ""
@@ -8298,8 +8308,15 @@ add,l %2,%3,%3\;bv,n %%r0(%3)"
     emit_insn (gen_extzv_64 (operands[0], operands[1],
 			     operands[2], operands[3]));
   else
-    emit_insn (gen_extzv_32 (operands[0], operands[1],
-			     operands[2], operands[3]));
+    {
+      if (!uint5_operand (operands[2], SImode) 
+          || !uint5_operand (operands[3], SImode))
+        FAIL;
+      else
+        emit_insn (gen_extzv_32 (operands[0], operands[1],
+			         operands[2], operands[3]));
+    }
+
   DONE;
 }")
 
@@ -8370,8 +8387,14 @@ add,l %2,%3,%3\;bv,n %%r0(%3)"
     emit_insn (gen_extv_64 (operands[0], operands[1],
 			    operands[2], operands[3]));
   else
-    emit_insn (gen_extv_32 (operands[0], operands[1],
-			    operands[2], operands[3]));
+    {
+      if (!uint5_operand (operands[2], SImode) 
+          || !uint5_operand (operands[3], SImode))
+        FAIL;
+      else
+        emit_insn (gen_extv_32 (operands[0], operands[1],
+			        operands[2], operands[3]));
+    }
   DONE;
 }")
 
@@ -8442,8 +8465,14 @@ add,l %2,%3,%3\;bv,n %%r0(%3)"
     emit_insn (gen_insv_64 (operands[0], operands[1],
 			    operands[2], operands[3]));
   else
-    emit_insn (gen_insv_32 (operands[0], operands[1],
-			    operands[2], operands[3]));
+    {
+      if (!uint5_operand (operands[1], SImode) 
+          || !uint5_operand (operands[2], SImode))
+        FAIL;
+      else
+        emit_insn (gen_insv_32 (operands[0], operands[1],
+			        operands[2], operands[3]));
+    }
   DONE;
 }")
 

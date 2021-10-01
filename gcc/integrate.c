@@ -881,6 +881,15 @@ expand_inline_function (tree fndecl, tree parms, rtx target, int ignore,
   if (inl_f->outgoing_args_size > current_function_outgoing_args_size)
     current_function_outgoing_args_size = inl_f->outgoing_args_size;
 
+  /* The stack is adjusted before entering the inlined function.  */
+  if (inl_f->pushed_stack_size > current_function_pushed_stack_size)
+    current_function_pushed_stack_size = inl_f->pushed_stack_size;
+
+  /* Dynamically allocated stack space is cumulative.  */
+  current_function_dynamic_stack_size += inl_f->dynamic_stack_size;
+  if (inl_f->has_unbounded_dynamic_stack_size)
+    current_function_has_unbounded_dynamic_stack_size = 1;
+
   /* If the inline function needs to make PIC references, that means
      that this function's PIC offset table must be used.  */
   if (inl_f->uses_pic_offset_table)
@@ -1139,6 +1148,18 @@ expand_inline_function (tree fndecl, tree parms, rtx target, int ignore,
 	      reg_to_map = gen_reg_rtx (arriving_mode);
 	      target = gen_lowpart (departing_mode, reg_to_map);
 	    }
+	  /* If the promoted value is justified in its most significant bits,
+	     we'll have to shift it back into the target as in the case of a
+	     non-inlined call.  We allocate a dedicated register for the
+	     computed return value and set the to-be-shifted target as that
+	     here.  This all starts in arriving_mode, which is not expected
+	     for target, and which we'll then use to recognize the need for
+	     shifting below.  */
+	  else if (targetm.calls.return_in_msb (type))
+	    {
+	      reg_to_map = gen_reg_rtx (arriving_mode);
+	      target = reg_to_map;
+	    }
 	  else
 	    reg_to_map = gen_rtx_SUBREG (arriving_mode, target, 0);
 	}
@@ -1282,12 +1303,18 @@ expand_inline_function (tree fndecl, tree parms, rtx target, int ignore,
 
   emit_line_note (input_location);
 
-  /* If the function returns a BLKmode object in a register, copy it
-     out of the temp register into a BLKmode memory object.  */
+  /* If the function returns a BLKmode object in a register, copy it out of
+     the temp register into a BLKmode memory object.  Note that return_in_msb
+     may also apply here, which copy_blkmode_from_reg properly handles.  */
   if (target
       && TYPE_MODE (TREE_TYPE (TREE_TYPE (fndecl))) == BLKmode
       && ! aggregate_value_p (TREE_TYPE (TREE_TYPE (fndecl)), fndecl))
     target = copy_blkmode_from_reg (0, target, TREE_TYPE (TREE_TYPE (fndecl)));
+
+  /* If we made a special register target for the return_in_msb case, adjust.
+     This will also restore the expected mode of target. */
+  else if (target && REG_P (target) && GET_MODE (target) != TYPE_MODE (type))
+    shift_returned_value (type, &target);
 
   if (structure_value_addr)
     {
@@ -2968,10 +2995,12 @@ output_inline_function (tree fndecl)
   enum debug_info_type old_write_symbols = write_symbols;
   const struct gcc_debug_hooks *const old_debug_hooks = debug_hooks;
   struct function *f = DECL_SAVED_INSNS (fndecl);
+  location_t saved_loc;
 
   old_cfun = cfun;
   cfun = f;
   current_function_decl = fndecl;
+  saved_loc = input_location;
 
   set_new_last_label_num (f->inl_max_label_num);
 
@@ -2999,6 +3028,8 @@ output_inline_function (tree fndecl)
   current_function_decl = old_cfun ? old_cfun->decl : 0;
   write_symbols = old_write_symbols;
   debug_hooks = old_debug_hooks;
+
+  input_location = saved_loc;
 }
 
 

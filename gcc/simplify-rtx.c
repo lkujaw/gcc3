@@ -1321,6 +1321,15 @@ simplify_binary_operation (enum rtx_code code, enum machine_mode mode,
 	  REAL_ARITHMETIC (value, rtx_to_tree_code (code), f0, f1);
 
 	  value = real_value_truncate (mode, value);
+
+	  if (MODE_HAS_INFINITIES (mode)
+	      && flag_trapping_math
+	      && REAL_VALUE_ISINF (value)
+	      && !REAL_VALUE_ISINF (f0)
+	      && !REAL_VALUE_ISINF (f1))
+	    /* Overflow plus exception.  */
+	    return 0;
+
 	  return CONST_DOUBLE_FROM_REAL_VALUE (value, mode);
 	}
     }
@@ -2315,7 +2324,8 @@ simplify_binary_operation (enum rtx_code code, enum machine_mode mode,
 struct simplify_plus_minus_op_data
 {
   rtx op;
-  int neg;
+  short neg;
+  short index;
 };
 
 static int
@@ -2323,9 +2333,15 @@ simplify_plus_minus_op_data_cmp (const void *p1, const void *p2)
 {
   const struct simplify_plus_minus_op_data *d1 = p1;
   const struct simplify_plus_minus_op_data *d2 = p2;
+  int tem = commutative_operand_precedence (d2->op)
+	      - commutative_operand_precedence (d1->op);
 
-  return (commutative_operand_precedence (d2->op)
-	  - commutative_operand_precedence (d1->op));
+  if (tem != 0)
+    return tem;
+
+  /* If precedences are equally good, sort by index number,
+     so that the results of qsort leave nothing to chance.  */
+  return d1->index - d2->index;
 }
 
 static rtx
@@ -2500,7 +2516,11 @@ simplify_plus_minus (enum rtx_code code, enum machine_mode mode, rtx op0,
   /* Pack all the operands to the lower-numbered entries.  */
   for (i = 0, j = 0; j < n_ops; j++)
     if (ops[j].op)
-      ops[i++] = ops[j];
+      {
+	ops[i] = ops[j];
+	ops[i].index = i;
+	i++;
+      }
   n_ops = i;
 
   /* Sort the operations based on swap_commutative_operands_p.  */
@@ -3478,6 +3498,19 @@ simplify_subreg (enum machine_mode outermode, rtx op,
       /* We can at least simplify it by referring directly to the relevant part.  */
       return gen_rtx_SUBREG (outermode, part, final_offset);
     }
+
+#ifdef POINTERS_EXTEND_UNSIGNED
+  /* Borrowed from convert_memory_address.  */
+  if (GET_CODE (op) == SYMBOL_REF
+      && ((outermode == Pmode && innermode == ptr_mode)
+	  || (outermode == ptr_mode && innermode == Pmode))
+      && subreg_lowpart_offset (outermode, innermode) == byte)
+    {
+      rtx new = shallow_copy_rtx (op);
+      PUT_MODE (new, outermode);
+      return new;
+    }
+#endif
 
   return NULL_RTX;
 }

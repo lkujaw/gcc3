@@ -304,6 +304,21 @@ cgraph_remove_call (tree caller, tree callee)
   cgraph_remove_edge (cgraph_node (caller), cgraph_node (callee));
 }
 
+/* Merge all calls from SOURCE into DEST.  */
+
+void
+cgraph_merge_calls (tree source_decl, tree dest_decl)
+{
+  struct cgraph_node *source = cgraph_node (source_decl);
+  struct cgraph_node *dest = cgraph_node (dest_decl);
+  struct cgraph_edge *edge;
+
+  for (edge = source->callees; edge; edge = edge->next_callee)
+    create_edge (dest, edge->callee);
+
+  dest->rtl.indirect_calls += source->rtl.indirect_calls;
+}
+
 /* Return true when CALLER_DECL calls CALLEE_DECL.  */
 
 bool
@@ -416,6 +431,117 @@ dump_cgraph (FILE *f)
 	}
       fprintf (f, "\n");
     }
+}
+
+/* Dump cgraph edge in VCG format.  */
+
+static void
+dump_cgraph_edge_vcg (FILE *f, tree source, tree target, char *target_str)
+{
+  fputs ("edge: { sourcename: \"", f);
+  print_decl_identifier (f, source, PRINT_DECL_UNIQUE_NAME);
+  fputs ("\" targetname: \"", f);
+  if (target)
+    print_decl_identifier (f, target, PRINT_DECL_UNIQUE_NAME);
+  else
+    fputs (target_str, f);
+  fputs ("\" priority: 100 linestyle: solid }\n", f);
+}
+
+/* Dump cgraph node in VCG format.  */
+
+#define INDIRECT_CALL_NAME  "__indirect_call"
+
+static void
+dump_cgraph_indirect_call_node_vcg (FILE *f)
+{
+  static bool emitted = false;
+  if (emitted)
+    return;
+
+  fputs ("node: { title: \"", f);
+  fputs (INDIRECT_CALL_NAME, f);
+  fputs ("\" label: \"", f);
+  fputs ("Indirect Call Placeholder", f);
+  fputs ("\" shape : ellipse }\n", f);
+  emitted = true;
+}
+
+/* Dump cgraph node in VCG format.  */
+
+static void
+dump_cgraph_node_vcg (FILE *f, struct cgraph_node *node)
+{
+  struct cgraph_edge *edge;
+  int i;
+
+  fputs ("node: { title: \"", f);
+  print_decl_identifier (f, node->decl, PRINT_DECL_UNIQUE_NAME);
+  fputs ("\" label: \"", f);
+  print_decl_identifier (f, node->decl, PRINT_DECL_NAME);
+  fputs ("\\n", f);
+  print_decl_identifier (f, node->decl, PRINT_DECL_ORIGIN);
+
+  if (DECL_EXTERNAL (node->decl))
+    {
+      fputs ("\" shape : ellipse }\n", f);
+      return;
+    }
+
+  if (flag_callgraph_info & CALLGRAPH_INFO_STACK_USAGE)
+    {
+      if (node->rtl.stack_usage)
+	{
+	  const char *qualifiers;
+	  fprintf (f, "\\n"HOST_WIDE_INT_PRINT_DEC" bytes (",
+		   node->rtl.stack_usage);
+	  switch (node->rtl.stack_usage_kind)
+	    {
+	    case STATIC:
+	      qualifiers = "static";
+	      break;
+	    case DYNAMIC:
+	    default:
+	      qualifiers = "dynamic";
+	      break;
+	    case DYNAMIC_BOUNDED:
+	      qualifiers = "dynamic,bounded";
+	      break;
+	    }
+	  fprintf (f, "%s)", qualifiers);
+	}
+      else
+	fputs ("\\n0 bytes", f);
+    }
+
+  fputs ("\" }\n", f);
+
+  for (edge = node->callees; edge; edge = edge->next_callee)
+    dump_cgraph_edge_vcg (f, node->decl, edge->callee->decl, 0);
+
+  /* Emit fake edges representing indirect calls.  */  
+  if (node->rtl.indirect_calls > 0)
+    {
+      dump_cgraph_indirect_call_node_vcg (f);
+      for (i=0; i < node->rtl.indirect_calls; i++)
+	dump_cgraph_edge_vcg (f, node->decl, 0, (char *)INDIRECT_CALL_NAME);
+    }
+}
+
+/* Dump the callgraph in VCG format.  */
+
+void
+dump_cgraph_vcg (FILE *f)
+{
+  struct cgraph_node *node;
+
+  /* Write the file header.  */
+  fprintf (f, "graph: { title: \"%s\"\n", main_input_filename);
+
+  for (node = cgraph_nodes; node; node = node->next)
+    dump_cgraph_node_vcg (f, node);
+
+  fputs ("}\n", f);
 }
 
 /* Returns a hash code for P.  */

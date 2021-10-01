@@ -55,8 +55,11 @@ do {						\
 #undef LINK_EH_SPEC
 #define LINK_EH_SPEC ""
 
+/* Define this to be nonzero if static stack checking is supported.  */
+#define STACK_CHECK_STATIC_BUILTIN 1
+
 /* Do code reading to identify a signal frame, and set the frame
-   state data appropriately.  See unwind-dw2.c for the structs.  */
+   state data appropriately.  See unwind-ia64.c for the structs.  */
 
 /* This works only for glibc-2.3 and later, because sigcontext is different
    in glibc-2.2.4.  */
@@ -96,7 +99,7 @@ do {						\
       }									\
 	  								\
       (CONTEXT)->fpsr_loc = &(sc_->sc_ar_fpsr);				\
-      (CONTEXT)->pfs_loc = &(sc_->sc_ar_pfs);				\
+      (CONTEXT)->signal_pfs_loc = &(sc_->sc_ar_pfs);			\
       (CONTEXT)->lc_loc = &(sc_->sc_ar_lc);				\
       (CONTEXT)->unat_loc = &(sc_->sc_ar_unat);				\
       (CONTEXT)->br_loc[0] = &(sc_->sc_br[0]);				\
@@ -135,17 +138,28 @@ do {						\
 	  ia64_rse_skip_regs ((unsigned long *)(sc_->sc_ar_bsp), -sof); \
       }									\
 									\
+      /* Account for use of br.ret to resume execution of user code. */	\
       (FS)->curr.reg[UNW_REG_RP].where = UNW_WHERE_SPREL;		\
       (FS)->curr.reg[UNW_REG_RP].val 					\
 	= (unsigned long)&(sc_->sc_ip) - (CONTEXT)->psp;		\
       (FS)->curr.reg[UNW_REG_RP].when = -1;				\
 									\
+      (FS)->curr.reg[UNW_REG_PFS].where = UNW_WHERE_SPREL;		\
+      (FS)->curr.reg[UNW_REG_PFS].val					\
+	= (unsigned long)&(sc_->sc_cfm) - (CONTEXT)->psp;		\
+      (FS)->curr.reg[UNW_REG_PFS].when = -1;				\
+									\
       goto SUCCESS;							\
     }
 
+#define ABI_MARKER_OLD_LINUX_SIGTRAMP	((0 << 8) | 's')
+#define ABI_MARKER_OLD_LINUX_INTERRUPT	((0 << 8) | 'i')
+#define ABI_MARKER_LINUX_SIGTRAMP	((3 << 8) | 's')
+#define ABI_MARKER_LINUX_INTERRUPT	((3 << 8) | 'i')
+
 #define MD_HANDLE_UNWABI(CONTEXT, FS)					\
-  if ((FS)->unwabi == ((3 << 8) | 's')					\
-      || (FS)->unwabi == ((0 << 8) | 's'))				\
+  if ((FS)->unwabi == ABI_MARKER_LINUX_SIGTRAMP				\
+      || (FS)->unwabi == ABI_MARKER_OLD_LINUX_SIGTRAMP)			\
     {									\
       struct sigframe {							\
 	char scratch[16];						\
@@ -168,7 +182,7 @@ do {						\
 	  (CONTEXT)->ireg[i_ - 2].loc = &sc_->sc_gr[i_];		\
       }									\
 	  								\
-      (CONTEXT)->pfs_loc = &(sc_->sc_ar_pfs);				\
+      (CONTEXT)->signal_pfs_loc = &(sc_->sc_ar_pfs);			\
       (CONTEXT)->lc_loc = &(sc_->sc_ar_lc);				\
       (CONTEXT)->unat_loc = &(sc_->sc_ar_unat);				\
       (CONTEXT)->br_loc[0] = &(sc_->sc_br[0]);				\
@@ -206,9 +220,8 @@ do {						\
 	  ia64_rse_skip_regs ((unsigned long *)(sc_->sc_ar_bsp), -sof); \
       }									\
 									\
-      /* pfs_loc already set above.  Without this pfs_loc would point	\
-	 incorrectly to sc_cfm instead of sc_ar_pfs.  */		\
-      (FS)->curr.reg[UNW_REG_PFS].where = UNW_WHERE_NONE;		\
+      /* The use of br.ret to resume execution of user code is already	\
+	 accounted for by the unwind ABI.  */				\
     }
 
 #endif /* IN_LIBGCC2 */

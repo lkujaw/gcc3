@@ -281,6 +281,8 @@ record_call_1 (tree *tp, int *walk_subtrees, void *data)
 		       visited_nodes);
 	    *walk_subtrees = 0;
 	  }
+	else
+	  cgraph_rtl_info (data)->indirect_calls++;
 	break;
       }
 

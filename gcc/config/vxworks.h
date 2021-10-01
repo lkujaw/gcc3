@@ -19,15 +19,40 @@ along with GCC; see the file COPYING.  If not, write to
 the Free Software Foundation, 59 Temple Place - Suite 330,
 Boston, MA 02111-1307, USA.  */
 
+#undef ADDITIONAL_CPP_SPEC
+#define ADDITIONAL_CPP_SPEC "%{mrtp: -D__RTP__=1}"
+
 /* Specify what to link with.  */
-/* VxWorks does all the library stuff itself.  */
+/* VxWorks does all the library stuff itself, except in the case of
+   RTPs.  */
 #undef	LIB_SPEC
-#define	LIB_SPEC ""
+#define	LIB_SPEC \
+"%{mrtp:%{!shared:--start-group -lc -lgcc -lc_internal  \
+                  -lnet -ldsi --end-group}}"
 
+/* The no-op spec for "-shared" below is present because otherwise GCC
+   will treat it as an unrecognized option.  */
 #undef LINK_SPEC
-#define LINK_SPEC "-r"
+#define LINK_SPEC					\
+"%{!mrtp:-r}						\
+ %{!shared:						\
+   %{mrtp:-q %{h*}					\
+          %{R*} %{!Wl,-T*: %{!T*: %(link_start) }}	\
+          %(link_target) %(link_os)}}			\
+ %{v:-V}						\
+ %{shared:-shared}					\
+ %{mrtp:%{!shared:%{!non-static:-static}		\
+                  %{non-static:--force-dynamic --export-dynamic}}}"
 
-/* VxWorks provides the functionality of crt0.o and friends itself.  */
+
+/* For VxWorks, the system provides libc_internal.a.  This is a superset
+   of libgcc.a; we want to use it.  Make sure not to dynamically export
+   any of its symbols, though.  Always look for libgcc.a first so that
+   we get the latest versions of the GNU intrinsics during our builds.  */
+#undef LIBGCC_SPEC
+#define LIBGCC_SPEC \
+  "-lgcc %{mrtp:--exclude-libs=libc_internal,libgcc -lc_internal}"
+
 #undef  STARTFILE_SPEC
 #define	STARTFILE_SPEC ""
 
@@ -42,8 +67,8 @@ Boston, MA 02111-1307, USA.  */
 #undef NO_DOLLAR_IN_LABEL
 #define NO_DOT_IN_LABEL
 
-/* enable #pragma pack(n) */
-#define HANDLE_SYSV_PRAGMA
+/* We want #pragma pack(n) enabled and expect to inherit the proper
+   definition of HANDLE_SYSV_PRAGMA from elfos.h for that purpose.  */
 
 /* No underscore is prepended to any C symbol name.  */
 #undef USER_LABEL_PREFIX
@@ -62,3 +87,9 @@ Boston, MA 02111-1307, USA.  */
 
 /* Only supported debug format is Dwarf2.  */
 #undef DBX_DEBUGGING_INFO
+
+/* Default executable suffix under VxWorks is .out.
+   ??? Should be refined since VxWorks 6 RTP use .vxe */
+
+#undef TARGET_EXECUTABLE_SUFFIX
+#define TARGET_EXECUTABLE_SUFFIX ".out"

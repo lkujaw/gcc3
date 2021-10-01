@@ -169,3 +169,6 @@ Boston, MA 02111-1307, USA.  */
    sparc_override_options will disable V8+ if not generating V9 code.  */
 #undef TARGET_DEFAULT
 #define TARGET_DEFAULT (MASK_V8PLUS + MASK_FPU + MASK_LONG_DOUBLE_128)
+
+/* Define this to be nonzero if static stack checking is supported.  */
+#define STACK_CHECK_STATIC_BUILTIN 1

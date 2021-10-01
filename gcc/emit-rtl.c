@@ -1226,14 +1226,6 @@ gen_lowpart (enum machine_mode mode, rtx x)
       /* The only additional case we can do is MEM.  */
       int offset = 0;
 
-      /* The following exposes the use of "x" to CSE.  */
-      if (GET_MODE_SIZE (GET_MODE (x)) <= UNITS_PER_WORD
-	  && SCALAR_INT_MODE_P (GET_MODE (x))
-	  && TRULY_NOOP_TRUNCATION (GET_MODE_BITSIZE (mode),
-				    GET_MODE_BITSIZE (GET_MODE (x)))
-	  && ! no_new_pseudos)
-	return gen_lowpart (mode, force_reg (GET_MODE (x), x));
-
       if (WORDS_BIG_ENDIAN)
 	offset = (MAX (GET_MODE_SIZE (GET_MODE (x)), UNITS_PER_WORD)
 		  - MAX (GET_MODE_SIZE (mode), UNITS_PER_WORD));
@@ -1592,7 +1584,7 @@ set_mem_attributes_minus_bitpos (rtx ref, tree t, int objectp,
      front-end routine) and use it.  */
   alias = get_alias_set (t);
 
-  MEM_VOLATILE_P (ref) = TYPE_VOLATILE (type);
+  MEM_VOLATILE_P (ref) |= TYPE_VOLATILE (type);
   MEM_IN_STRUCT_P (ref) = AGGREGATE_TYPE_P (type);
   RTX_UNCHANGING_P (ref)
     |= ((lang_hooks.honor_readonly
@@ -2032,7 +2024,11 @@ offset_address (rtx memref, rtx offset, unsigned HOST_WIDE_INT pow2)
      bad to expose PIC machinery too early.  */
   if (! memory_address_p (GET_MODE (memref), new)
       && GET_CODE (addr) == PLUS
-      && XEXP (addr, 0) == pic_offset_table_rtx)
+      && (XEXP (addr, 0) == pic_offset_table_rtx
+#ifdef TOC_REGISTER_P
+	  || TOC_REGISTER_P (XEXP (addr, 0))
+#endif
+	 ))
     {
       addr = force_reg (GET_MODE (addr), addr);
       new = simplify_gen_binary (PLUS, Pmode, addr, offset);

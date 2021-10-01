@@ -1,0 +1,35 @@
+STMP_FIXPROTO =
+STMP_FIXINC =
+LIMITS_H_TEST = false
+
+# VMS_EXTRA_PARTS must be compiled by DEC C
+VMS_EXTRA_PARTS=vcrt0.o pcrt0.o
+
+DECC=`echo $(CC) | sed -e 's/stage[123]\/xgcc.exe -B.*/decc.exe/' -e 's/xgcc -B.*/decc.exe/' -e 's/gcc/decc/' -e 's/^decc/.\/decc/'`
+
+# Assemble startup files.
+vcrt0.o: $(CRT0_S) $(GCC_PASSES)
+	$(DECC) -c /names=as_is $(srcdir)/config/vms/vms-crt0.c -o vcrt0.o
+
+pcrt0.o: $(CRT0_S) $(GCC_PASSES)
+	$(DECC) -c /names=as_is $(srcdir)/config/vms/vms-psxcrt0.c -o pcrt0.o
+
+EXTRA_PROGRAMS=ld$(exeext) ar$(exeext)
+
+EXTRA_PASSES=decc$(exeext)
+
+vms-ld.o : $(srcdir)/config/vms/vms-ld.c
+	$(CC) -c $(ALL_CFLAGS) $(ALL_CPPFLAGS) $(INCLUDES) $< $(OUTPUT_OPTION)
+ld$(exeext) : vms-ld.o
+	$(CC) -o $@ vms-ld.o ../libiberty/libiberty.a
+
+vms-ar.o : $(srcdir)/config/vms/vms-ar.c
+	$(CC) -c $(ALL_CFLAGS) $(ALL_CPPFLAGS) $(INCLUDES) $< $(OUTPUT_OPTION)
+ar$(exeext) : vms-ar.o
+	$(CC) -o $@ vms-ar.o ../libiberty/libiberty.a
+
+vms-cc.o : $(srcdir)/config/vms/vms-cc.c
+	$(CC) -c $(ALL_CFLAGS) $(ALL_CPPFLAGS) $(INCLUDES) $< $(OUTPUT_OPTION)
+decc$(exeext) : vms-cc.o
+	$(CC) -o $@ vms-cc.o ../libiberty/libiberty.a
+

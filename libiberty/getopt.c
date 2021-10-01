@@ -77,6 +77,7 @@
 # if HAVE_STRING_H - 0
 #  include <string.h>
 # endif
+# define getopt getopt_libiberty /* Temporary hack to link gcov */
 #endif
 
 #ifndef _

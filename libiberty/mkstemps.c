@@ -76,7 +76,12 @@ mkstemps (template, suffix_len)
      int suffix_len;
 {
   static const char letters[]
+#ifdef VMS
+    = "abcdefghijklmnopqrstuvwxyz0123456789";
+#else
     = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+#endif
+  static const int nletters = (sizeof letters) - 1;
   static gcc_uint64_t value;
 #ifdef HAVE_GETTIMEOFDAY
   struct timeval tv;
@@ -109,23 +114,19 @@ mkstemps (template, suffix_len)
       int fd;
 
       /* Fill in the random bits.  */
-      XXXXXX[0] = letters[v % 62];
-      v /= 62;
-      XXXXXX[1] = letters[v % 62];
-      v /= 62;
-      XXXXXX[2] = letters[v % 62];
-      v /= 62;
-      XXXXXX[3] = letters[v % 62];
-      v /= 62;
-      XXXXXX[4] = letters[v % 62];
-      v /= 62;
-      XXXXXX[5] = letters[v % 62];
+      XXXXXX[0] = letters[v % nletters];
+      v /= nletters;
+      XXXXXX[1] = letters[v % nletters];
+      v /= nletters;
+      XXXXXX[2] = letters[v % nletters];
+      v /= nletters;
+      XXXXXX[3] = letters[v % nletters];
+      v /= nletters;
+      XXXXXX[4] = letters[v % nletters];
+      v /= nletters;
+      XXXXXX[5] = letters[v % nletters];
 
-#ifdef VMS
-      fd = open (template, O_RDWR|O_CREAT|O_EXCL, 0600, "fop=tmd");
-#else
       fd = open (template, O_RDWR|O_CREAT|O_EXCL, 0600);
-#endif
       if (fd >= 0)
 	/* The file does not exist.  */
 	return fd;

@@ -44,6 +44,7 @@ Boston, MA 02111-1307, USA.  */
 #include "function.h"
 #include "toplev.h"
 #include "ggc.h"
+#include "libfuncs.h"
 #include "integrate.h"
 #include "tm_p.h"
 #include "target.h"
@@ -86,6 +87,7 @@ const char *alpha_fprm_string;	/* -mfp-rounding-mode=[n|m|c|d] */
 const char *alpha_fptm_string;	/* -mfp-trap-mode=[n|u|su|sui] */
 const char *alpha_mlat_string;	/* -mmemory-latency= */
 const char *alpha_tls_size_string; /* -mtls-size=[16|32|64] */
+const char *alpha_debug_main; /* VMS -mdebug-main= */
 
 /* Save information from a "cmpxx" operation until the branch or scc is
    emitted.  */
@@ -1947,15 +1949,43 @@ alpha_legitimize_address (rtx x, rtx scratch,
   }
 }
 
-/* Primarily this is required for TLS symbols, but given that our move
-   patterns *ought* to be able to handle any symbol at any time, we
-   should never be spilling symbolic operands to the constant pool, ever.  */
+/* Determine if it's legal to put X into the constant pool.  This
+   is not possible if X contains the address of a symbol that is
+   not constant (TLS) or not known at final link time (PIC).  */
 
 static bool
 alpha_cannot_force_const_mem (rtx x)
 {
-  enum rtx_code code = GET_CODE (x);
-  return code == SYMBOL_REF || code == LABEL_REF || code == CONST;
+  switch (GET_CODE (x))
+    {
+    case CONST_INT:
+    case CONST_DOUBLE:
+      /* Accept all non-symbolic constants.  */
+      return false;
+
+    case LABEL_REF:
+      /* Labels are OK iff we are non-PIC.  */
+      return flag_pic != 0;
+
+    case SYMBOL_REF:
+      /* 'Naked' TLS symbol references are never OK,
+	 non-TLS symbols are OK iff we are non-PIC.  */
+      if (SYMBOL_REF_TLS_MODEL (x))
+	return true;
+      else
+	return flag_pic != 0;
+
+    case CONST:
+      return alpha_cannot_force_const_mem (XEXP (x, 0));
+    case PLUS:
+    case MINUS:
+      return alpha_cannot_force_const_mem (XEXP (x, 0))
+         || alpha_cannot_force_const_mem (XEXP (x, 1));
+    case UNSPEC:
+      return true;
+    default:
+      abort ();
+    }
 }
 
 /* We do not allow indirect calls to be optimized into sibling calls, nor
@@ -3853,12 +3883,17 @@ alpha_emit_xfloating_cvt (enum rtx_code orig_code, rtx operands[])
 					       operands[1]));
 }
 
-/* Split a TFmode OP[1] into DImode OP[2,3] and likewise for
-   OP[0] into OP[0,1].  Naturally, output operand ordering is
-   little-endian.  */
-
+/* Split a TImode or TFmode move from OP[1] to OP[0] into a pair of
+   DImode moves from OP[2,3] to OP[0,1].  If FIXUP_OVERLAP is 1, we
+   guarantee that the sequence
+     set (OP[0] OP[2])
+     set (OP[1] OP[3])
+   is valid.  Naturally, output operand ordering is little-endian.
+   This is used by *movtf_internal and *movti_internal.  */
+  
 void
-alpha_split_tfmode_pair (rtx operands[4])
+alpha_split_tmode_pair (rtx operands[4], enum machine_mode mode,
+			int fixup_overlap)
 {
   if (GET_CODE (operands[1]) == REG)
     {
@@ -3870,7 +3905,7 @@ alpha_split_tfmode_pair (rtx operands[4])
       operands[3] = adjust_address (operands[1], DImode, 8);
       operands[2] = adjust_address (operands[1], DImode, 0);
     }
-  else if (operands[1] == CONST0_RTX (TFmode))
+  else if (operands[1] == CONST0_RTX (mode))
     operands[2] = operands[3] = const0_rtx;
   else
     abort ();
@@ -3887,6 +3922,13 @@ alpha_split_tfmode_pair (rtx operands[4])
     }
   else
     abort ();
+
+  if (fixup_overlap && reg_overlap_mentioned_p (operands[0], operands[3]))
+    {
+      rtx tmp;
+      tmp = operands[0], operands[0] = operands[1], operands[1] = tmp;
+      tmp = operands[2], operands[2] = operands[3], operands[3] = tmp;
+    }
 }
 
 /* Implement negtf2 or abstf2.  Op0 is destination, op1 is source, 
@@ -3900,7 +3942,7 @@ alpha_split_tfmode_frobsign (rtx operands[3], rtx (*operation) (rtx, rtx, rtx))
   rtx scratch;
   int move;
 
-  alpha_split_tfmode_pair (operands);
+  alpha_split_tmode_pair (operands, TFmode, 0);
 
   /* Detect three flavors of operand overlap.  */
   move = 1;
@@ -5192,6 +5234,9 @@ struct machine_function GTY(())
 
   /* For OSF.  */
   const char *some_ld_name;
+
+  /* For VMS condition handlers.  */
+  bool uses_condition_handler;  
 };
 
 /* How to allocate a 'struct machine_function'.  */
@@ -5201,6 +5246,63 @@ alpha_init_machine_status (void)
 {
   return ((struct machine_function *) 
 		ggc_alloc_cleared (sizeof (struct machine_function)));
+}
+
+/* Support for frame based VMS condition handlers.  */
+
+/* A VMS condition handler may be established for a function with a call to
+   __builtin_establish_vms_condition_handler, and cancelled with a call to
+   __builtin_revert_vms_condition_handler.
+
+   The VMS Condition Handling Facility knows about the existence of a handler
+   from the procedure descriptor .handler field.  As the VMS native compilers,
+   we store the user specified handler's address at a fixed location in the
+   stack frame and point the procedure descriptor at a common wrapper which
+   fetches the real handler's address and issues an indirect call.
+
+   The indirection wrapper is "__gcc_shell_handler", provided by libgcc.
+
+   We force the procedure kind to PT_STACK, and the fixed frame location is
+   fp+8, just before the register save area. We use the handler_data field in
+   the procedure descriptor to state the fp offset at which the installed
+   handler address can be found.  */
+
+#define VMS_COND_HANDLER_FP_OFFSET 8
+
+/* Expand code to store the currently installed user VMS condition handler
+   into TARGET and install HANDLER as the new condition handler.  */
+
+void
+alpha_expand_builtin_establish_vms_condition_handler (rtx target, rtx handler)
+{
+  rtx handler_slot_address
+    = plus_constant (hard_frame_pointer_rtx, VMS_COND_HANDLER_FP_OFFSET);
+
+  rtx handler_slot
+    = gen_rtx_MEM (DImode, handler_slot_address);
+
+  emit_move_insn (target, handler_slot);
+  emit_move_insn (handler_slot, handler);
+
+  /* Notify the start/prologue/epilogue emitters that the condition handler
+     slot is needed.  In addition to reserving the slot space, this will force
+     the procedure kind to PT_STACK so ensure that the hard_frame_pointer_rtx
+     use above is correct.  */
+  cfun->machine->uses_condition_handler = true;
+}
+
+/* Expand code to store the current VMS condition handler into TARGET and
+   nullify it.  */
+
+void
+alpha_expand_builtin_revert_vms_condition_handler (rtx target)
+{
+  /* We implement this by establishing a null condition handler, with the tiny
+     side effect of setting uses_condition_handler.  This is a little bit
+     pessimistic if no actual builtin_establish call is ever issued, which is
+     not a real problem and expected never to happen anyway.  */
+
+  alpha_expand_builtin_establish_vms_condition_handler (target, const0_rtx);
 }
 
 /* Functions to save and restore alpha_return_addr_rtx.  */
@@ -5859,14 +5961,40 @@ void
 alpha_initialize_trampoline (rtx tramp, rtx fnaddr, rtx cxt,
 			     int fnofs, int cxtofs, int jmpofs)
 {
-  rtx temp, temp1, addr;
+  rtx temp, temp1, addr, traddr;
   /* VMS really uses DImode pointers in memory at this point.  */
   enum machine_mode mode = TARGET_ABI_OPEN_VMS ? Pmode : ptr_mode;
+  char *fnname, *trname;
 
 #ifdef POINTERS_EXTEND_UNSIGNED
   fnaddr = convert_memory_address (mode, fnaddr);
   cxt = convert_memory_address (mode, cxt);
 #endif
+
+  if (TARGET_ABI_OPEN_VMS)
+    {
+      /* Construct the name of the trampoline entry point */
+      fnname = XSTR (fnaddr, 0);
+      trname = (char *) alloca (strlen (fnname) + 5);
+      strcpy (trname, fnname);
+      strcat (trname, "..tr");
+      traddr = gen_rtx_SYMBOL_REF
+	(mode, ggc_alloc_string (trname, strlen (trname) + 1));
+
+      /* Trampoline (or "bounded") procedure descriptor is constructed from
+	 the function's procedure descriptor with certain fields zeroed IAW
+	 the VMS calling standard. This is stored in the first quadword */
+      temp1 = force_reg (DImode, gen_rtx_MEM (DImode, fnaddr));
+      temp1 = expand_and (DImode, temp1,
+			  GEN_INT (0xffff0fff0000fff0), NULL_RTX);
+      addr = memory_address (mode, plus_constant (tramp, 0));
+      emit_move_insn (gen_rtx_MEM (DImode, addr), temp1);
+
+      /* Trampoline transfer address is stored in the second quadword
+	 of the trampoline */
+      addr = memory_address (mode, plus_constant (tramp, 8));
+      emit_move_insn (gen_rtx_MEM (mode, addr), traddr);
+    }
 
   /* Store function address and CXT.  */
   addr = memory_address (mode, plus_constant (tramp, fnofs));
@@ -6056,9 +6184,13 @@ alpha_return_in_memory (tree type, tree fndecl ATTRIBUTE_UNUSED)
     {
       mode = TYPE_MODE (type);
 
-      /* All aggregates are returned in memory.  */
+      /* All aggregates are returned in memory, except on OpenVMS where
+	 records that fit 64 bits should be returned by immediate value
+	 as required by section 3.8.7.1 of the OpenVMS Calling Standard.  */
       if (AGGREGATE_TYPE_P (type))
-	return true;
+	return !TARGET_ABI_OPEN_VMS
+	       || TREE_CODE (type) == ARRAY_TYPE
+	       || (unsigned HOST_WIDE_INT) int_size_in_bytes(type) > 8;
     }
 
   size = GET_MODE_SIZE (mode);
@@ -6118,8 +6250,10 @@ function_value (tree valtype, tree func ATTRIBUTE_UNUSED,
   switch (class)
     {
     case MODE_INT:
-      /* Do the same thing as PROMOTE_MODE.  */
-      mode = DImode;
+      /* Do the same thing as PROMOTE_MODE except for libcalls on VMS,
+	 where we have them returning both SImode and DImode.  */
+      if (!TARGET_ABI_OPEN_VMS || (valtype && !AGGREGATE_TYPE_P (valtype)))
+	mode = DImode;
       /* FALLTHRU */
 
     case MODE_COMPLEX_INT:
@@ -6143,6 +6277,13 @@ function_value (tree valtype, tree func ATTRIBUTE_UNUSED,
 		      gen_rtx_EXPR_LIST (VOIDmode, gen_rtx_REG (cmode, 33),
 				         GEN_INT (GET_MODE_SIZE (cmode)))));
       }
+
+    case MODE_RANDOM:
+      /* We should only reach here for BLKmode on VMS.  */
+      if (!TARGET_ABI_OPEN_VMS || mode != BLKmode)
+	abort ();
+      regnum = 0;
+      break;
 
     default:
       abort ();
@@ -6307,12 +6448,11 @@ alpha_va_start (tree valist, rtx nextarg ATTRIBUTE_UNUSED)
 
   if (TARGET_ABI_OPEN_VMS)
     {
-      nextarg = plus_constant (nextarg, offset);
-      nextarg = plus_constant (nextarg, NUM_ARGS * UNITS_PER_WORD);
-      t = build (MODIFY_EXPR, TREE_TYPE (valist), valist,
-		 make_tree (ptr_type_node, nextarg));
+      t = make_tree (ptr_type_node, virtual_incoming_args_rtx);
+      t = build (PLUS_EXPR, ptr_type_node, t,
+		 build_int_2 (offset + NUM_ARGS * UNITS_PER_WORD, 0));
+      t = build (MODIFY_EXPR, TREE_TYPE (valist), valist, t);
       TREE_SIDE_EFFECTS (t) = 1;
-
       expand_expr (t, const0_rtx, VOIDmode, EXPAND_NORMAL);
     }
   else
@@ -6481,6 +6621,8 @@ enum alpha_builtin
   ALPHA_BUILTIN_RPCC,
   ALPHA_BUILTIN_THREAD_POINTER,
   ALPHA_BUILTIN_SET_THREAD_POINTER,
+  ALPHA_BUILTIN_ESTABLISH_VMS_CONDITION_HANDLER,
+  ALPHA_BUILTIN_REVERT_VMS_CONDITION_HANDLER,
 
   /* TARGET_MAX */
   ALPHA_BUILTIN_MINUB8,
@@ -6536,6 +6678,8 @@ static unsigned int const code_for_builtin[ALPHA_BUILTIN_max] = {
   CODE_FOR_builtin_rpcc,
   CODE_FOR_load_tp,
   CODE_FOR_set_tp,
+  CODE_FOR_builtin_establish_vms_condition_handler,
+  CODE_FOR_builtin_revert_vms_condition_handler,
 
   /* TARGET_MAX */
   CODE_FOR_builtin_minub8,
@@ -6625,7 +6769,19 @@ alpha_init_builtins (void)
   tree ftype;
   size_t i;
 
-  ftype = build_function_type (long_integer_type_node, void_list_node);
+#if LONG_TYPE_SIZE == 32
+  tree dimode_integer_type_node = long_long_integer_type_node;
+#else
+  tree dimode_integer_type_node = long_integer_type_node;
+#endif
+
+  /* Fwrite on VMS is non-standard */
+#if TARGET_ABI_OPEN_VMS
+  implicit_built_in_decls[(int) BUILT_IN_FWRITE] = NULL_TREE;
+  implicit_built_in_decls[(int) BUILT_IN_FWRITE_UNLOCKED] = NULL_TREE;
+#endif
+
+  ftype = build_function_type (dimode_integer_type_node, void_list_node);
 
   p = zero_arg_builtins;
   for (i = 0; i < ARRAY_SIZE (zero_arg_builtins); ++i, ++p)
@@ -6633,8 +6789,8 @@ alpha_init_builtins (void)
       builtin_function (p->name, ftype, p->code, BUILT_IN_MD,
 			NULL, NULL_TREE);
 
-  ftype = build_function_type_list (long_integer_type_node,
-				    long_integer_type_node, NULL_TREE);
+  ftype = build_function_type_list (dimode_integer_type_node,
+				    dimode_integer_type_node, NULL_TREE);
 
   p = one_arg_builtins;
   for (i = 0; i < ARRAY_SIZE (one_arg_builtins); ++i, ++p)
@@ -6642,9 +6798,9 @@ alpha_init_builtins (void)
       builtin_function (p->name, ftype, p->code, BUILT_IN_MD,
 			NULL, NULL_TREE);
 
-  ftype = build_function_type_list (long_integer_type_node,
-				    long_integer_type_node,
-				    long_integer_type_node, NULL_TREE);
+  ftype = build_function_type_list (dimode_integer_type_node,
+				    dimode_integer_type_node,
+				    dimode_integer_type_node, NULL_TREE);
 
   p = two_arg_builtins;
   for (i = 0; i < ARRAY_SIZE (two_arg_builtins); ++i, ++p)
@@ -6660,6 +6816,16 @@ alpha_init_builtins (void)
   ftype = build_function_type_list (void_type_node, ptr_type_node, NULL_TREE);
   builtin_function ("__builtin_set_thread_pointer", ftype,
 		    ALPHA_BUILTIN_SET_THREAD_POINTER, BUILT_IN_MD,
+		    NULL, NULL_TREE);
+
+  ftype = build_function_type_list (ptr_type_node, ptr_type_node, NULL_TREE);
+  builtin_function ("__builtin_establish_vms_condition_handler", ftype,
+		    ALPHA_BUILTIN_ESTABLISH_VMS_CONDITION_HANDLER, BUILT_IN_MD,
+		    NULL, NULL_TREE);
+
+  ftype = build_function_type_list (ptr_type_node, void_type_node, NULL_TREE);
+  builtin_function ("__builtin_revert_vms_condition_handler", ftype,
+		    ALPHA_BUILTIN_REVERT_VMS_CONDITION_HANDLER, BUILT_IN_MD,
 		    NULL, NULL_TREE);
 }
 
@@ -6910,7 +7076,10 @@ alpha_sa_size (void)
 	  if (! fixed_regs[i] && call_used_regs[i] && ! regs_ever_live[i])
 	    vms_save_fp_regno = i;
 
-      if (vms_save_fp_regno == -1 && alpha_procedure_type == PT_REGISTER)
+      /* A VMS condition handler requires a stack procedure in our
+	 implementation. (not required by the calling standard). */
+      if ((vms_save_fp_regno == -1 && alpha_procedure_type == PT_REGISTER)
+	  || cfun->machine->uses_condition_handler)
 	vms_base_regno = REG_PV, alpha_procedure_type = PT_STACK;
       else if (alpha_procedure_type == PT_NULL)
 	vms_base_regno = REG_PV;
@@ -6919,9 +7088,10 @@ alpha_sa_size (void)
       vms_unwind_regno = (vms_base_regno == REG_PV
 			  ? HARD_FRAME_POINTER_REGNUM : STACK_POINTER_REGNUM);
 
-      /* If this is a stack procedure, allow space for saving FP and RA.  */
+      /* If this is a stack procedure, allow space for saving FP, RA and
+	 a condition handler slot if needed.  */
       if (alpha_procedure_type == PT_STACK)
-	sa_size += 2;
+	sa_size += 2 + cfun->machine->uses_condition_handler;
     }
   else
     {
@@ -7115,6 +7285,38 @@ emit_frame_store (unsigned int regno, rtx base_reg,
   emit_frame_store_1 (reg, base_reg, frame_bias, base_ofs, reg);
 }
 
+/* Compute the frame size.  SIZE is the size of the "naked" frame
+   and SA_SIZE is the size of the register save area.  */
+
+static HOST_WIDE_INT
+compute_frame_size (HOST_WIDE_INT size, HOST_WIDE_INT sa_size)
+{
+  if (TARGET_ABI_OPEN_VMS)
+    return ALPHA_ROUND (sa_size 
+			+ (alpha_procedure_type == PT_STACK ? 8 : 0)
+			+ size
+			+ current_function_pretend_args_size);
+  else if (TARGET_ABI_UNICOSMK)
+    /* We have to allocate space for the DSIB if we generate a frame.  */
+    return ALPHA_ROUND (sa_size
+			+ (alpha_procedure_type == PT_STACK ? 48 : 0))
+	   + ALPHA_ROUND (size
+			  + current_function_outgoing_args_size);
+  else
+    return ALPHA_ROUND (current_function_outgoing_args_size)
+	   + sa_size
+	   + ALPHA_ROUND (size
+			  + current_function_pretend_args_size);
+}
+
+/* Return the maximum static stack usage for the current function.  */
+
+static HOST_WIDE_INT
+alpha_get_static_stack_usage (void)
+{
+  return compute_frame_size (get_frame_size (), alpha_sa_size ());
+}
+
 /* Write function prologue.  */
 
 /* On vms we have two kinds of functions:
@@ -7142,33 +7344,19 @@ alpha_expand_prologue (void)
   HOST_WIDE_INT sa_size;
   /* Complete stack size needed.  */
   HOST_WIDE_INT frame_size;
+  /* Probed stack size; it additionally includes the size of
+     the "reserve region" if any.  */
+  HOST_WIDE_INT probed_size;
   /* Offset from base reg to register save area.  */
   HOST_WIDE_INT reg_offset;
   rtx sa_reg;
   int i;
 
   sa_size = alpha_sa_size ();
-
-  frame_size = get_frame_size ();
-  if (TARGET_ABI_OPEN_VMS)
-    frame_size = ALPHA_ROUND (sa_size 
-			      + (alpha_procedure_type == PT_STACK ? 8 : 0)
-			      + frame_size
-			      + current_function_pretend_args_size);
-  else if (TARGET_ABI_UNICOSMK)
-    /* We have to allocate space for the DSIB if we generate a frame.  */
-    frame_size = ALPHA_ROUND (sa_size
-			      + (alpha_procedure_type == PT_STACK ? 48 : 0))
-		 + ALPHA_ROUND (frame_size
-				+ current_function_outgoing_args_size);
-  else
-    frame_size = (ALPHA_ROUND (current_function_outgoing_args_size)
-		  + sa_size
-		  + ALPHA_ROUND (frame_size
-				 + current_function_pretend_args_size));
+  frame_size = compute_frame_size (get_frame_size (), sa_size);
 
   if (TARGET_ABI_OPEN_VMS)
-    reg_offset = 8;
+    reg_offset = 8 + 8 * cfun->machine->uses_condition_handler;
   else
     reg_offset = ALPHA_ROUND (current_function_outgoing_args_size);
 
@@ -7201,21 +7389,25 @@ alpha_expand_prologue (void)
 
      Note that we are only allowed to adjust sp once in the prologue.  */
 
-  if (frame_size <= 32768)
-    {
-      if (frame_size > 4096)
-	{
-	  int probed = 4096;
+  probed_size = frame_size;
+  if (flag_stack_check)
+    probed_size += STACK_CHECK_PROTECT;
 
-	  do
+  if (probed_size <= 32768)
+    {
+      if (probed_size > 4096)
+	{
+	  int probed;
+
+	  for (probed = 4096; probed < probed_size; probed += 8192)
 	    emit_insn (gen_probe_stack (GEN_INT (TARGET_ABI_UNICOSMK
 						 ? -probed + 64
 						 : -probed)));
-	  while ((probed += 8192) < frame_size);
 
-	  /* We only have to do this probe if we aren't saving registers.  */
-	  if (sa_size == 0 && probed + 4096 < frame_size)
-	    emit_insn (gen_probe_stack (GEN_INT (-frame_size)));
+	  /* We only have to do this probe if we aren't saving registers or
+	     if we are probing beyond the frame because of -fstack-check.  */
+	  if ((probed_size > probed - 4096 && !sa_size) || flag_stack_check)
+	    emit_insn (gen_probe_stack (GEN_INT (-probed_size)));
 	}
 
       if (frame_size != 0)
@@ -7230,10 +7422,11 @@ alpha_expand_prologue (void)
 	 number of 8192 byte blocks to probe.  We then probe each block
 	 in the loop and then set SP to the proper location.  If the
 	 amount remaining is > 4096, we have to do one more probe if we
-	 are not saving any registers.  */
+	 are not saving any registers or if we are probing beyond the
+	 frame because of -fstack-check.  */
 
-      HOST_WIDE_INT blocks = (frame_size + 4096) / 8192;
-      HOST_WIDE_INT leftover = frame_size + 4096 - blocks * 8192;
+      HOST_WIDE_INT blocks = (probed_size + 4096) / 8192;
+      HOST_WIDE_INT leftover = probed_size + 4096 - blocks * 8192;
       rtx ptr = gen_rtx_REG (DImode, 22);
       rtx count = gen_rtx_REG (DImode, 23);
       rtx seq;
@@ -7246,19 +7439,22 @@ alpha_expand_prologue (void)
 	 late in the compilation, generate the loop as a single insn.  */
       emit_insn (gen_prologue_stack_probe_loop (count, ptr));
 
-      if (leftover > 4096 && sa_size == 0)
+      if ((leftover > 4096 && !sa_size) || flag_stack_check)
 	{
 	  rtx last = gen_rtx_MEM (DImode, plus_constant (ptr, -leftover));
 	  MEM_VOLATILE_P (last) = 1;
 	  emit_move_insn (last, const0_rtx);
 	}
 
-      if (TARGET_ABI_WINDOWS_NT)
+      if (TARGET_ABI_WINDOWS_NT || flag_stack_check)
 	{
 	  /* For NT stack unwind (done by 'reverse execution'), it's
 	     not OK to take the result of a loop, even though the value
 	     is already in ptr, so we reload it via a single operation
 	     and subtract it to sp. 
+
+	     Same if -fstack-check is specified, because the probed stack
+	     size is not equal to the frame size.
 
 	     Yes, that's correct -- we have to reload the whole constant
 	     into a temporary via ldah+lda then subtract from sp.  */
@@ -7456,6 +7652,7 @@ alpha_start_function (FILE *file, const char *fnname,
   /* Offset from base reg to register save area.  */
   HOST_WIDE_INT reg_offset;
   char *entry_label = (char *) alloca (strlen (fnname) + 6);
+  char *tramp_label = (char *) alloca (strlen (fnname) + 6);
   int i;
 
   /* Don't emit an extern directive for functions defined in the same file.  */
@@ -7466,28 +7663,23 @@ alpha_start_function (FILE *file, const char *fnname,
       TREE_ASM_WRITTEN (name_tree) = 1;
     }
 
+#if TARGET_ABI_OPEN_VMS
+  if (alpha_debug_main
+      && strncmp (alpha_debug_main, fnname, strlen (alpha_debug_main)) == 0)
+    {
+      targetm.asm_out.globalize_label (asm_out_file, VMS_DEBUG_MAIN_POINTER);
+      ASM_OUTPUT_DEF (asm_out_file, VMS_DEBUG_MAIN_POINTER, fnname);
+      text_section ();
+      alpha_debug_main = NULL;
+    }
+#endif
+
   alpha_fnname = fnname;
   sa_size = alpha_sa_size ();
-
-  frame_size = get_frame_size ();
-  if (TARGET_ABI_OPEN_VMS)
-    frame_size = ALPHA_ROUND (sa_size 
-			      + (alpha_procedure_type == PT_STACK ? 8 : 0)
-			      + frame_size
-			      + current_function_pretend_args_size);
-  else if (TARGET_ABI_UNICOSMK)
-    frame_size = ALPHA_ROUND (sa_size
-			      + (alpha_procedure_type == PT_STACK ? 48 : 0))
-		 + ALPHA_ROUND (frame_size
-			      + current_function_outgoing_args_size);
-  else
-    frame_size = (ALPHA_ROUND (current_function_outgoing_args_size)
-		  + sa_size
-		  + ALPHA_ROUND (frame_size
-				 + current_function_pretend_args_size));
+  frame_size = compute_frame_size (get_frame_size (), sa_size);
 
   if (TARGET_ABI_OPEN_VMS)
-    reg_offset = 8;
+    reg_offset = 8 + 8 * cfun->machine->uses_condition_handler;
   else
     reg_offset = ALPHA_ROUND (current_function_outgoing_args_size);
 
@@ -7531,6 +7723,22 @@ alpha_start_function (FILE *file, const char *fnname,
 	  putc ('$', file);
 	  assemble_name (file, fnname);
 	  fputs ("..ng:\n", file);
+	}
+    }
+
+  /* Nested functions on VMS that are potentially called via trampoline
+     get a special transfer entry point that loads the called functions
+     procedure descriptor and static chain */
+  if (TARGET_ABI_OPEN_VMS)
+    {
+      if (!(DECL_CONTEXT (decl) == NULL_TREE) && !TREE_PUBLIC (decl)
+	  && ! (DECL_CONTEXT (decl) && TYPE_P (DECL_CONTEXT (decl))))
+	{
+	  strcpy (tramp_label, fnname);
+	  strcat (tramp_label, "..tr");
+	  ASM_OUTPUT_LABEL (file, tramp_label);
+	  fprintf (file, "\tldq $1,24($27)\n");
+	  fprintf (file, "\tldq $27,16($27)\n");
 	}
     }
 
@@ -7612,6 +7820,16 @@ alpha_start_function (FILE *file, const char *fnname,
     }
 
 #if TARGET_ABI_OPEN_VMS
+  /* If a user condition handler has been installed at some point, emit
+     the procedure descriptor bits to point the Condition Handling Facility
+     at the indirection wrapper, and state the fp offset at which the user
+     handler may be found.  */
+  if (cfun->machine->uses_condition_handler)
+    {
+      fprintf (file, "\t.handler __gcc_shell_handler\n");
+      fprintf (file, "\t.handler_data %d\n", VMS_COND_HANDLER_FP_OFFSET);
+    }
+
   /* Ifdef'ed cause link_section are only available then.  */
   readonly_data_section ();
   fprintf (file, "\t.align 3\n");
@@ -7667,30 +7885,14 @@ alpha_expand_epilogue (void)
   int i;
 
   sa_size = alpha_sa_size ();
-
-  frame_size = get_frame_size ();
-  if (TARGET_ABI_OPEN_VMS)
-    frame_size = ALPHA_ROUND (sa_size 
-			      + (alpha_procedure_type == PT_STACK ? 8 : 0)
-			      + frame_size
-			      + current_function_pretend_args_size);
-  else if (TARGET_ABI_UNICOSMK)
-    frame_size = ALPHA_ROUND (sa_size
-			      + (alpha_procedure_type == PT_STACK ? 48 : 0))
-		 + ALPHA_ROUND (frame_size
-			      + current_function_outgoing_args_size);
-  else
-    frame_size = (ALPHA_ROUND (current_function_outgoing_args_size)
-		  + sa_size
-		  + ALPHA_ROUND (frame_size
-				 + current_function_pretend_args_size));
+  frame_size = compute_frame_size (get_frame_size (), sa_size);
 
   if (TARGET_ABI_OPEN_VMS)
     {
        if (alpha_procedure_type == PT_STACK)
-          reg_offset = 8;
+	 reg_offset = 8 + 8 * cfun->machine->uses_condition_handler;
        else
-          reg_offset = 0;
+	 reg_offset = 0;
     }
   else
     reg_offset = ALPHA_ROUND (current_function_outgoing_args_size);
@@ -7929,6 +8131,15 @@ alpha_end_function (FILE *file, const char *fnname, tree decl ATTRIBUTE_UNUSED)
       unicosmk_output_deferred_case_vectors (file);
     }
 }
+
+#if TARGET_ABI_OPEN_VMS
+void avms_asm_output_external (FILE *file, tree decl, const char *name)
+{
+#ifdef DO_CRTL_NAMES
+  DO_CRTL_NAMES;
+#endif
+}
+#endif
 
 #if TARGET_ABI_OSF
 /* Emit a tail call to FUNCTION after adjusting THIS by DELTA.
@@ -9203,7 +9414,6 @@ alpha_use_linkage (rtx linkage, tree cfundecl, int lflag, int rflag)
     {
       size_t name_len;
       size_t buflen;
-      char buf [512];
       char *linksym;
       splay_tree_node node = 0;
       struct alpha_links *anl;
@@ -9212,6 +9422,7 @@ alpha_use_linkage (rtx linkage, tree cfundecl, int lflag, int rflag)
 	name++;
 
       name_len = strlen (name);
+      linksym = alloca (name_len + 50);
 
       al = (struct alpha_links *) ggc_alloc (sizeof (struct alpha_links));
       al->num = cfaf->num;
@@ -9223,10 +9434,8 @@ alpha_use_linkage (rtx linkage, tree cfundecl, int lflag, int rflag)
 	  al->lkind = anl->lkind;
 	}
 
-      sprintf (buf, "$%d..%s..lk", cfaf->num, name);
-      buflen = strlen (buf);
-      linksym = alloca (buflen + 1);
-      memcpy (linksym, buf, buflen + 1);
+      sprintf (linksym, "$%d..%s..lk", cfaf->num, name);
+      buflen = strlen (linksym);
 
       al->linkage = gen_rtx_SYMBOL_REF
 	(Pmode, ggc_alloc_string (linksym, buflen + 1));
@@ -10174,9 +10383,21 @@ alpha_init_libfuncs (void)
       set_optab_libfunc (smod_optab, DImode, "OTS$REM_L");
       set_optab_libfunc (umod_optab, SImode, "OTS$REM_UI");
       set_optab_libfunc (umod_optab, DImode, "OTS$REM_UL");
+      abort_libfunc = init_one_libfunc ("decc$abort");
+      memcpy_libfunc = init_one_libfunc ("decc$memcpy");
+      memmove_libfunc = init_one_libfunc ("decc$memmove");
+      bcopy_libfunc = init_one_libfunc ("decc$bcopy");
+      memcmp_libfunc = init_one_libfunc ("decc$memcmp");
+      memset_libfunc = init_one_libfunc ("decc$memset");
+      bzero_libfunc = init_one_libfunc ("decc$bzero");
     }
 }
 
+static bool
+vms_valid_pointer_mode (enum machine_mode mode)
+{
+  return (mode == SImode || mode == DImode);
+}
 
 /* Initialize the GCC target structure.  */
 #if TARGET_ABI_OPEN_VMS
@@ -10184,6 +10405,8 @@ alpha_init_libfuncs (void)
 # define TARGET_ATTRIBUTE_TABLE vms_attribute_table
 # undef TARGET_SECTION_TYPE_FLAGS
 # define TARGET_SECTION_TYPE_FLAGS vms_section_type_flags
+# undef TARGET_VALID_POINTER_MODE
+# define TARGET_VALID_POINTER_MODE vms_valid_pointer_mode
 #endif
 
 #undef TARGET_IN_SMALL_DATA_P
@@ -10207,7 +10430,7 @@ alpha_init_libfuncs (void)
 
 /* Default unaligned ops are provided for ELF systems.  To get unaligned
    data for non-ELF systems, we have to turn off auto alignment.  */
-#ifndef OBJECT_FORMAT_ELF
+#if !defined (OBJECT_FORMAT_ELF) || TARGET_ABI_OPEN_VMS
 #undef TARGET_ASM_UNALIGNED_HI_OP
 #define TARGET_ASM_UNALIGNED_HI_OP "\t.align 0\n\t.word\t"
 #undef TARGET_ASM_UNALIGNED_SI_OP
@@ -10301,6 +10524,9 @@ alpha_init_libfuncs (void)
 
 #undef TARGET_BUILD_BUILTIN_VA_LIST
 #define TARGET_BUILD_BUILTIN_VA_LIST alpha_build_builtin_va_list
+
+#undef TARGET_GET_STATIC_STACK_USAGE
+#define TARGET_GET_STATIC_STACK_USAGE alpha_get_static_stack_usage
 
 struct gcc_target targetm = TARGET_INITIALIZER;
 

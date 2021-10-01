@@ -216,7 +216,7 @@ static int asm_insn_count (rtx);
 #endif
 static void profile_function (FILE *);
 static void profile_after_prologue (FILE *);
-static bool notice_source_line (rtx);
+static bool notice_source_line (rtx, bool);
 static rtx walk_alter_subreg (rtx *);
 static void output_asm_name (void);
 static void output_alternate_entry_point (FILE *, rtx);
@@ -1642,6 +1642,7 @@ final_scan_insn (rtx insn, FILE *file, int optimize ATTRIBUTE_UNUSED,
 		 int prescan, int nopeepholes ATTRIBUTE_UNUSED,
 		 int *seen)
 {
+  static bool force_source_line = false;
 #ifdef HAVE_cc0
   rtx set;
 #endif
@@ -1667,7 +1668,6 @@ final_scan_insn (rtx insn, FILE *file, int optimize ATTRIBUTE_UNUSED,
 	case NOTE_INSN_LOOP_END_TOP_COND:
 	case NOTE_INSN_LOOP_CONT:
 	case NOTE_INSN_LOOP_VTOP:
-	case NOTE_INSN_FUNCTION_END:
 	case NOTE_INSN_REPEATED_LINE_NUMBER:
 	case NOTE_INSN_EXPECTED_VALUE:
 	  break;
@@ -1683,7 +1683,7 @@ final_scan_insn (rtx insn, FILE *file, int optimize ATTRIBUTE_UNUSED,
 	  if ((*seen & (SEEN_EMITTED | SEEN_BB)) == SEEN_BB)
 	    {
 	      *seen |= SEEN_EMITTED;
-	      last_filename = NULL;
+	      force_source_line = true;
 	    }
 	  else
 	    *seen |= SEEN_BB;
@@ -1707,7 +1707,7 @@ final_scan_insn (rtx insn, FILE *file, int optimize ATTRIBUTE_UNUSED,
 	  if ((*seen & (SEEN_EMITTED | SEEN_NOTE)) == SEEN_NOTE)
 	    {
 	      *seen |= SEEN_EMITTED;
-	      last_filename = NULL;
+	      force_source_line = true;
 	    }
 	  else
 	    *seen |= SEEN_NOTE;
@@ -1725,11 +1725,15 @@ final_scan_insn (rtx insn, FILE *file, int optimize ATTRIBUTE_UNUSED,
 	  if ((*seen & (SEEN_EMITTED | SEEN_NOTE)) == SEEN_NOTE)
 	    {
 	      *seen |= SEEN_EMITTED;
-	      last_filename = NULL;
+	      force_source_line = true;
 	    }
 	  else
 	    *seen |= SEEN_NOTE;
 
+	  break;
+
+	case NOTE_INSN_FUNCTION_END:
+	  (*debug_hooks->begin_epilogue) (last_linenum, last_filename);
 	  break;
 
 	case NOTE_INSN_BLOCK_BEG:
@@ -2009,11 +2013,11 @@ final_scan_insn (rtx insn, FILE *file, int optimize ATTRIBUTE_UNUSED,
 
 	    break;
 	  }
-	/* Output this line note if it is the first or the last line
-	   note in a row.  */
-	if (notice_source_line (insn))
+
+	if (notice_source_line (insn, force_source_line))
 	  {
 	    (*debug_hooks->source_line) (last_linenum, last_filename);
+	    force_source_line = false;
 	  }
 
 	if (GET_CODE (body) == ASM_INPUT)
@@ -2479,16 +2483,17 @@ final_scan_insn (rtx insn, FILE *file, int optimize ATTRIBUTE_UNUSED,
   return NEXT_INSN (insn);
 }
 
-/* Output debugging info to the assembler file FILE
-   based on the NOTE-insn INSN, assumed to be a line number.  */
+/* Return whether a source line note needs to be emitted before INSN.
+   If FORCE is true, return true unless the source info is absent.  */
 
 static bool
-notice_source_line (rtx insn)
+notice_source_line (rtx insn, bool force)
 {
   const char *filename = insn_file (insn);
   int linenum = insn_line (insn);
 
-  if (filename && (filename != last_filename || last_linenum != linenum))
+  if (filename
+      && (force || filename != last_filename || last_linenum != linenum))
     {
       last_filename = filename;
       last_linenum = linenum;

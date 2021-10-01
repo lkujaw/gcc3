@@ -430,8 +430,7 @@ case $host_os in
     esac
     ;;
   lynxos*)
-    # FIXME: insert proper C++ library support
-    ld_shlibs=no
+    # LynxOS uses GNU C++ and GNU ld with standard ELF conventions.
     ;;
   m88k*)
     # FIXME: insert proper C++ library support

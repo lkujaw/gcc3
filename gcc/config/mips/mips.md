@@ -60,6 +60,9 @@
    (UNSPEC_ADDRESS_FIRST	100)
 
    (FAKE_CALL_REGNO		79)])
+
+(define_constants
+  [(UNSPECV_STACK_PROBE_INLINE  0)])
 
 ;; ....................
 ;;
@@ -8259,6 +8262,17 @@ ld\\t%2,%1-%S1(%2)\;daddu\\t%2,%2,$31\\n\\t%*j\\t%2%/"
 ;;
 ;;  ....................
 ;;
+
+(define_insn "probe_stack_range"
+  [(unspec_volatile:SI [(match_operand:SI 0 "const_int_operand" "")
+			(match_operand:SI 1 "const_int_operand" "")]
+    UNSPECV_STACK_PROBE_INLINE)
+   (clobber (reg:SI 3))
+   (clobber (reg:SI 12))]
+  ""
+  "* return mips_output_probe_stack_range (operands[0], operands[1]);"
+  [(set_attr "type" "multi")
+   (set_attr "length" "9")])
 
 (define_expand "prologue"
   [(const_int 1)]

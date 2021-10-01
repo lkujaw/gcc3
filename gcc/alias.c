@@ -342,10 +342,10 @@ objects_must_conflict_p (tree t1, tree t2)
       || (t1 != 0 && TYPE_VOLATILE (t1) && t2 != 0 && TYPE_VOLATILE (t2)))
     return 1;
 
-  set1 = t1 ? get_alias_set (t1) : 0;
-  set2 = t2 ? get_alias_set (t2) : 0;
+  set1 = t1 ? get_alias_set (t1) : -1;
+  set2 = t2 ? get_alias_set (t2) : -1;
 
-  /* Otherwise they conflict if they have no alias set or the same. We
+  /* Otherwise they conflict if they have alias set zero or the same. We
      can't simply use alias_sets_conflict_p here, because we must make
      sure that every subtype of t1 will conflict with every subtype of
      t2 for which a pair of subobjects of these respective subtypes
@@ -539,8 +539,11 @@ get_alias_set (tree t)
 	    }
 
 	  /* If we have an INDIRECT_REF via a void pointer, we don't
-	     know anything about what that might alias.  */
-	  else if (TREE_CODE (TREE_TYPE (inner)) == VOID_TYPE)
+	     know anything about what that might alias.  Likewise if the
+	     pointer is marked that way.  */
+	  else if (TREE_CODE (TREE_TYPE (inner)) == VOID_TYPE
+		   || (TYPE_REF_CAN_ALIAS_ALL
+		       (TREE_TYPE (TREE_OPERAND (inner, 0)))))
 	    return 0;
 	}
 

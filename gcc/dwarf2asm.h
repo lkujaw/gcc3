@@ -29,6 +29,10 @@ extern void dw2_asm_output_delta (int, const char *, const char *,
 				  const char *, ...)
      ATTRIBUTE_NULL_PRINTF_4;
 
+extern void dw2_asm_output_delta_units (int, const char *, const char *,
+				        const int, const char *, ...)
+     ATTRIBUTE_NULL_PRINTF_5;
+
 extern void dw2_asm_output_offset (int, const char *, const char *, ...)
      ATTRIBUTE_NULL_PRINTF_3;
 
@@ -41,9 +45,9 @@ extern void dw2_asm_output_addr (int, const char *, const char *, ...)
 extern void dw2_asm_output_addr_rtx (int, rtx, const char *, ...)
      ATTRIBUTE_NULL_PRINTF_3;
 
-extern void dw2_asm_output_encoded_addr_rtx (int, rtx,
+extern void dw2_asm_output_encoded_addr_rtx (int, rtx, bool,
 					     const char *, ...)
-     ATTRIBUTE_NULL_PRINTF_3;
+     ATTRIBUTE_NULL_PRINTF_4;
 
 extern void dw2_asm_output_nstring (const char *, size_t,
 				    const char *, ...)

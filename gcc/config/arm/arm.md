@@ -1834,6 +1834,12 @@
     HOST_WIDE_INT mask = (((HOST_WIDE_INT)1) << width) - 1;
     rtx target, subtarget;
 
+    /* If we are to assign the whole target register, let the regular move
+       patterns handle the case.  The processing here is not adequate for
+       this operation anyway. See e.g. how mask is computed and used.  */
+    if (width == 32)
+      FAIL;
+
     target = operands[0];
     /* Avoid using a subreg as a subtarget, and avoid writing a paradoxical 
        subreg as the final target.  */

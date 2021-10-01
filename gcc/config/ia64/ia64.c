@@ -1,5 +1,5 @@
 /* Definitions of target machine for GNU compiler.
-   Copyright (C) 1999, 2000, 2001, 2002, 2003, 2004
+   Copyright (C) 1999, 2000, 2001, 2002, 2003, 2004, 2005
    Free Software Foundation, Inc.
    Contributed by James E. Wilson <wilson@cygnus.com> and
 		  David Mosberger <davidm@hpl.hp.com>.
@@ -42,6 +42,7 @@ Boston, MA 02111-1307, USA.  */
 #include "function.h"
 #include "ggc.h"
 #include "basic-block.h"
+#include "libfuncs.h"
 #include "toplev.h"
 #include "sched-int.h"
 #include "timevar.h"
@@ -106,6 +107,9 @@ int ia64_tls_size = 22;
 
 /* String used with the -mtls-size= option.  */
 const char *ia64_tls_size_string;
+
+/* String used with the VMS -mdebug-main option.  */
+const char *ia64_debug_main;
 
 /* Which cpu are we scheduling for.  */
 enum processor_type ia64_tune;
@@ -203,6 +207,7 @@ static rtx ia64_expand_compare_and_swap (enum machine_mode, enum machine_mode,
 static rtx ia64_expand_lock_test_and_set (enum machine_mode, tree, rtx);
 static rtx ia64_expand_lock_release (enum machine_mode, tree, rtx);
 static bool ia64_assemble_integer (rtx, unsigned int, int);
+static HOST_WIDE_INT ia64_get_static_stack_usage (void);
 static void ia64_output_function_prologue (FILE *, HOST_WIDE_INT);
 static void ia64_output_function_epilogue (FILE *, HOST_WIDE_INT);
 static void ia64_output_function_end_prologue (FILE *);
@@ -247,8 +252,7 @@ static void ia64_rwreloc_unique_section (tree, int)
 static void ia64_rwreloc_select_rtx_section (enum machine_mode, rtx,
 					     unsigned HOST_WIDE_INT)
      ATTRIBUTE_UNUSED;
-static unsigned int ia64_rwreloc_section_type_flags (tree, const char *, int)
-     ATTRIBUTE_UNUSED;
+static unsigned int ia64_section_type_flags (tree, const char *, int);
 
 static void ia64_hpux_add_extern_decl (tree decl)
      ATTRIBUTE_UNUSED;
@@ -257,6 +261,8 @@ static void ia64_hpux_file_end (void)
 static void ia64_hpux_init_libfuncs (void)
      ATTRIBUTE_UNUSED;
 static void ia64_vms_init_libfuncs (void)
+     ATTRIBUTE_UNUSED;
+static bool ia64_vms_valid_pointer_mode (enum machine_mode mode)
      ATTRIBUTE_UNUSED;
 
 static tree ia64_handle_model_attribute (tree *, tree, tree, int, bool *);
@@ -357,6 +363,9 @@ static const struct attribute_spec ia64_attribute_table[] =
 #undef TARGET_ASM_FILE_START
 #define TARGET_ASM_FILE_START ia64_file_start
 
+#undef TARGET_GET_STATIC_STACK_USAGE
+#define TARGET_GET_STATIC_STACK_USAGE ia64_get_static_stack_usage
+
 #undef TARGET_RTX_COSTS
 #define TARGET_RTX_COSTS ia64_rtx_costs
 #undef TARGET_ADDRESS_COST
@@ -368,8 +377,16 @@ static const struct attribute_spec ia64_attribute_table[] =
 #undef TARGET_ENCODE_SECTION_INFO
 #define TARGET_ENCODE_SECTION_INFO ia64_encode_section_info
 
+#undef  TARGET_SECTION_TYPE_FLAGS
+#define TARGET_SECTION_TYPE_FLAGS  ia64_section_type_flags
+
 #undef TARGET_STRUCT_VALUE_RTX
 #define TARGET_STRUCT_VALUE_RTX ia64_struct_value_rtx
+
+#if TARGET_ABI_OPEN_VMS
+#undef TARGET_VALID_POINTER_MODE
+#define TARGET_VALID_POINTER_MODE ia64_vms_valid_pointer_mode
+#endif
 
 struct gcc_target targetm = TARGET_INITIALIZER;
 
@@ -533,6 +550,23 @@ int
 function_operand (rtx op, enum machine_mode mode ATTRIBUTE_UNUSED)
 {
   if (GET_CODE (op) == SYMBOL_REF && SYMBOL_REF_FUNCTION_P (op))
+    return 1;
+  else
+    return 0;
+}
+
+/* Return 1 if OP refers to a trampoline.  */
+
+int
+trampoline_operand (rtx op, enum machine_mode mode ATTRIBUTE_UNUSED)
+{
+  const char *name;
+
+  if (GET_CODE (op) != SYMBOL_REF)
+    return 0;
+  
+  name = XSTR (op, 0);
+  if (strcmp (name, "__ia64_trampoline") == 0)
     return 1;
   else
     return 0;
@@ -1781,6 +1815,10 @@ ia64_expand_call (rtx retval, rtx addr, rtx nextarg ATTRIBUTE_UNUSED,
 
   if (sibcall_p)
     use_reg (&CALL_INSN_FUNCTION_USAGE (insn), b0);
+
+  if (TARGET_ABI_OPEN_VMS)
+    use_reg (&CALL_INSN_FUNCTION_USAGE (insn),
+	     gen_rtx_REG (DImode, GR_REG (25)));
 }
 
 void
@@ -2286,6 +2324,17 @@ ia64_compute_frame_size (HOST_WIDE_INT size)
   current_frame_info.initialized = reload_completed;
 }
 
+/* Return the maximum static stack usage for the current function.  */
+
+static HOST_WIDE_INT
+ia64_get_static_stack_usage (void)
+{
+  ia64_compute_frame_size (get_frame_size ());
+  if (!current_frame_info.initialized)
+    abort ();
+  return current_frame_info.total_size;
+}
+
 /* Compute the initial difference between the specified pair of registers.  */
 
 HOST_WIDE_INT
@@ -2581,6 +2630,146 @@ gen_fr_restore_x (rtx dest, rtx src, rtx offset ATTRIBUTE_UNUSED)
   return gen_fr_restore (dest, src);
 }
 
+/* Emit code to probe a range of stack addresses from FIRST to FIRST+SIZE,
+   inclusive.  These are offsets from the current stack pointer.  */
+
+static void
+ia64_emit_probe_stack_range (HOST_WIDE_INT first, HOST_WIDE_INT size)
+{
+  if (stack_check_libfunc)
+    abort (); /* Not implemented.  */
+
+  else
+    emit_insn (gen_probe_stack_range (GEN_INT (first), GEN_INT (size)));
+}
+
+/* Probe a range of stack addresses from FIRST to FIRST+SIZE, inclusive.
+   These are offsets from the current stack pointer.  */
+
+#define PROBE_INTERVAL (1 << STACK_CHECK_PROBE_INTERVAL_EXP)
+
+const char *
+output_probe_stack_range (rtx first_rtx, rtx size_rtx)
+{
+  static int labelno = 0;
+  HOST_WIDE_INT first = INTVAL (first_rtx);
+  HOST_WIDE_INT size = INTVAL (size_rtx);
+  HOST_WIDE_INT rounded_size;
+  char loop_lab[32], end_lab[32];
+
+  /* See if we have a constant small number of them to generate.  If so,
+     that's the easy case.  */
+  if (size <= PROBE_INTERVAL)
+    {
+      fputs ("\tmov r2 = r12\n\t;;\n", asm_out_file);
+      fprintf (asm_out_file, "\taddl r2 = -"HOST_WIDE_INT_PRINT_DEC", r2\n\t;;\n",
+	       first + size);
+      fputs ("\tst8.rel [r2] = r0\n", asm_out_file);
+    }
+
+  /* The run-time loop is made up of 8 insns in the generic case while this
+     compile-time loop is made up of 5+2*(n-2) insns for n # of intervals.  */
+  else if (size <= 4 * PROBE_INTERVAL)
+    {
+      HOST_WIDE_INT i;
+
+      fputs ("\tmov r2 = r12\n\t;;\n", asm_out_file);
+      fprintf (asm_out_file, "\taddl r2 = -"HOST_WIDE_INT_PRINT_DEC", r2\n\t;;\n",
+	       first + PROBE_INTERVAL);
+      fputs ("\tst8.rel [r2] = r0\n", asm_out_file);
+
+      /* Probe at FIRST + N * PROBE_INTERVAL for values of N from 2 until
+	 it exceeds SIZE.  If only two probes are needed, this will not
+	 generate any code.  Then probe at SIZE.  */
+      for (i = 2 * PROBE_INTERVAL; i < size; i += PROBE_INTERVAL)
+	{
+	  fprintf (asm_out_file, "\taddl r2 = -%d, r2\n\t;;\n", PROBE_INTERVAL);
+	  fputs ("\tst8.rel [r2] = r0\n\t;;\n", asm_out_file);
+	}
+
+      fprintf (asm_out_file, "\taddl r2 = -"HOST_WIDE_INT_PRINT_DEC", r2\n\t;;\n",
+	       size - (i - PROBE_INTERVAL));
+      fputs ("\tst8.rel [r2] = r0\n", asm_out_file);
+    }
+
+  /* Otherwise, do the same as above, but in a loop.  Note that we must be
+     extra careful with variables wrapping around because we might be at
+     the very top (or the very bottom) of the address space and we have
+     to be able to handle this case properly; in particular, we use an
+     equality test for the loop condition.  */
+  else
+    {
+      /* Step 1: round SIZE to the previous multiple of the interval.  */
+
+      rounded_size = size & -PROBE_INTERVAL;
+
+
+      /* Step 2: compute initial and final value of the loop counter.  */
+
+      /* TEST_ADDR = SP + FIRST.  */
+      fputs ("\tmov r2 = r12\n\t;;\n", asm_out_file);
+      fprintf (asm_out_file, "\taddl r2 = -"HOST_WIDE_INT_PRINT_DEC", r2\n\t;;\n",
+	       first);
+
+      /* LAST_ADDR = SP + FIRST + ROUNDED_SIZE.  */
+      if (rounded_size > (1 << 21))
+	{
+	  fprintf (asm_out_file, "\tmovl r3 = -"HOST_WIDE_INT_PRINT_DEC"\n\t;;\n",
+		   rounded_size);
+	  fputs ("\tadd r2 = r2, r3\n\t;;\n", asm_out_file);
+	}
+      else
+	fprintf (asm_out_file, "\taddl r3 = -"HOST_WIDE_INT_PRINT_DEC", r2\n\t;;\n",
+	         rounded_size);
+
+
+      /* Step 3: the loop
+
+        while (TEST_ADDR != LAST_ADDR)
+	  {
+	    TEST_ADDR = TEST_ADDR + PROBE_INTERVAL
+	    probe at TEST_ADDR
+	  }
+
+        probes at FIRST + N * PROBE_INTERVAL for values of N from 1
+        until it exceeds ROUNDED_SIZE.  */
+
+      ASM_GENERATE_INTERNAL_LABEL (loop_lab, "LPSRL", labelno);
+      ASM_OUTPUT_LABEL (asm_out_file, loop_lab);
+
+       /* Jump to END_LAB if TEST_ADDR == LAST_ADDR.  */
+      ASM_GENERATE_INTERNAL_LABEL (end_lab, "LPSRE", labelno++);
+      fputs ("\tcmp.eq p6, p7 = r2, r3\n", asm_out_file);
+      fputs ("\t(p6) br.cond.dptk ", asm_out_file);
+      assemble_name (asm_out_file, end_lab);
+      fputc ('\n', asm_out_file);
+ 
+      /* TEST_ADDR = TEST_ADDR + PROBE_INTERVAL.  */
+      fprintf (asm_out_file, "\taddl r2 = -%d, r2\n\t;;\n", PROBE_INTERVAL);
+  
+      /* Probe at TEST_ADDR and branch.  */
+      fputs ("\tst8.rel [r2] = r0\n", asm_out_file);
+      fprintf (asm_out_file, "\tbr "); assemble_name (asm_out_file, loop_lab);
+      fputc ('\n', asm_out_file);
+
+      ASM_OUTPUT_LABEL (asm_out_file, end_lab);
+
+
+      /* Step 4: probe at SIZE if we cannot assert at compile-time that
+	 it is equal to ROUNDED_SIZE.  */
+
+      /* TEMP = SIZE - ROUNDED_SIZE.  */
+      if (size != rounded_size)
+        {
+	  fprintf (asm_out_file, "\taddl r2 = -"HOST_WIDE_INT_PRINT_DEC", r2\n\t;;\n",
+		   size - rounded_size);
+	  fputs ("\tst8.rel [r2] = r0\n", asm_out_file);
+	}
+    }
+
+  return "";
+}
+
 /* Called after register allocation to add any instructions needed for the
    prologue.  Using a prologue insn is favored compared to putting all of the
    instructions in output_function_prologue(), since it allows the scheduler
@@ -2612,6 +2801,10 @@ ia64_expand_prologue (void)
 
   ia64_compute_frame_size (get_frame_size ());
   last_scratch_gr_reg = 15;
+
+  if (flag_stack_check == 2 && current_frame_info.total_size)
+    ia64_emit_probe_stack_range (STACK_CHECK_PROTECT,
+				 current_frame_info.total_size);
 
   /* If there is no epilogue, then we don't need some prologue insns.
      We need to avoid emitting the dead prologue insns, because flow
@@ -2940,6 +3133,28 @@ ia64_expand_prologue (void)
     abort ();
 
   finish_spill_pointers ();
+}
+
+/* Output the textual info surrounding the prologue.  */
+
+void
+ia64_start_function (FILE *file, const char *fnname,
+		     tree decl ATTRIBUTE_UNUSED)
+{
+#if TARGET_ABI_OPEN_VMS
+  if (ia64_debug_main
+      && strncmp (ia64_debug_main, fnname, strlen (ia64_debug_main)) == 0)
+    {
+      targetm.asm_out.globalize_label (asm_out_file, VMS_DEBUG_MAIN_POINTER);
+      ASM_OUTPUT_DEF (asm_out_file, VMS_DEBUG_MAIN_POINTER, fnname);
+      ia64_debug_main = NULL;
+    }
+#endif
+
+  fputs ("\t.proc ", file);
+  assemble_name (file, fnname);
+  fputc ('\n', file);
+  ASM_OUTPUT_LABEL (file, fnname);
 }
 
 /* Called after register allocation to add any instructions needed for the
@@ -3472,7 +3687,7 @@ ia64_dbx_register_number (int regno)
 void
 ia64_initialize_trampoline (rtx addr, rtx fnaddr, rtx static_chain)
 {
-  rtx addr_reg, eight = GEN_INT (8);
+  rtx reg, addr_reg, eight = GEN_INT (8);
 
   /* The Intel assembler requires that the global __ia64_trampoline symbol
      be declared explicitly */
@@ -3494,8 +3709,18 @@ ia64_initialize_trampoline (rtx addr, rtx fnaddr, rtx static_chain)
 
   /* The first two words are the fake descriptor:
      __ia64_trampoline, ADDR+16.  */
-  emit_move_insn (gen_rtx_MEM (Pmode, addr_reg),
-		  gen_rtx_SYMBOL_REF (Pmode, "__ia64_trampoline"));
+  reg = gen_reg_rtx (Pmode);
+  emit_move_insn (reg, gen_rtx_SYMBOL_REF (Pmode, "__ia64_trampoline"));
+#if TARGET_ABI_OPEN_VMS
+  /* HP decided to break the ELF ABI on VMS (to deal with an ambiguity in
+     their Macro-32 compiler) and changed the semantics of the LTOFF22
+     relocation for functions to make it identical to LTOFF_FPTR22 for
+     functions. So, unlike Linux, on VMS the destination operand will get
+     the function descriptor instead of the bare code address, the latter
+     being what we want, so an extra dereference is needed.  */
+  emit_move_insn (reg, gen_rtx_MEM (Pmode, reg));
+#endif
+  emit_move_insn (gen_rtx_MEM (Pmode, addr_reg), reg);
   emit_insn (gen_adddi3 (addr_reg, addr_reg, eight));
 
   emit_move_insn (gen_rtx_MEM (Pmode, addr_reg),
@@ -3507,6 +3732,51 @@ ia64_initialize_trampoline (rtx addr, rtx fnaddr, rtx static_chain)
   emit_insn (gen_adddi3 (addr_reg, addr_reg, eight));
 
   /* The fourth word is the static chain.  */
+  emit_move_insn (gen_rtx_MEM (Pmode, addr_reg), static_chain);
+}
+
+void
+ia64_vms_initialize_trampoline (rtx addr, rtx fnaddr, rtx static_chain)
+{
+  rtx addr_reg, eight = GEN_INT (8);
+
+  /* The Intel assembler requires that the global symbols
+     be declared explicitly */
+  if (!TARGET_GNU_AS)
+    {
+      static bool declared_ia64_vms_trampoline = false;
+
+      if (!declared_ia64_vms_trampoline)
+	{
+	  declared_ia64_vms_trampoline = true;
+	  fputs ("\t.global\tOTS$JUMP_TO_BPV\n", asm_out_file);
+	}
+    }
+
+  /* Load up our iterator.  */
+  addr_reg = gen_reg_rtx (Pmode);
+  emit_move_insn (addr_reg, addr);
+
+  /* The first two words are the fake descriptor:
+     OTS$JUMP_TO_BPV, pseudo GP.  */
+  emit_move_insn (gen_rtx_MEM (Pmode, addr_reg),
+		  gen_rtx_SYMBOL_REF (Pmode, "OTS$JUMP_TO_BPV"));
+  emit_insn (gen_adddi3 (addr_reg, addr_reg, eight));
+
+  emit_move_insn (gen_rtx_MEM (Pmode, addr_reg),
+		  copy_to_reg (plus_constant (addr, 0)));
+  emit_insn (gen_adddi3 (addr_reg, addr_reg, eight));
+  emit_insn (gen_adddi3 (addr_reg, addr_reg, eight));
+
+  /* The fourth word is the target descriptor.  */
+  emit_move_insn (gen_rtx_MEM (Pmode, addr_reg), fnaddr);
+  emit_insn (gen_adddi3 (addr_reg, addr_reg, eight));
+
+  emit_move_insn (gen_rtx_MEM (Pmode, addr_reg),
+		  gen_rtx_REG (DImode, GR_REG(1)));
+  emit_insn (gen_adddi3 (addr_reg, addr_reg, eight));
+
+  /* The sixth word is the static chain.  */
   emit_move_insn (gen_rtx_MEM (Pmode, addr_reg), static_chain);
 }
 
@@ -3655,6 +3925,46 @@ ia64_function_arg_offset (CUMULATIVE_ARGS *cum, tree type, int words)
     return words > 1;
 }
 
+/* Return whether a value of MODE and TYPE should be passed/returned
+   in general registers.  */
+
+static bool
+force_general_reg (enum machine_mode mode ATTRIBUTE_UNUSED,
+		   tree type ATTRIBUTE_UNUSED)
+{
+#if TARGET_HPUX
+  /* ??? A hack to account for the revised MEMBER_TYPE_FORCES_BLK macro.
+     Previously the macro would have forced every structure type to BLKmode
+     except if it contained a unique non-TFmode FLOAT_MODE_P field (modulo
+     subsequent zero-sized fields); now it would not anymore.
+
+     This makes a difference here in one case (a GNU extension): structures
+     containing zero-sized fields followed by a unique FLOAT_MODE_P field.
+     They were previously given BLKmode, they are now given FLOAT_MODE_P.  */
+
+  if (FLOAT_MODE_P (mode)
+      && type
+      && TREE_CODE (type) == RECORD_TYPE)
+    {
+      tree field;
+
+      for (field = TYPE_FIELDS (type); field; field = TREE_CHAIN (field))
+	{
+	  if (TREE_CODE (field) != FIELD_DECL
+	      || DECL_SIZE (field) == 0
+	      || ! host_integerp (DECL_SIZE (field), 1))
+	    continue;
+
+	  if (simple_cst_equal (TYPE_SIZE (type), DECL_SIZE (field)))
+	    return false;
+	  else if (integer_zerop (DECL_SIZE (field)))
+	    return true;
+	}
+    }
+#endif
+  return false;
+}
+
 /* Return rtx for register where argument is passed, or zero if it is passed
    on the stack.  */
 /* ??? 128-bit quad-precision floats are always passed in general
@@ -3668,6 +3978,19 @@ ia64_function_arg (CUMULATIVE_ARGS *cum, enum machine_mode mode, tree type,
   int words = ia64_function_arg_words (type, mode);
   int offset = ia64_function_arg_offset (cum, type, words);
   enum machine_mode hfa_mode = VOIDmode;
+
+  if (TARGET_ABI_OPEN_VMS && mode == VOIDmode && type == void_type_node
+      && named == 1 && incoming == 0)
+    {
+      unsigned HOST_WIDE_INT regval = cum->words;
+      int i;
+
+      for (i = 0; i < 8; i++)
+	regval |= ((int) cum->atypes[i]) << (i * 3 + 8);
+
+      emit_move_insn (gen_rtx_REG (DImode, GR_REG (25)),
+		      GEN_INT (regval));
+    }
 
   /* If all argument slots are used, then it must go on the stack.  */
   if (cum->words + offset >= MAX_ARGUMENT_SLOTS)
@@ -3769,7 +4092,8 @@ ia64_function_arg (CUMULATIVE_ARGS *cum, enum machine_mode mode, tree type,
      FR registers, then FP values must also go in general registers.  This can
      happen when we have a SFmode HFA.  */
   else if (mode == TFmode || mode == TCmode
-	   || (! FLOAT_MODE_P (mode) || cum->fp_regs == MAX_ARGUMENT_SLOTS))
+	   || (! FLOAT_MODE_P (mode) || cum->fp_regs == MAX_ARGUMENT_SLOTS)
+	   || force_general_reg (mode, type))
     {
       int byte_size = ((mode == BLKmode)
                        ? int_size_in_bytes (type) : GET_MODE_SIZE (mode));
@@ -3856,6 +4180,20 @@ ia64_function_arg_partial_nregs (CUMULATIVE_ARGS *cum, enum machine_mode mode,
   return MAX_ARGUMENT_SLOTS - cum->words - offset;
 }
 
+enum ivms_arg_type
+ia64_arg_type (enum machine_mode mode)
+{
+  switch (mode)
+    {
+    case SFmode:
+      return FS;
+    case DFmode:
+      return FT;
+    default:
+      return I64;
+    }
+}
+
 /* Update CUM to point after this argument.  This is patterned after
    ia64_function_arg.  */
 
@@ -3869,8 +4207,12 @@ ia64_function_arg_advance (CUMULATIVE_ARGS *cum, enum machine_mode mode,
 
   /* If all arg slots are already full, then there is nothing to do.  */
   if (cum->words >= MAX_ARGUMENT_SLOTS)
-    return;
+    {
+      cum->words += words + offset;
+      return;
+    }
 
+  cum->atypes[cum->words] = ia64_arg_type (mode);
   cum->words += words + offset;
 
   /* Check for and handle homogeneous FP aggregates.  */
@@ -3913,10 +4255,12 @@ ia64_function_arg_advance (CUMULATIVE_ARGS *cum, enum machine_mode mode,
       cum->fp_regs = fp_regs;
     }
 
-  /* Integral and aggregates go in general registers.  If we have run out of
-     FR registers, then FP values must also go in general registers.  This can
-     happen when we have a SFmode HFA.  */
-  else if (! FLOAT_MODE_P (mode) || cum->fp_regs == MAX_ARGUMENT_SLOTS)
+  /* Integral and aggregates go in general registers.  So do TFmode FP values.
+     If we have run out of FR registers, then other FP values must also go in
+     general registers.  This can happen when we have a SFmode HFA.  */
+  else if (mode == TFmode || mode == TCmode
+           || (! FLOAT_MODE_P (mode) || cum->fp_regs == MAX_ARGUMENT_SLOTS)
+           || force_general_reg (mode, type))
     cum->int_regs = cum->words;
 
   /* If there is a prototype, then FP values go in a FR register when
@@ -3947,7 +4291,7 @@ ia64_function_arg_pass_by_reference (CUMULATIVE_ARGS *cum ATTRIBUTE_UNUSED,
 				     enum machine_mode mode ATTRIBUTE_UNUSED,
 				     tree type, int named ATTRIBUTE_UNUSED)
 {
-  return type && TREE_CODE (TYPE_SIZE (type)) != INTEGER_CST;
+  return type && int_size_in_bytes (type) == -1;
 }
 
 /* True if it is OK to do sibling call optimization for the specified
@@ -4049,6 +4393,7 @@ ia64_function_value (tree valtype, tree func ATTRIBUTE_UNUSED)
 {
   enum machine_mode mode;
   enum machine_mode hfa_mode;
+  int unsignedp ATTRIBUTE_UNUSED;
 
   mode = TYPE_MODE (valtype);
   hfa_mode = hfa_element_mode (valtype, 0);
@@ -4102,8 +4447,12 @@ ia64_function_value (tree valtype, tree func ATTRIBUTE_UNUSED)
 	    }
 	  return gen_rtx_PARALLEL (mode, gen_rtvec_v (i, loc));
 	}
-      else
-	return gen_rtx_REG (mode, GR_RET_FIRST);
+
+#if TARGET_ABI_OPEN_VMS
+      if (! AGGREGATE_TYPE_P (valtype))
+	PROMOTE_FUNCTION_MODE (mode, unsignedp, valtype);
+#endif
+      return gen_rtx_REG (mode, GR_RET_FIRST);
     }
 }
 
@@ -4632,6 +4981,23 @@ ia64_asm_output_external (FILE *file, tree decl, const char *name)
 {
   int save_referenced;
 
+  /* ??? The Intel assembler creates a reference that needs to be satisfied by
+     the linker when we do this, so we need to be careful not to do this for
+     builtin functions which have no library equivalent.  Unfortunately, we
+     can't tell here whether or not a function will actually be called by
+     expand_expr, so we pull in library functions even if we may not need
+     them later.  */
+  if (TREE_CODE (decl) == FUNCTION_DECL
+      && ((DECL_BUILT_IN_CLASS (decl) == BUILT_IN_MD)
+	  || !strncmp (IDENTIFIER_POINTER (DECL_NAME (decl)), "__builtin_", 10)
+	  || !DECL_ASSEMBLER_NAME_SET_P (decl)
+	  || (DECL_FUNCTION_CODE (decl) == BUILT_IN_ALLOCA)))
+    return;
+
+#ifdef DO_CRTL_NAMES
+      DO_CRTL_NAMES;
+#endif
+
   /* GNU as does not need anything here, but the HP linker does need
      something for external functions.  */
 
@@ -4639,18 +5005,6 @@ ia64_asm_output_external (FILE *file, tree decl, const char *name)
       && (!TARGET_HPUX_LD
 	  || TREE_CODE (decl) != FUNCTION_DECL
 	  || strstr (name, "__builtin_") == name))
-    return;
-
-  /* ??? The Intel assembler creates a reference that needs to be satisfied by
-     the linker when we do this, so we need to be careful not to do this for
-     builtin functions which have no library equivalent.  Unfortunately, we
-     can't tell here whether or not a function will actually be called by
-     expand_expr, so we pull in library functions even if we may not need
-     them later.  */
-  if (! strcmp (name, "__builtin_next_arg")
-      || ! strcmp (name, "alloca")
-      || ! strcmp (name, "__builtin_constant_p")
-      || ! strcmp (name, "__builtin_args_info"))
     return;
 
   if (TARGET_HPUX_LD)
@@ -4819,10 +5173,14 @@ ia64_override_options (void)
   ia64_section_threshold = g_switch_set ? g_switch_value : IA64_DEFAULT_GVALUE;
 
   init_machine_status = ia64_init_machine_status;
+
+  if (TARGET_ABI_OPEN_VMS)
+    flag_no_common = 1;
 }
 
 static enum attr_itanium_class ia64_safe_itanium_class (rtx);
 static enum attr_type ia64_safe_type (rtx);
+static bool asm_insn_p (rtx);
 
 static enum attr_itanium_class
 ia64_safe_itanium_class (rtx insn)
@@ -4840,6 +5198,17 @@ ia64_safe_type (rtx insn)
     return get_attr_type (insn);
   else
     return TYPE_UNKNOWN;
+}
+
+static bool
+asm_insn_p (rtx insn)
+{
+  rtx pat = PATTERN (insn);
+  return (GET_CODE (pat) == ASM_INPUT
+          || (GET_CODE (pat) == PARALLEL
+	      && GET_CODE (XVECEXP (pat, 0, 0)) == UNSPEC_VOLATILE
+	      && XINT (XVECEXP (pat, 0, 0), 1) == UNSPECV_STACK_PROBE_INLINE)
+	  || asm_noperands (pat) >= 0);
 }
 
 /* The following collection of routines emit instruction group stop bits as
@@ -5308,7 +5677,11 @@ rtx_needs_barrier (rtx x, struct reg_flags flags, int pred)
 		   || GET_CODE (pat) == CALL
 		   || GET_CODE (pat) == ASM_OPERANDS)
 	    need_barrier |= rtx_needs_barrier (pat, flags, pred);
-	  else if (GET_CODE (pat) != CLOBBER && GET_CODE (pat) != RETURN)
+	  else if (GET_CODE (pat) == UNSPEC_VOLATILE
+		   && XINT (pat, 1) ==  UNSPECV_STACK_PROBE_INLINE)
+	    return 1;
+	  else if (GET_CODE (pat) != CLOBBER
+		   && GET_CODE (pat) != RETURN)
 	    abort ();
 	}
       for (i = XVECLEN (x, 0) - 1; i >= 0; --i)
@@ -5822,7 +6195,7 @@ errata_emit_nops (rtx insn)
       || GET_CODE (real_pat) == ASM_INPUT
       || GET_CODE (real_pat) == ADDR_VEC
       || GET_CODE (real_pat) == ADDR_DIFF_VEC
-      || asm_noperands (PATTERN (insn)) >= 0)
+      || asm_insn_p (insn))
     return;
 
   /* single_set doesn't work for COND_EXEC insns, so we have to duplicate
@@ -6151,8 +6524,7 @@ ia64_dfa_sched_reorder (FILE *dump, int sched_verbose, rtx *ready,
 	    enum attr_type t = ia64_safe_type (insn);
 	    if (t == TYPE_UNKNOWN)
 	      {
-		if (GET_CODE (PATTERN (insn)) == ASM_INPUT
-		    || asm_noperands (PATTERN (insn)) >= 0)
+		if (asm_insn_p (insn))
 		  {
 		    rtx lowest = ready[n_asms];
 		    ready[n_asms] = insn;
@@ -6293,8 +6665,7 @@ ia64_dfa_new_cycle (FILE *dump, int verbose, rtx insn, int last_clock,
   if ((reload_completed && safe_group_barrier_needed_p (insn))
       || (last_scheduled_insn
 	  && (GET_CODE (last_scheduled_insn) == CALL_INSN
-	      || GET_CODE (PATTERN (last_scheduled_insn)) == ASM_INPUT
-	      || asm_noperands (PATTERN (last_scheduled_insn)) >= 0)))
+	      || asm_insn_p (last_scheduled_insn))))
     {
       init_insn_group_barriers ();
       if (verbose && dump)
@@ -6313,8 +6684,7 @@ ia64_dfa_new_cycle (FILE *dump, int verbose, rtx insn, int last_clock,
 	}
       else if (reload_completed)
 	setup_clocks_p = TRUE;
-      if (GET_CODE (PATTERN (last_scheduled_insn)) == ASM_INPUT
-	  || asm_noperands (PATTERN (last_scheduled_insn)) >= 0)
+      if (asm_insn_p (last_scheduled_insn))
 	state_reset (curr_state);
       else
 	{
@@ -6327,8 +6697,7 @@ ia64_dfa_new_cycle (FILE *dump, int verbose, rtx insn, int last_clock,
   else if (reload_completed)
     setup_clocks_p = TRUE;
   if (setup_clocks_p && ia64_tune == PROCESSOR_ITANIUM
-      && GET_CODE (PATTERN (insn)) != ASM_INPUT
-      && asm_noperands (PATTERN (insn)) < 0)
+      && ! asm_insn_p (insn))
     {
       enum attr_itanium_class c = ia64_safe_itanium_class (insn);
 
@@ -6642,8 +7011,7 @@ issue_nops_and_insn (struct bundle_state *originator, int before_nops_num,
       if (!try_issue_insn (curr_state, insn))
 	return;
       curr_state->accumulated_insns_num++;
-      if (GET_CODE (PATTERN (insn)) == ASM_INPUT
-	  || asm_noperands (PATTERN (insn)) >= 0)
+      if (asm_insn_p (insn))
 	abort ();
       if (ia64_safe_type (insn) == TYPE_L)
 	curr_state->accumulated_insns_num++;
@@ -6658,8 +7026,7 @@ issue_nops_and_insn (struct bundle_state *originator, int before_nops_num,
       if (!try_issue_insn (curr_state, insn))
 	return;
       curr_state->accumulated_insns_num++;
-      if (GET_CODE (PATTERN (insn)) == ASM_INPUT
-	  || asm_noperands (PATTERN (insn)) >= 0)
+      if (asm_insn_p (insn))
 	{
 	  /* Finish bundle containing asm insn.  */
 	  curr_state->after_nops_num
@@ -7017,8 +7384,7 @@ bundling (FILE *dump, int verbose, rtx prev_head_insn, rtx tail)
        curr_state = curr_state->originator)
     {
       insn = curr_state->insn;
-      asm_p = (GET_CODE (PATTERN (insn)) == ASM_INPUT
-	       || asm_noperands (PATTERN (insn)) >= 0);
+      asm_p = asm_insn_p (insn);
       insn_num++;
       if (verbose >= 2 && dump)
 	{
@@ -7099,8 +7465,7 @@ bundling (FILE *dump, int verbose, rtx prev_head_insn, rtx tail)
       /* Move the position backward in the window.  Group barrier has
 	 no slot.  Asm insn takes all bundle.  */
       if (INSN_CODE (insn) != CODE_FOR_insn_group_barrier
-	  && GET_CODE (PATTERN (insn)) != ASM_INPUT
-	  && asm_noperands (PATTERN (insn)) < 0)
+          && ! asm_insn_p (insn))
 	pos--;
       /* Long insn takes 2 slots.  */
       if (ia64_safe_type (insn) == TYPE_L)
@@ -7109,8 +7474,7 @@ bundling (FILE *dump, int verbose, rtx prev_head_insn, rtx tail)
 	abort ();
       if (pos % 3 == 0
 	  && INSN_CODE (insn) != CODE_FOR_insn_group_barrier
-	  && GET_CODE (PATTERN (insn)) != ASM_INPUT
-	  && asm_noperands (PATTERN (insn)) < 0)
+	  && ! asm_insn_p (insn))
 	{
 	  /* The current insn is at the bundle start: emit the
 	     template.  */
@@ -7356,8 +7720,7 @@ final_emit_insn_group_barriers (FILE *dump ATTRIBUTE_UNUSED)
 	  else if (recog_memoized (insn) >= 0)
 	    prev_insn = insn;
 	  need_barrier_p = (GET_CODE (insn) == CALL_INSN
-			    || GET_CODE (PATTERN (insn)) == ASM_INPUT
-			    || asm_noperands (PATTERN (insn)) >= 0);
+			    || asm_insn_p (insn));
 	}
     }
 }
@@ -8166,6 +8529,12 @@ ia64_init_builtins (void)
     (*lang_hooks.types.register_builtin_type) (long_double_type_node,
 					       "__float128");
 
+  /* Fwrite on VMS is non-standard */
+#if TARGET_ABI_OPEN_VMS
+  implicit_built_in_decls[(int) BUILT_IN_FWRITE] = NULL_TREE;
+  implicit_built_in_decls[(int) BUILT_IN_FWRITE_UNLOCKED] = NULL_TREE;
+#endif
+
 #define def_builtin(name, type, code) \
   builtin_function ((name), (type), (code), BUILT_IN_MD, NULL, NULL_TREE)
 
@@ -8794,6 +9163,19 @@ ia64_vms_init_libfuncs (void)
   set_optab_libfunc (smod_optab, DImode, "OTS$REM_L");
   set_optab_libfunc (umod_optab, SImode, "OTS$REM_UI");
   set_optab_libfunc (umod_optab, DImode, "OTS$REM_UL");
+  abort_libfunc = init_one_libfunc ("decc$abort");
+  memcpy_libfunc = init_one_libfunc ("decc$memcpy");
+  memmove_libfunc = init_one_libfunc ("decc$memmove");
+  bcopy_libfunc = init_one_libfunc ("decc$bcopy");
+  memcmp_libfunc = init_one_libfunc ("decc$memcmp");
+  memset_libfunc = init_one_libfunc ("decc$memset");
+  bzero_libfunc = init_one_libfunc ("decc$bzero");
+}
+
+static bool
+ia64_vms_valid_pointer_mode (enum machine_mode mode)
+{
+  return (mode == SImode || mode == DImode);
 }
 
 /* Switch to the section to which we should output X.  The only thing
@@ -8835,10 +9217,27 @@ ia64_rwreloc_select_rtx_section (enum machine_mode mode, rtx x,
   flag_pic = save_pic;
 }
 
+#ifndef TARGET_RWRELOC
+#define TARGET_RWRELOC flag_pic
+#endif
+
 static unsigned int
-ia64_rwreloc_section_type_flags (tree decl, const char *name, int reloc)
+ia64_section_type_flags (tree decl, const char *name, int reloc)
 {
-  return default_section_type_flags_1 (decl, name, reloc, true);
+  unsigned int flags = 0;
+
+  if (strcmp (name, ".sdata") == 0
+      || strncmp (name, ".sdata.", 7) == 0
+      || strncmp (name, ".gnu.linkonce.s.", 16) == 0
+      || strncmp (name, ".sdata2.", 8) == 0
+      || strncmp (name, ".gnu.linkonce.s2.", 17) == 0
+      || strcmp (name, ".sbss") == 0
+      || strncmp (name, ".sbss.", 6) == 0
+      || strncmp (name, ".gnu.linkonce.sb.", 17) == 0)
+    flags = SECTION_SMALL;
+
+  flags |= default_section_type_flags_1 (decl, name, reloc, TARGET_RWRELOC);
+  return flags;
 }
 
 /* Returns true if FNTYPE (a FUNCTION_TYPE or a METHOD_TYPE) returns a
@@ -9017,9 +9416,77 @@ static rtx
 ia64_struct_value_rtx (tree fntype,
 		       int incoming ATTRIBUTE_UNUSED)
 {
-  if (fntype && ia64_struct_retval_addr_is_first_parm_p (fntype))
+  if (TARGET_ABI_OPEN_VMS ||
+      (fntype && ia64_struct_retval_addr_is_first_parm_p (fntype)))
     return NULL_RTX;
   return gen_rtx_REG (Pmode, GR_REG (8));
+}
+
+/* Implement the FUNCTION_PROFILER macro.  */
+
+void
+ia64_output_function_profiler (FILE *file, int labelno)
+{
+  bool indirect_call;
+
+  /* If the function needs a static chain and the static chain
+     register is r15, we use an indirect call so as to bypass
+     the PLT stub in case the executable is dynamically linked,
+     because the stub clobbers r15 as per 5.3.6 of the psABI.
+     We don't need to do that in non canonical PIC mode.  */
+
+  if (current_function_needs_context && !TARGET_NO_PIC && !TARGET_AUTO_PIC)
+    {
+      if (STATIC_CHAIN_REGNUM != 15)
+	abort ();
+      indirect_call = true;
+    }
+  else
+    indirect_call = false;
+
+  if (TARGET_GNU_AS)
+    fputs ("\t.prologue 4, r40\n", file);
+  else
+    fputs ("\t.prologue\n\t.save ar.pfs, r40\n", file);
+  fputs ("\talloc out0 = ar.pfs, 8, 0, 4, 0\n", file);
+
+  if (NO_PROFILE_COUNTERS)
+    fputs ("\tmov out3 = r0\n", file);
+  else
+    {
+      char buf[20];
+      ASM_GENERATE_INTERNAL_LABEL (buf, "LP", labelno);
+
+      if (TARGET_AUTO_PIC)
+	fputs ("\tmovl out3 = @gprel(", file);
+      else
+	fputs ("\taddl out3 = @ltoff(", file);
+      assemble_name (file, buf);
+      if (TARGET_AUTO_PIC)
+	fputs (")\n", file);
+      else
+	fputs ("), r1\n", file);
+    }
+
+  if (indirect_call)
+    fputs ("\taddl r14 = @ltoff(@fptr(_mcount)), r1\n", file);
+  fputs ("\t;;\n", file);
+
+  fputs ("\t.save rp, r42\n", file);
+  fputs ("\tmov out2 = b0\n", file);
+  if (indirect_call)
+    fputs ("\tld8 r14 = [r14]\n\t;;\n", file);
+  fputs ("\t.body\n", file);
+  fputs ("\tmov out1 = r1\n", file);
+  if (indirect_call)
+    {
+      fputs ("\tld8 r16 = [r14], 8\n\t;;\n", file);
+      fputs ("\tmov b6 = r16\n", file);
+      fputs ("\tld8 r1 = [r14]\n", file);
+      fputs ("\tbr.call.sptk.many b0 = b6\n\t;;\n", file);
+    }
+  else
+    fputs ("\tbr.call.sptk.many b0 = _mcount\n\t;;\n", file);
 }
 
 #include "gt-ia64.h"

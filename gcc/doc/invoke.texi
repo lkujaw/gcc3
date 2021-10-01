@@ -248,11 +248,12 @@ in the following sections.
 -fdump-tree-original@r{[}-@var{n}@r{]}  @gol
 -fdump-tree-optimized@r{[}-@var{n}@r{]} @gol
 -fdump-tree-inlined@r{[}-@var{n}@r{]} @gol
+-fcallgraph-info@r{[}=su@r{]} @gol
 -feliminate-dwarf2-dups -feliminate-unused-debug-types @gol
 -feliminate-unused-debug-symbols -fmem-report -fprofile-arcs @gol
 -frandom-seed=@var{string} -fsched-verbose=@var{n} @gol
--ftest-coverage  -ftime-report @gol
--g  -g@var{level}  -gcoff -gdwarf-2 @gol
+-fstack-usage -ftest-coverage  -ftime-report @gol
+-g  -g@var{level}  -gcoff -gdwarf-2 -gdwarf+ @gol
 -ggdb  -gstabs  -gstabs+  -gvms  -gxcoff  -gxcoff+ @gol
 -p  -pg  -print-file-name=@var{library}  -print-libgcc-file-name @gol
 -print-multi-directory  -print-multi-lib @gol
@@ -536,7 +537,7 @@ in the following sections.
 -mmemory-latency=@var{time}}
 
 @emph{DEC Alpha/VMS Options}
-@gccoptlist{-mvms-return-codes}
+@gccoptlist{-mvms-return-codes -mdebug-main=@var{prefix}}
 
 @emph{H8/300 Options}
 @gccoptlist{-mrelax  -mh  -ms  -mn  -mint32  -malign-300}
@@ -610,6 +611,9 @@ in the following sections.
 -mno-dwarf2-asm -mearly-stop-bits @gol
 -mfixed-range=@var{register-range} -mtls-size=@var{tls-size} @gol
 -mtune=@var{cpu-type} -mt -pthread -milp32 -mlp64}
+
+@emph{IA-64/VMS Options}
+@gccoptlist{-mdebug-main=@var{prefix}}
 
 @emph{D30V Options}
 @gccoptlist{-mextmem  -mextmemory  -monchip  -mno-asm-optimize @gol
@@ -3079,6 +3083,11 @@ assembler (GAS) to fail with an error.
 Produce debugging information in DWARF version 2 format (if that is
 supported).  This is the format used by DBX on IRIX 6.
 
+@item -gdwarf+
+@opindex gdwarf+
+Produce debugging information in DWARF version 2 format, including the
+GNAT vendors extensions (if that is supported).
+
 @item -gvms
 @opindex gvms
 Produce debugging information in VMS debug format (if that is
@@ -3111,7 +3120,8 @@ change the debug level for DWARF2.
 @opindex feliminate-dwarf2-dups
 Compress DWARF2 debugging information by eliminating duplicated
 information about each symbol.  This option only makes sense when
-generating DWARF2 debugging information with @option{-gdwarf-2}.
+generating DWARF2 debugging information with @option{-gdwarf-2} or
+@option{-gdwarf+}.
 
 @cindex @command{prof}
 @item -p
@@ -3143,6 +3153,49 @@ pass when it finishes.
 @opindex fmem-report
 Makes the compiler print some statistics about permanent memory
 allocation when it finishes.
+
+@item -fstack-usage
+@opindex fstack-usage
+Makes the compiler output stack usage information for the program, on a
+per-function basis.  The filename for the dump is made by appending
+@file{.su} to the AUXNAME.  AUXNAME is generated from the name of
+the output file, if explicitly specified and it is not an executable,
+otherwise it is the basename of the source file.  An entry is made up
+of three fields:
+
+@itemize
+@item
+The name of the function.
+@item
+A number of bytes.
+@item
+One or more qualifiers: @code{static}, @code{dynamic}, @code{bounded}.
+@end itemize
+
+The qualifier @code{static} means that the function manipulates the stack
+statically: a fixed number of bytes are allocated for the frame on function
+entry and released on function exit; no stack adjustments are otherwise made
+in the function.  The second field is this fixed number of bytes.
+
+The qualifier @code{dynamic} means that the function manipulates the stack
+dynamically: in addition to the static allocation described above, stack
+adjustments are made in the body of the function, for example to push/pop
+arguments around function calls.  If the qualifier @code{bounded} is also
+present, the amount of these adjustments is bounded at compile-time and
+the second field is an upper bound of the total amount of stack used by
+the function.  If it is not present, the amount of these adjustments is
+not bounded at compile-time and the second field only represents the
+bounded part.
+
+@item -fcallgraph-info
+@itemx -fcallgraph-info=@var{MARKERS}
+@opindex fcallgraph-info
+Makes the compiler output callgraph information for the program, on a
+per-file basis.  The information is generated in the common VCG format.
+It can be decorated with additional, per-node and/or per-edge information,
+if a list of comma-separated markers is additionally specified; only
+@code{su} is supported for the time being and is equivalent to
+@option{-fstack-usage}.
 
 @item -fprofile-arcs
 @opindex fprofile-arcs
@@ -3651,8 +3704,7 @@ invoking @option{-O2} on programs that use computed gotos.
 @opindex O3
 Optimize yet more.  @option{-O3} turns on all optimizations specified by
 @option{-O2} and also turns on the @option{-finline-functions},
-@option{-fweb}, @option{-frename-registers} and @option{-funswitch-loops}
-options.
+@option{-fweb} and @option{-funswitch-loops} options.
 
 @item -O0
 @opindex O0
@@ -4889,6 +4941,13 @@ The @option{reorder-block-duplicate-feedback} is used only when profile
 feedback is available and may be set to higher values than
 @option{reorder-block-duplicate} since information about the hot spots is more
 accurate.
+
+@item max-sched-ready-insns
+The maximum number of instructions ready to be issued the scheduler should
+consider at any given time during the first scheduling pass.  Increasing
+values mean more thorough searches, making the compilation time increase
+with probably little benefit.  The default value is 100.
+
 @end table
 @end table
 
@@ -5864,6 +5923,7 @@ that macro, which enables you to change the defaults.
 * AVR Options::
 * MCore Options::
 * IA-64 Options::
+* IA-64/VMS Options::
 * D30V Options::
 * S/390 and zSeries Options::
 * CRIS Options::
@@ -9197,6 +9257,11 @@ These @samp{-m} options are defined for the DEC Alpha/VMS implementations:
 @opindex mvms-return-codes
 Return VMS condition codes from main.  The default is to return POSIX
 style condition (e.g.@ error) codes.
+
+@item -mdebug-main=@var{prefix}
+@opindex -mdebug-main=@var{prefix}
+Flag the first routine whose name starts with @var{prefix} as the main
+routine for the debugger.
 @end table
 
 @node H8/300 Options
@@ -9431,8 +9496,8 @@ count register BK@.
 Enable (disable) generation of code using decrement and branch,
 DBcond(D), instructions.  This is enabled by default for the C4x.  To be
 on the safe side, this is disabled for the C3x, since the maximum
-iteration count on the C3x is @math{2^{23} + 1} (but who iterates loops more than
-@math{2^{23}} times on the C3x?).  Note that GCC will try to reverse a loop so
+iteration count on the C3x is @math{2^@{23@} + 1} (but who iterates loops more than
+@math{2^@{23@}} times on the C3x?).  Note that GCC will try to reverse a loop so
 that it can utilize the decrement and branch instruction, but will give
 up if there is more than one memory reference in the loop.  Thus a loop
 where the loop counter is decremented can generate slightly more
@@ -10101,6 +10166,18 @@ The 32-bit environment sets int, long and pointer to 32 bits.
 The 64-bit environment sets int to 32 bits and long and pointer
 to 64 bits.  These are HP-UX specific flags.
 
+@end table
+
+@node IA-64/VMS Options
+@subsection IA-64/VMS Options
+
+These @samp{-m} options are defined for the IA-64/VMS implementations:
+
+@table @gcctabopt
+@item -mdebug-main=@var{prefix}
+@opindex -mdebug-main=@var{prefix}
+Flag the first routine whose name starts with @var{prefix} as the main
+routine for the debugger.
 @end table
 
 @node D30V Options

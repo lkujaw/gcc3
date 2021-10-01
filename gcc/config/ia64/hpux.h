@@ -1,5 +1,6 @@
 /* Definitions of target machine GNU compiler.  IA-64 version.
-   Copyright (C) 1999, 2000, 2001, 2002, 2003 Free Software Foundation, Inc.
+   Copyright (C) 1999, 2000, 2001, 2002, 2003, 2005
+   Free Software Foundation, Inc.
    Contributed by Steve Ellcey <sje@cup.hp.com> and
                   Reva Cuthbertson <reva@cup.hp.com>
 
@@ -103,14 +104,13 @@ do {							\
 #undef TARGET_DEFAULT
 #define TARGET_DEFAULT (MASK_DWARF2_ASM | MASK_BIG_ENDIAN | MASK_ILP32)
 
-/* This needs to be set to force structure arguments with a single
-   integer field to be treated as structures and not as the type of
-   their field.  Without this a structure with a single char will be
-   returned just like a char variable, instead of being returned at the
-   top of the register as specified for big-endian IA64.  */
-
+/* ??? The original macro had !FLOAT_MODE_P (MODE) for an obsolete reason.
+   This part should have been eliminated altogether (and will be in 4.1)
+   but doing it in 3.4 triggers problems with complex integer modes so
+   we still force BLKmode for them.  */
+  
 #define MEMBER_TYPE_FORCES_BLK(FIELD, MODE) \
-  (!FLOAT_MODE_P (MODE) || (MODE) == TFmode)
+  (GET_MODE_CLASS (MODE) == MODE_COMPLEX_INT || (MODE) == TFmode)
 
 /* ASM_OUTPUT_EXTERNAL_LIBCALL defaults to just a globalize_label call,
    but that doesn't put out the @function type information which causes
@@ -184,8 +184,7 @@ do {								\
 #define TARGET_ASM_UNIQUE_SECTION  ia64_rwreloc_unique_section
 #undef  TARGET_ASM_SELECT_RTX_SECTION
 #define TARGET_ASM_SELECT_RTX_SECTION  ia64_rwreloc_select_rtx_section
-#undef  TARGET_SECTION_TYPE_FLAGS
-#define TARGET_SECTION_TYPE_FLAGS  ia64_rwreloc_section_type_flags
+#define TARGET_RWLOC  true
 
 /* ia64 HPUX has the float and long double forms of math functions.  */
 #undef TARGET_C99_FUNCTIONS

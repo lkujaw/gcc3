@@ -1206,9 +1206,9 @@ reload (rtx first, int global)
 	cleanup_subreg_operands (insn);
       }
 
-  /* If we are doing stack checking, give a warning if this function's
-     frame size is larger than we expect.  */
-  if (flag_stack_check && ! STACK_CHECK_BUILTIN)
+  /* If we are doing middle-end stack checking, give a warning if this
+     function's frame size is larger than we expect.  */
+  if (flag_stack_check == 1)
     {
       HOST_WIDE_INT size = get_frame_size () + STACK_CHECK_FIXED_FRAME_SIZE;
       static int verbose_warned = 0;
@@ -5588,6 +5588,15 @@ choose_reload_regs (struct insn_chain *chain)
 			 there.  */
 		      regno = subreg_regno (equiv);
 		      equiv = gen_rtx_REG (rld[r].mode, regno);
+		      /* If we choose EQUIV as the reload register, but the
+			 loop below decides to cancel the inheritance, we'll
+			 end up reloading EQUIV in rld[r].mode, not the mode
+			 it had originally.  That isn't safe when EQUIV isn't
+			 available as a spill register since its value might
+			 still be live at this point.  */
+		      for (i = regno; i < regno + (int) rld[r].nregs; i++)
+			if (TEST_HARD_REG_BIT (reload_reg_unavailable, i))
+			  equiv = 0;
 		    }
 		  else
 		    abort ();

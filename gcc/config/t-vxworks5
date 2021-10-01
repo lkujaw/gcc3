@@ -1,0 +1,12 @@
+# Extra gthread support for VxWorks 5.x
+
+# The functions in vxlib.c expect support functions to be provided by the
+# kernel. They are not in VxWorks 5.x, and a specific source is contributed in
+# the GCC tree to alleviate that. It's comments suggest making it an extra
+# kernel module, which is a bit annoying from the procedural standpoint.
+
+# We add it as an extra libgcc component here, where it could easily
+# be removed or replaced in case of conflict.
+ 
+LIB2FUNCS_EXTRA += $(srcdir)/../contrib/gthr_supp_vxw_5x.c
+

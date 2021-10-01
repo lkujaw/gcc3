@@ -3117,7 +3117,12 @@ mark_loop_jump (rtx x, struct loop *loop)
       return;
 
     case LABEL_REF:
-      dest_loop = uid_loop[INSN_UID (XEXP (x, 0))];
+      /* It's possible that this label is outside the valid ranges of UIDs
+	 if it's in a jump table that was left undeleted when unreachable
+	 blocks were deleted.  */
+      dest_loop
+	= (INSN_UID (XEXP (x, 0)) < max_uid_for_loop 
+	   ? uid_loop[INSN_UID (XEXP (x, 0))] : 0);
 
       /* Link together all labels that branch outside the loop.  This
 	 is used by final_[bg]iv_value and the loop unrolling code.  Also

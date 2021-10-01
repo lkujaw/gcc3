@@ -341,6 +341,8 @@ static int output_branch_count (FILE *, int, const arc_t *);
 static void output_lines (FILE *, const source_t *);
 static char *make_gcov_file_name (const char *, const char *);
 static void release_structures (void);
+static char *l_strchr (const char *);
+static char *l_strrchr (const char *);
 extern int main (int, char **);
 
 int
@@ -362,6 +364,35 @@ main (int argc, char **argv)
     }
 
   return 0;
+}
+
+static char *
+l_strchr (const char *file_name)
+{
+  char *p = (char *)file_name;
+
+  while (!IS_DIR_SEPARATOR (*p))
+    {
+      if (*p == '\0')
+	return NULL;
+      p++;
+    }
+  return p;
+}
+
+static char *
+l_strrchr (const char *file_name)
+{
+  char *p = (char *)&file_name [strlen (file_name) - 1];
+
+  while (!IS_DIR_SEPARATOR (*p))
+    {
+      p--;
+
+      if (p < file_name)
+	return NULL;
+    }
+  return p;
 }
 
 static void
@@ -409,7 +440,7 @@ print_usage (int error_p)
   fnotice (file, "  -o, --object-directory DIR|FILE Search for object files in DIR or called FILE\n");
   fnotice (file, "  -p, --preserve-paths            Preserve all pathname components\n");
   fnotice (file, "  -u, --unconditional-branches    Show unconditional branch counts too\n");
-  fnotice (file, "\nFor bug reporting instructions, please see:\n%s.\n",
+  fnotice (file, "\nFor bug reporting instructions, please contact:\n%s.\n",
 	   bug_report_url);
   exit (status);
 }
@@ -635,7 +666,7 @@ create_file_names (const char *file_name)
 
       base = !stat (object_directory, &status) && S_ISDIR (status.st_mode);
       strcat (name, object_directory);
-      if (base && name[strlen (name) - 1] != '/')
+      if (base && (! IS_DIR_SEPARATOR (name[strlen (name) - 1])))
 	strcat (name, "/");
     }
   else
@@ -648,7 +679,7 @@ create_file_names (const char *file_name)
   if (base)
     {
       /* Append source file name.  */
-      cptr = strrchr (file_name, '/');
+      cptr = l_strrchr (file_name);
       strcat (name, cptr ? cptr + 1 : file_name);
     }
 
@@ -1437,13 +1468,13 @@ make_gcov_file_name (const char *input_name, const char *src_name)
   if (flag_long_names && strcmp (src_name, input_name))
     {
       /* Generate the input filename part.  */
-      cptr = flag_preserve_paths ? NULL : strrchr (input_name, '/');
+      cptr = flag_preserve_paths ? NULL : l_strrchr (input_name);
       strcat (name, cptr ? cptr + 1 : input_name);
       strcat (name, "##");
     }
 
   /* Generate the source filename part.  */
-  cptr = flag_preserve_paths ? NULL : strrchr (src_name, '/');
+  cptr = flag_preserve_paths ? NULL : l_strrchr (src_name);
   strcat (name, cptr ? cptr + 1 : src_name);
 
   if (flag_preserve_paths)
@@ -1451,7 +1482,7 @@ make_gcov_file_name (const char *input_name, const char *src_name)
       /* Convert '/' to '#', remove '/./', convert '/../' to '/^/' */
       char *prev;
 
-      for (cptr = name; (cptr = strchr ((prev = cptr), '/'));)
+      for (cptr = name; (cptr = l_strchr ((prev = cptr)));)
 	{
 	  unsigned shift = 0;
 

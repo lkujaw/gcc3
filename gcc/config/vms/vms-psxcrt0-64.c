@@ -1,5 +1,5 @@
-/* VMS 64bit crt0 returning VMS style condition codes .
-   Copyright (C) 2001 Free Software Foundation, Inc.
+/* VMS 64bit crt0 returning Unix style condition codes .
+   Copyright (C) 2001-2005 Free Software Foundation, Inc.
    Contributed by Douglas B. Rupp (rupp@gnat.com).
 
 This file is part of GCC.
@@ -40,9 +40,10 @@ You Lose! This file can only be compiled with DEC C.
 #include <stdlib.h>
 #include <string.h>
 #include <ssdef.h>
+#include <stsdef.h>
+#include <errnodef.h>
 
 extern void decc$main ();
-
 extern int main ();
 
 static int
@@ -68,6 +69,7 @@ __main (arg1, arg2, arg3, image_file_desc, arg5, arg6)
   int i;
   char **long_argv;
   char **long_envp;
+  int status;
 
 #pragma __pointer_size short
 
@@ -77,23 +79,51 @@ __main (arg1, arg2, arg3, image_file_desc, arg5, arg6)
 
 #pragma __pointer_size long
 
-  /* Reallocate argv with 64 bit pointers.  */
-  long_argv = (char **) malloc (sizeof (char *) * (argc + 1));
+  /* Reallocate argv with 64 bit pointers. */
+  long_argv = (char **) _malloc32 (sizeof (char *) * (argc + 1));
 
   for (i = 0; i < argc; i++)
-    long_argv[i] = strdup (argv[i]);
+    long_argv[i] = (char *) _strdup32 (argv[i]);
 
   long_argv[argc] = (char *) 0;
 
-  long_envp = (char **) malloc (sizeof (char *) * 5);
+  for (i = 0; envp[i]; i++);
+  long_envp = (char **) _malloc32 (sizeof (char *) * (i + 1));
 
   for (i = 0; envp[i]; i++)
-    long_envp[i] = strdup (envp[i]);
+    long_envp[i] = (char *) _strdup32 (envp[i]);
 
   long_envp[i] = (char *) 0;
 
 #pragma __pointer_size short
 
-  return main (argc, long_argv, long_envp);
+  status = main (argc, long_argv, long_envp);
+
+  /* Map into a range of 0 - 255.  */
+  status = status & 255;
+
+  if (status > 0)
+    {
+      int save_status = status;
+
+      status = C$_EXIT1 + ((status - 1) << STS$V_MSG_NO);
+
+      /* An exit failure status requires a "severe" error.  All status values
+	 are defined in errno with a successful (1) severity but can be
+	 changed to an error (2) severity by adding 1.  In addition for
+	 compatibility with UNIX exit() routines we inhibit a run-time error
+	 message from being generated on exit(1).  */
+
+      if (save_status == 1)
+	{
+	  status++;
+	  status |= STS$M_INHIB_MSG;
+	}
+    }
+
+  if (status == 0)
+    status = SS$_NORMAL;
+
+  return status;
 }
 #endif

@@ -148,6 +148,8 @@ typedef void (*func_ptr) (void);
 
 #endif /* OBJECT_FORMAT_ELF */
 
+#ifndef __MINGW32__
+
 #ifdef CRT_BEGIN
 
 /* NOTE:  In order to be able to support SVR4 shared libraries, we arrange
@@ -287,8 +289,17 @@ __do_global_dtors_aux (void)
   completed = 1;
 }
 
+#ifdef FINI_SECTION_ASM_OP
 /* Stick a call to __do_global_dtors_aux into the .fini section.  */
 CRT_CALL_STATIC_FUNCTION (FINI_SECTION_ASM_OP, __do_global_dtors_aux)
+#else
+static void __attribute__((used))
+__do_global_dtors_aux_1 (void)
+{
+  atexit (__do_global_dtors_aux);
+}
+CRT_CALL_STATIC_FUNCTION (INIT_SECTION_ASM_OP, __do_global_dtors_aux_1)
+#endif
 
 #if defined(USE_EH_FRAME_REGISTRY) || defined(JCR_SECTION_NAME)
 /* Stick a call to __register_frame_info into the .init section.  For some
@@ -380,6 +391,12 @@ __do_global_dtors (void)
     __deregister_frame_info (__EH_FRAME_BEGIN__);
 #endif
 }
+
+/* We also use this case for VxWorks, and hook into __do_global_dtors for
+   application modules.  */
+#if defined (__vxworks) && !defined (CRTSTUFFS_O)
+func_ptr _dtors [] = {__do_global_dtors, 0};
+#endif
 
 #if defined(USE_EH_FRAME_REGISTRY) || defined(JCR_SECTION_NAME)
 /* A helper function for __do_global_ctors, which is in crtend.o.  Here
@@ -535,6 +552,19 @@ __do_global_ctors (void)
     (*p) ();
 }
 
+/* We also use this case for VxWorks, and hook into __do_global_ctors for
+   application modules.  */
+#ifdef __vxworks
+
+#ifndef CRTSTUFFS_O
+func_ptr _ctors [] = {__do_global_ctors, 0};
+const int __module_has_ctors = 1;
+#else
+const int __module_has_ctors = 0;
+#endif
+
+#endif
+
 #else /* ! INIT_SECTION_ASM_OP && ! HAS_INIT_SECTION */
 #error "What are you doing with crtstuff.c, then?"
 #endif
@@ -542,3 +572,85 @@ __do_global_ctors (void)
 #else /* ! CRT_BEGIN && ! CRT_END */
 #error "One of CRT_BEGIN or CRT_END must be defined."
 #endif
+
+#else /*__MINGW32__ */
+
+/* Use  __main to run ctors and dtors. This code generates a
+label for beginning of .eh_frame section in crtbegin.o and terminates
+the section in crtend.o. Registration and deregistration is done by
+installing ctor and dtor functions to do the job.  */
+
+  
+#ifdef CRT_BEGIN
+/* Stick a label at the beginning of the frame unwind info so we can
+   register/deregister it with the exception handling library code.  */
+
+char __EH_FRAME_BEGIN__[]
+     __attribute__((section(EH_FRAME_SECTION_NAME), aligned(4)))
+     = { };
+
+static struct object obj;
+extern  void __w32_sharedptr_initialize(void);
+
+/* These will pull in references from libgcc.a(unwind-dw2-fde.o) */
+
+void __do_frame_init (void);
+void __do_frame_fini (void);
+
+void
+__do_frame_init (void)
+{
+  __w32_sharedptr_initialize();
+  __register_frame_info (__EH_FRAME_BEGIN__, &obj);
+}
+
+void
+__do_frame_fini (void)
+{
+  __deregister_frame_info (__EH_FRAME_BEGIN__);
+}
+
+
+#elif defined CRT_END
+
+/* Terminate the frame unwind info section with a 0 as a sentinel;
+   this would be the 'length' field in a real FDE.  */
+static int __EH_FRAME_END__[]
+     __attribute__ ((unused, section(EH_FRAME_SECTION_NAME), aligned(4)))
+     = { 0 };
+
+/* Register the eh_frame. This has to be the first ctor to
+   be invoked so we put it in last. Since we're last, we can't
+   reference __register_frame_info in libgcc.a directly (if eh_frame
+   code has been referenced than it will have been pulled in but
+   we can't count on it) so we  call a stub in crtbegin.o.  */
+
+extern void __do_frame_init (void);
+static void __reg_frame_ctor (void) __attribute__ ((constructor));
+
+static void
+__reg_frame_ctor (void)
+{
+  __do_frame_init ();
+}
+
+
+/* Deregister the eh_frame. This has to be the last dtor. The
+   call to __register_frame_info in crtbegin.o will have pulled in
+   libgcc.a(unwind-dw2-fde.o) if libgcc.a is static lib but not if
+   dll, so we use a stub again to be sure.  */
+
+extern void __do_frame_fini (void);
+static void __dereg_frame_dtor (void) __attribute__ ((destructor));
+
+static void
+__dereg_frame_dtor (void)
+{
+  __do_frame_fini ();
+}
+
+#else /* ! CRT_BEGIN && ! CRT_END */
+#error "One of CRT_BEGIN or CRT_END must be defined."
+#endif
+
+#endif /* __MINGW32__ || __CYGWIN__ */

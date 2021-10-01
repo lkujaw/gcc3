@@ -29,6 +29,7 @@ Software Foundation, 59 Temple Place - Suite 330, Boston, MA
 #include "tree.h"
 #include "tm_p.h"
 #include "flags.h"
+#include "except.h"
 #include "function.h"
 #include "expr.h"
 #include "optabs.h"
@@ -756,6 +757,10 @@ copy_to_suggested_reg (rtx x, rtx target, enum machine_mode mode)
 
    FOR_CALL is nonzero if this call is promoting args for a call.  */
 
+#if defined(PROMOTE_MODE) && !defined(PROMOTE_FUNCTION_MODE)
+#define PROMOTE_FUNCTION_MODE PROMOTE_MODE
+#endif
+
 enum machine_mode
 promote_mode (tree type, enum machine_mode mode, int *punsignedp,
 	      int for_call ATTRIBUTE_UNUSED)
@@ -763,17 +768,28 @@ promote_mode (tree type, enum machine_mode mode, int *punsignedp,
   enum tree_code code = TREE_CODE (type);
   int unsignedp = *punsignedp;
 
-#ifdef PROMOTE_FOR_CALL_ONLY
+#ifndef PROMOTE_MODE
   if (! for_call)
     return mode;
 #endif
 
   switch (code)
     {
-#ifdef PROMOTE_MODE
+#ifdef PROMOTE_FUNCTION_MODE
     case INTEGER_TYPE:   case ENUMERAL_TYPE:   case BOOLEAN_TYPE:
     case CHAR_TYPE:      case REAL_TYPE:       case OFFSET_TYPE:
-      PROMOTE_MODE (mode, unsignedp, type);
+#ifdef PROMOTE_MODE
+      if (for_call)
+	{
+#endif
+	  PROMOTE_FUNCTION_MODE (mode, unsignedp, type);
+#ifdef PROMOTE_MODE
+	}
+      else
+	{
+	  PROMOTE_MODE (mode, unsignedp, type);
+	}
+#endif
       break;
 #endif
 
@@ -1115,7 +1131,9 @@ optimize_save_area_alloca (rtx insns)
 }
 #endif /* SETJMP_VIA_SAVE_AREA */
 
-/* Return an rtx representing the address of an area of memory dynamically
+/* o If KNOWN_ALIGN is positive or null:
+
+   Return an rtx representing the address of an area of memory dynamically
    pushed on the stack.  This region of memory is always aligned to
    a multiple of BIGGEST_ALIGNMENT.
 
@@ -1124,11 +1142,32 @@ optimize_save_area_alloca (rtx insns)
    SIZE is an rtx representing the size of the area.
    TARGET is a place in which the address can be placed.
 
-   KNOWN_ALIGN is the alignment (in bits) that we know SIZE has.  */
+   KNOWN_ALIGN is the alignment (in bits) that we know SIZE has.
+
+   o If KNOWN_ALIGN is negative:
+
+   Just allocate SIZE bytes, provided so that they are known to align
+   the stack pointer on the |KNOWN_ALIGN| bits boundary.
+
+   The allocation is only performed for stack pointer alignment
+   purposes, the allocated area shall not be used and we return NULL_RTX
+   to ensure so.
+
+
+   In both cases, if CANNOT_ACCUMULATE is set to TRUE, the caller guarantees
+   that the stack space allocated by the generated code cannot be added with
+   itself in the course of the execution of the function.  It is always safe
+   to pass FALSE here and the following criterion is sufficient in order to
+   pass TRUE: every path in the CFG that starts at the allocation point and
+   loops to it executes the associated deallocation code (that always exists
+   if the function does not use the depressed stack pointer mechanism).  */
 
 rtx
-allocate_dynamic_stack_space (rtx size, rtx target, int known_align)
+allocate_dynamic_stack_space (rtx size, rtx target, int known_align,
+			      bool cannot_accumulate)
 {
+  rtx aligning_size = (known_align < 0) ? size : NULL_RTX;
+
 #ifdef SETJMP_VIA_SAVE_AREA
   rtx setjmpless_size = NULL_RTX;
 #endif
@@ -1142,6 +1181,85 @@ allocate_dynamic_stack_space (rtx size, rtx target, int known_align)
   /* Otherwise, show we're calling alloca or equivalent.  */
   current_function_calls_alloca = 1;
 
+  /* If we are passed an aligning size, -known_align tells the resulting stack
+     alignment factor.  */
+  if (aligning_size)
+    known_align = -known_align;
+
+  /* Unless we are provided with an aligning_size ...
+
+     We will need to ensure that the address we return is aligned to
+     BIGGEST_ALIGNMENT.  If STACK_DYNAMIC_OFFSET is defined, we don't
+     always know its final value at this point in the compilation (it
+     might depend on the size of the outgoing parameter lists, for
+     example), so we must align the value to be returned in that case.
+     (Note that STACK_DYNAMIC_OFFSET will have a default nonzero value if
+     STACK_POINTER_OFFSET or ACCUMULATE_OUTGOING_ARGS are defined).
+     We must also do an alignment operation on the returned value if
+     the stack pointer alignment is less strict that BIGGEST_ALIGNMENT.  */
+
+#if defined (STACK_DYNAMIC_OFFSET) || defined (STACK_POINTER_OFFSET)
+#define MUST_ALIGN (!aligning_size)
+#else
+#define MUST_ALIGN \
+  (!aligning_size && PREFERRED_STACK_BOUNDARY < BIGGEST_ALIGNMENT)
+#endif
+
+  /* If stack usage info is requested, look into the size we are passed.
+     We need to do so this early to avoid the obfuscation that may be
+     introduced later by the various alignment operations.  */
+  if (flag_stack_usage_info)
+    {
+      HOST_WIDE_INT area_size = -1;
+
+      if (aligning_size)
+	area_size = known_align / BITS_PER_UNIT;
+      else if (GET_CODE (size) == CONST_INT)
+	area_size = INTVAL (size);
+      else if (GET_CODE (size) == REG)
+        {
+	  /* Look into the last emitted insn and see if we can deduce
+	     something for the register.  */
+	  rtx insn, set, note;
+	  insn = get_last_insn ();
+	  if ((set = single_set (insn))
+	      && rtx_equal_p (SET_DEST (set), size))
+	    {
+	      if (GET_CODE (SET_SRC (set)) == CONST_INT)
+		area_size = INTVAL (SET_SRC (set));
+	      else if ((note = find_reg_equal_equiv_note (insn))
+		       && GET_CODE (XEXP (note, 0)) == CONST_INT)
+		area_size = INTVAL (XEXP (note, 0));
+	    }
+	}
+
+      if (area_size == -1)
+	current_function_has_unbounded_dynamic_stack_size = 1;
+      else
+	{
+	  /* Account for subsequent alignment operations.  */
+	  if (MUST_ALIGN)
+	    area_size += BIGGEST_ALIGNMENT / BITS_PER_UNIT - 1;
+
+	  if (MUST_ALIGN || known_align % PREFERRED_STACK_BOUNDARY != 0)
+	    {
+	      int align = PREFERRED_STACK_BOUNDARY / BITS_PER_UNIT;
+	      area_size = (area_size + align - 1) / align * align;
+	    }
+
+	  current_function_dynamic_stack_size += area_size;
+
+	  /* ??? This is gross but the only safe stance in the absence
+	     of stack usage oriented flow analysis.  */
+	  if (! cannot_accumulate)
+	    current_function_has_unbounded_dynamic_stack_size = 1;
+	}
+
+#ifdef SETJMP_VIA_SAVE_AREA
+      current_function_dynamic_alloc_count++;
+#endif
+    }
+
   /* Ensure the size is in the proper mode.  */
   if (GET_MODE (size) != VOIDmode && GET_MODE (size) != Pmode)
     size = convert_to_mode (Pmode, size, 1);
@@ -1151,104 +1269,98 @@ allocate_dynamic_stack_space (rtx size, rtx target, int known_align)
      this code.  */
   cfun->preferred_stack_boundary = PREFERRED_STACK_BOUNDARY;
 
-  /* We will need to ensure that the address we return is aligned to
-     BIGGEST_ALIGNMENT.  If STACK_DYNAMIC_OFFSET is defined, we don't
-     always know its final value at this point in the compilation (it
-     might depend on the size of the outgoing parameter lists, for
-     example), so we must align the value to be returned in that case.
-     (Note that STACK_DYNAMIC_OFFSET will have a default nonzero value if
-     STACK_POINTER_OFFSET or ACCUMULATE_OUTGOING_ARGS are defined).
-     We must also do an alignment operation on the returned value if
-     the stack pointer alignment is less strict that BIGGEST_ALIGNMENT.
+  /* Before actually allocating, perform various size adjustments to
+     account for later alignment operations or for target specific
+     constraints like SETJMP_VIA_SAVE_AREA.  Don't do that if we have
+     been given an aligning size to allocate.  */
 
-     If we have to align, we must leave space in SIZE for the hole
-     that might result from the alignment operation.  */
-
-#if defined (STACK_DYNAMIC_OFFSET) || defined (STACK_POINTER_OFFSET)
-#define MUST_ALIGN 1
-#else
-#define MUST_ALIGN (PREFERRED_STACK_BOUNDARY < BIGGEST_ALIGNMENT)
-#endif
-
-  if (MUST_ALIGN)
-    size
-      = force_operand (plus_constant (size,
-				      BIGGEST_ALIGNMENT / BITS_PER_UNIT - 1),
-		       NULL_RTX);
+  if (!aligning_size)
+    {
+      /* If we have to align, we must leave space in SIZE for the hole
+	 that might result from the alignment operation.  */
+      if (MUST_ALIGN)
+	size
+	  = force_operand (plus_constant
+			     (size, BIGGEST_ALIGNMENT / BITS_PER_UNIT - 1),
+			   NULL_RTX);
 
 #ifdef SETJMP_VIA_SAVE_AREA
-  /* If setjmp restores regs from a save area in the stack frame,
-     avoid clobbering the reg save area.  Note that the offset of
-     virtual_incoming_args_rtx includes the preallocated stack args space.
-     It would be no problem to clobber that, but it's on the wrong side
-     of the old save area.  */
-  {
-    rtx dynamic_offset
-      = expand_binop (Pmode, sub_optab, virtual_stack_dynamic_rtx,
-		      stack_pointer_rtx, NULL_RTX, 1, OPTAB_LIB_WIDEN);
-
-    if (!current_function_calls_setjmp)
+      /* If setjmp restores regs from a save area in the stack frame,
+	 avoid clobbering the reg save area.  Note that the offset of
+	 virtual_incoming_args_rtx includes the preallocated stack args space.
+	 It would be no problem to clobber that, but it's on the wrong side
+	 of the old save area.  */
       {
-	int align = PREFERRED_STACK_BOUNDARY / BITS_PER_UNIT;
+	rtx dynamic_offset
+	  = expand_binop (Pmode, sub_optab, virtual_stack_dynamic_rtx,
+			  stack_pointer_rtx, NULL_RTX, 1, OPTAB_LIB_WIDEN);
 
-	/* See optimize_save_area_alloca to understand what is being
-	   set up here.  */
-
-	/* ??? Code below assumes that the save area needs maximal
-	   alignment.  This constraint may be too strong.  */
-	if (PREFERRED_STACK_BOUNDARY != BIGGEST_ALIGNMENT)
-	  abort ();
-
-	if (GET_CODE (size) == CONST_INT)
+	if (!current_function_calls_setjmp)
 	  {
-	    HOST_WIDE_INT new = INTVAL (size) / align * align;
+	    int align = PREFERRED_STACK_BOUNDARY / BITS_PER_UNIT;
 
-	    if (INTVAL (size) != new)
-	      setjmpless_size = GEN_INT (new);
+	    /* See optimize_save_area_alloca to understand what is being
+	       set up here.  */
+
+	    /* ??? Code below assumes that the save area needs maximal
+	       alignment.  This constraint may be too strong.  */
+	    if (PREFERRED_STACK_BOUNDARY != BIGGEST_ALIGNMENT)
+	      abort ();
+	    
+	    if (GET_CODE (size) == CONST_INT)
+	      {
+		HOST_WIDE_INT new = INTVAL (size) / align * align;
+		
+		if (INTVAL (size) != new)
+		  setjmpless_size = GEN_INT (new);
+		else
+		  setjmpless_size = size;
+	      }
 	    else
-	      setjmpless_size = size;
-	  }
-	else
-	  {
-	    /* Since we know overflow is not possible, we avoid using
-	       CEIL_DIV_EXPR and use TRUNC_DIV_EXPR instead.  */
-	    setjmpless_size = expand_divmod (0, TRUNC_DIV_EXPR, Pmode, size,
-					     GEN_INT (align), NULL_RTX, 1);
-	    setjmpless_size = expand_mult (Pmode, setjmpless_size,
-					   GEN_INT (align), NULL_RTX, 1);
-	  }
-	/* Our optimization works based upon being able to perform a simple
-	   transformation of this RTL into a (set REG REG) so make sure things
-	   did in fact end up in a REG.  */
-	if (!register_operand (setjmpless_size, Pmode))
-	  setjmpless_size = force_reg (Pmode, setjmpless_size);
-      }
+	      {
+		/* Since we know overflow is not possible, we avoid using
+		   CEIL_DIV_EXPR and use TRUNC_DIV_EXPR instead.  */
+		setjmpless_size
+		  = expand_divmod (0, TRUNC_DIV_EXPR, Pmode, size,
+				   GEN_INT (align), NULL_RTX, 1);
+		setjmpless_size
+		  = expand_mult (Pmode, setjmpless_size,
+				 GEN_INT (align), NULL_RTX, 1);
+	      }
 
-    size = expand_binop (Pmode, add_optab, size, dynamic_offset,
-			 NULL_RTX, 1, OPTAB_LIB_WIDEN);
-  }
+	    /* Our optimization works based upon being able to perform a
+	       simple transformation of this RTL into a (set REG REG) so make
+	       sure things did in fact end up in a REG.  */
+	    if (!register_operand (setjmpless_size, Pmode))
+	      setjmpless_size = force_reg (Pmode, setjmpless_size);
+	  }
+
+	size = expand_binop (Pmode, add_optab, size, dynamic_offset,
+			     NULL_RTX, 1, OPTAB_LIB_WIDEN);
+      }
 #endif /* SETJMP_VIA_SAVE_AREA */
 
-  /* Round the size to a multiple of the required stack alignment.
-     Since the stack if presumed to be rounded before this allocation,
-     this will maintain the required alignment.
+      /* Round the size to a multiple of the required stack alignment.
+	 Since the stack if presumed to be rounded before this allocation,
+	 this will maintain the required alignment.
 
-     If the stack grows downward, we could save an insn by subtracting
-     SIZE from the stack pointer and then aligning the stack pointer.
-     The problem with this is that the stack pointer may be unaligned
-     between the execution of the subtraction and alignment insns and
-     some machines do not allow this.  Even on those that do, some
-     signal handlers malfunction if a signal should occur between those
-     insns.  Since this is an extremely rare event, we have no reliable
-     way of knowing which systems have this problem.  So we avoid even
-     momentarily mis-aligning the stack.  */
+	 If the stack grows downward, we could save an insn by subtracting
+	 SIZE from the stack pointer and then aligning the stack pointer.
+	 The problem with this is that the stack pointer may be unaligned
+	 between the execution of the subtraction and alignment insns and
+	 some machines do not allow this.  Even on those that do, some
+	 signal handlers malfunction if a signal should occur between those
+	 insns.  Since this is an extremely rare event, we have no reliable
+	 way of knowing which systems have this problem.  So we avoid even
+	 momentarily mis-aligning the stack.  */
 
-  /* If we added a variable amount to SIZE,
-     we can no longer assume it is aligned.  */
+      /* If we added a variable amount to SIZE,
+	 we can no longer assume it is aligned.  */
 #if !defined (SETJMP_VIA_SAVE_AREA)
-  if (MUST_ALIGN || known_align % PREFERRED_STACK_BOUNDARY != 0)
+      if (MUST_ALIGN || known_align % PREFERRED_STACK_BOUNDARY != 0)
 #endif
-    size = round_push (size);
+	size = round_push (size);
+    }
 
   do_pending_stack_adjust ();
 
@@ -1259,8 +1371,11 @@ allocate_dynamic_stack_space (rtx size, rtx target, int known_align)
 
   /* If needed, check that we have the required amount of stack.  Take into
      account what has already been checked.  */
-  if (flag_stack_check && ! STACK_CHECK_BUILTIN)
-    probe_stack_range (STACK_CHECK_MAX_FRAME_SIZE + STACK_CHECK_PROTECT, size);
+  if (flag_stack_check == 1)
+    probe_stack_range (STACK_OLD_CHECK_PROTECT + STACK_CHECK_MAX_FRAME_SIZE,
+		       size);
+  else if (flag_stack_check == 2)
+    probe_stack_range (STACK_CHECK_PROTECT, size);
 
   /* Don't use a TARGET that isn't a pseudo or is the wrong mode.  */
   if (target == 0 || GET_CODE (target) != REG
@@ -1362,20 +1477,13 @@ allocate_dynamic_stack_space (rtx size, rtx target, int known_align)
   if (nonlocal_goto_handler_slots != 0)
     emit_stack_save (SAVE_NONLOCAL, &nonlocal_goto_stack_level, NULL_RTX);
 
-  return target;
+  return !aligning_size ? target : NULL_RTX;
 }
 
 /* A front end may want to override GCC's stack checking by providing a
-   run-time routine to call to check the stack, so provide a mechanism for
-   calling that routine.  */
+   run-time routine to call to check the stack.  */
 
-static GTY(()) rtx stack_check_libfunc;
-
-void
-set_stack_check_libfunc (rtx libfunc)
-{
-  stack_check_libfunc = libfunc;
-}
+rtx stack_check_libfunc;
 
 /* Emit one stack probe at ADDRESS, an address within the stack.  */
 
@@ -1398,15 +1506,25 @@ emit_stack_probe (rtx address)
    subtract from the stack.  If SIZE is constant, this is done
    with a fixed number of probes.  Otherwise, we must make a loop.  */
 
+#define PROBE_INTERVAL (1 << STACK_CHECK_PROBE_INTERVAL_EXP)
+
 #ifdef STACK_GROWS_DOWNWARD
-#define STACK_GROW_OP MINUS
+#define STACK_GROW_OP     MINUS
+#define STACK_GROW_OPTAB  sub_optab
 #else
-#define STACK_GROW_OP PLUS
+#define STACK_GROW_OP     PLUS
+#define STACK_GROW_OPTAB  add_optab
 #endif
 
 void
 probe_stack_range (HOST_WIDE_INT first, rtx size)
 {
+#ifdef SPARC_STACK_BIAS
+  /* The probe offsets are counted negatively whereas the stack bias is
+     counted positively.  */
+  first -= SPARC_STACK_BIAS;
+#endif
+
   /* First ensure SIZE is Pmode.  */
   if (GET_MODE (size) != VOIDmode && GET_MODE (size) != Pmode)
     size = convert_to_mode (Pmode, size, 1);
@@ -1421,7 +1539,7 @@ probe_stack_range (HOST_WIDE_INT first, rtx size)
 					         plus_constant (size, first)));
 
       addr = convert_memory_address (ptr_mode, addr);
-      emit_library_call (stack_check_libfunc, LCT_NORMAL, VOIDmode, 1, addr,
+      emit_library_call (stack_check_libfunc, LCT_MAY_THROW, VOIDmode, 1, addr,
 			 ptr_mode);
     }
 
@@ -1447,20 +1565,17 @@ probe_stack_range (HOST_WIDE_INT first, rtx size)
   /* If we have to generate explicit probes, see if we have a constant
      small number of them to generate.  If so, that's the easy case.  */
   else if (GET_CODE (size) == CONST_INT
-	   && INTVAL (size) < 10 * STACK_CHECK_PROBE_INTERVAL)
+	   && INTVAL (size) < 10 * PROBE_INTERVAL)
     {
-      HOST_WIDE_INT offset;
+      HOST_WIDE_INT i;
 
-      /* Start probing at FIRST + N * STACK_CHECK_PROBE_INTERVAL
-	 for values of N from 1 until it exceeds LAST.  If only one
-	 probe is needed, this will not generate any code.  Then probe
-	 at LAST.  */
-      for (offset = first + STACK_CHECK_PROBE_INTERVAL;
-	   offset < INTVAL (size);
-	   offset = offset + STACK_CHECK_PROBE_INTERVAL)
+      /* Probe at FIRST + N * PROBE_INTERVAL for values of N from 1 until
+	 it exceeds SIZE.  If only one probe is needed, this will not
+	 generate any code.  Then probe at SIZE.  */
+      for (i = PROBE_INTERVAL; i < INTVAL (size); i += PROBE_INTERVAL)
 	emit_stack_probe (gen_rtx_fmt_ee (STACK_GROW_OP, Pmode,
 					  stack_pointer_rtx,
-					  GEN_INT (offset)));
+					  GEN_INT (i + first)));
 
       emit_stack_probe (gen_rtx_fmt_ee (STACK_GROW_OP, Pmode,
 					stack_pointer_rtx,
@@ -1468,61 +1583,96 @@ probe_stack_range (HOST_WIDE_INT first, rtx size)
     }
 
   /* In the variable case, do the same as above, but in a loop.  We emit loop
-     notes so that loop optimization can be done.  */
+     notes so that loop optimization can be done.  Note that we must be extra
+     careful with variables wrapping around because we might be at the very
+     top (or the very bottom) of the address space and we have to be able to
+     handle this case properly; in particular, we use an equality test for
+     the loop condition.  */
   else
     {
-      rtx test_addr
-	= force_operand (gen_rtx_fmt_ee (STACK_GROW_OP, Pmode,
-					 stack_pointer_rtx,
-					 GEN_INT (first + STACK_CHECK_PROBE_INTERVAL)),
-			 NULL_RTX);
-      rtx last_addr
-	= force_operand (gen_rtx_fmt_ee (STACK_GROW_OP, Pmode,
-					 stack_pointer_rtx,
-					 plus_constant (size, first)),
-			 NULL_RTX);
-      rtx incr = GEN_INT (STACK_CHECK_PROBE_INTERVAL);
+      rtx rounded_size, rounded_size_op, test_addr, last_addr, temp;
       rtx loop_lab = gen_label_rtx ();
-      rtx test_lab = gen_label_rtx ();
       rtx end_lab = gen_label_rtx ();
-      rtx temp;
 
-      if (GET_CODE (test_addr) != REG
-	  || REGNO (test_addr) < FIRST_PSEUDO_REGISTER)
-	test_addr = force_reg (Pmode, test_addr);
+      /* Step 1: round SIZE to the previous multiple of the interval.  */
+
+      /* ROUNDED_SIZE = SIZE & -PROBE_INTERVAL  */
+      rounded_size = simplify_gen_binary (AND, Pmode,
+					  size,
+					  GEN_INT (-PROBE_INTERVAL));
+      rounded_size_op = force_operand (rounded_size, NULL_RTX);
+
+
+      /* Step 2: compute initial and final value of the loop counter.  */
+
+      /* TEST_ADDR = SP + FIRST.  */
+      test_addr = force_operand (gen_rtx_fmt_ee (STACK_GROW_OP, Pmode,
+					 	 stack_pointer_rtx,
+					 	 GEN_INT (first)),
+				 NULL_RTX);
+
+      /* LAST_ADDR = SP + FIRST + ROUNDED_SIZE.  */
+      last_addr = force_operand (gen_rtx_fmt_ee (STACK_GROW_OP, Pmode,
+						 test_addr,
+						 rounded_size_op),
+				 NULL_RTX);
+
+
+      /* Step 3: the loop
+
+	  while (TEST_ADDR != LAST_ADDR)
+	    {
+	      TEST_ADDR = TEST_ADDR + PROBE_INTERVAL
+	      probe at TEST_ADDR
+	    }
+
+	 probes at FIRST + N * PROBE_INTERVAL for values of N from 1
+	 until it exceeds ROUNDED_SIZE.  */
 
       emit_note (NOTE_INSN_LOOP_BEG);
-      emit_jump (test_lab);
-
-      emit_label (loop_lab);
-      emit_stack_probe (test_addr);
-
       emit_note (NOTE_INSN_LOOP_CONT);
+      emit_label (loop_lab);
 
-#ifdef STACK_GROWS_DOWNWARD
-#define CMP_OPCODE GTU
-      temp = expand_binop (Pmode, sub_optab, test_addr, incr, test_addr,
+      /* Jump to END_LAB if TEST_ADDR == LAST_ADDR.  */
+      emit_cmp_and_jump_insns (test_addr, last_addr, EQ,
+			       NULL_RTX, Pmode, 1, end_lab);
+
+      emit_note (NOTE_INSN_LOOP_END_TOP_COND);
+
+      /* TEST_ADDR = TEST_ADDR + PROBE_INTERVAL.  */
+      temp = expand_binop (Pmode, STACK_GROW_OPTAB, test_addr,
+			   GEN_INT (PROBE_INTERVAL), test_addr,
 			   1, OPTAB_WIDEN);
-#else
-#define CMP_OPCODE LTU
-      temp = expand_binop (Pmode, add_optab, test_addr, incr, test_addr,
-			   1, OPTAB_WIDEN);
-#endif
 
       if (temp != test_addr)
-	abort ();
+	abort ();      
 
-      emit_label (test_lab);
-      emit_cmp_and_jump_insns (test_addr, last_addr, CMP_OPCODE,
-			       NULL_RTX, Pmode, 1, loop_lab);
-      emit_jump (end_lab);
-      emit_note (NOTE_INSN_LOOP_END);
+      /* Probe at TEST_ADDR.  */
+      emit_stack_probe (test_addr);
+
+      emit_jump (loop_lab);
+
       emit_label (end_lab);
+      emit_note (NOTE_INSN_LOOP_END);
 
-      emit_stack_probe (last_addr);
+
+      /* Step 4: probe at SIZE if we cannot assert at compile-time that
+	 it is equal to ROUNDED_SIZE.  */
+
+      /* TEMP = SIZE - ROUNDED_SIZE.  */
+      temp = simplify_gen_binary (MINUS, Pmode, size, rounded_size);
+      if (temp != const0_rtx)
+	{
+	  /* Manual CSE if the difference is not known at compile-time.  */
+	  if (GET_CODE (temp) != CONST_INT)
+	    temp = gen_rtx_MINUS (Pmode, size, rounded_size_op);
+	  emit_stack_probe (gen_rtx_fmt_ee (STACK_GROW_OP, Pmode,
+					    last_addr,
+					    temp));
+	}
     }
 }
-
+
 /* Return an rtx representing the register or memory location
    in which a scalar value of data type VALTYPE
    was returned by a function call to function FUNC.
@@ -1618,5 +1768,3 @@ rtx_to_tree_code (enum rtx_code code)
     }
   return ((int) tcode);
 }
-
-#include "gt-explow.h"
