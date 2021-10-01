@@ -6,7 +6,7 @@
 --                                                                          --
 --                                 B o d y                                  --
 --                                                                          --
---          Copyright (C) 1992-2003, Free Software Foundation, Inc.         --
+--          Copyright (C) 1992-2006, Free Software Foundation, Inc.         --
 --                                                                          --
 -- GNAT is free software;  you can  redistribute it  and/or modify it under --
 -- terms of the  GNU General Public License as published  by the Free Soft- --
@@ -16,8 +16,8 @@
 -- or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License --
 -- for  more details.  You should have  received  a copy of the GNU General --
 -- Public License  distributed with GNAT;  see file COPYING.  If not, write --
--- to  the Free Software Foundation,  59 Temple Place - Suite 330,  Boston, --
--- MA 02111-1307, USA.                                                      --
+-- to  the  Free Software Foundation,  51  Franklin  Street,  Fifth  Floor, --
+-- Boston, MA 02110-1301, USA.                                              --
 --                                                                          --
 -- GNAT was originally developed  by the GNAT team at  New York University. --
 -- Extensive contributions were provided by Ada Core Technologies Inc.      --
@@ -29,10 +29,10 @@ with Debug;    use Debug;
 with Einfo;    use Einfo;
 with Elists;   use Elists;
 with Errout;   use Errout;
-with Exp_Tss;  use Exp_Tss;
 with Fname;    use Fname;
 with Lib;      use Lib;
 with Nlists;   use Nlists;
+with Opt;      use Opt;
 with Sem;      use Sem;
 with Sem_Eval; use Sem_Eval;
 with Sem_Util; use Sem_Util;
@@ -72,6 +72,8 @@ package body Sem_Cat is
    function Missing_Read_Write_Attributes (E : Entity_Id) return Boolean;
    --  Return True if the entity or one of its subcomponent is an access
    --  type which does not have user-defined Read and Write attribute.
+   --  Additionally, in Ada 2005 mode, stream attributes are considered missing
+   --  if the attribute definition clause is not visible.
 
    function In_RCI_Declaration (N : Node_Id) return Boolean;
    --  Determines if a declaration is  within the visible part of  a Remote
@@ -83,7 +85,8 @@ package body Sem_Cat is
    --  for semantic checking purposes.
 
    function Is_Non_Remote_Access_Type (E : Entity_Id) return Boolean;
-   --  Returns true if the entity is a non-remote access type
+   --  Returns true if the entity is a type whose full view is a non-remote
+   --  access type, for the purpose of enforcing E.2.2(8) rules.
 
    function In_Shared_Passive_Unit return Boolean;
    --  Determines if current scope is within a Shared Passive compilation unit
@@ -117,9 +120,17 @@ package body Sem_Cat is
    is
       N : constant Node_Id := Info_Node;
 
+      --  Here we define an enumeration type to represent categorization
+      --  types, ordered so that a unit with a given categorization can
+      --  only WITH units with lower or equal categorization type.
+
       type Categorization is
-         (Pure, Shared_Passive, Remote_Types,
-           Remote_Call_Interface, Pre_Elaborated, Normal);
+        (Pure,
+         Shared_Passive,
+         Remote_Types,
+         Remote_Call_Interface,
+         Preelaborated,
+         Normal);
 
       Unit_Category : Categorization;
       With_Category : Categorization;
@@ -135,15 +146,25 @@ package body Sem_Cat is
       function Get_Categorization (E : Entity_Id) return Categorization is
       begin
          if Is_Preelaborated (E) then
-            return Pre_Elaborated;
-         elsif Is_Pure (E) then
+            return Preelaborated;
+
+            --  Ignore Pure specification if set by pragma Pure_Function
+
+         elsif Is_Pure (E)
+           and then not
+             (Has_Pragma_Pure_Function (E) and not Has_Pragma_Pure (E))
+         then
             return Pure;
+
          elsif Is_Shared_Passive (E) then
             return Shared_Passive;
+
          elsif Is_Remote_Types (E) then
             return Remote_Types;
+
          elsif Is_Remote_Call_Interface (E) then
             return Remote_Call_Interface;
+
          else
             return Normal;
          end if;
@@ -162,23 +183,57 @@ package body Sem_Cat is
       Unit_Category := Get_Categorization (Unit_Entity);
       With_Category := Get_Categorization (Depended_Entity);
 
+      --  These messages are wanings in GNAT mode, to allow it to be
+      --  judiciously turned off. Otherwise it is a real error.
+
+      Error_Msg_Warn := GNAT_Mode;
+
+      --  Check for possible error
+
       if With_Category > Unit_Category then
 
+         --  Special case: Remote_Types and Remote_Call_Interface are allowed
+         --  to be with'ed in package body.
+
          if (Unit_Category = Remote_Types
-                 or else Unit_Category = Remote_Call_Interface)
+               or else Unit_Category = Remote_Call_Interface)
            and then In_Package_Body (Unit_Entity)
          then
             null;
 
-         elsif Is_Subunit then
-            Error_Msg_NE ("subunit cannot depend on&"
-              & " (parent has wrong categorization)", N, Depended_Entity);
+         --  Here we have an error
+
          else
-            Error_Msg_NE ("current unit cannot depend on&"
-              & " (wrong categorization)", N, Depended_Entity);
+            if Is_Subunit then
+               Error_Msg_NE
+                 ("<subunit cannot depend on& " &
+                  "(parent has wrong categorization)", N, Depended_Entity);
+
+            else
+               Error_Msg_NE
+                 ("<cannot depend on& " &
+                  "(wrong categorization)", N, Depended_Entity);
+            end if;
+
+            --  Add further explanation for common cases
+
+            case Unit_Category is
+               when Pure =>
+                  Error_Msg_NE
+                    ("\<pure unit cannot depend on non-pure unit",
+                    N, Depended_Entity);
+
+               when Preelaborated =>
+                  Error_Msg_NE
+                    ("\<preelaborated unit cannot depend on " &
+                     "non-preelaborated unit",
+                     N, Depended_Entity);
+
+               when others =>
+                  null;
+            end case;
          end if;
       end if;
-
    end Check_Categorization_Dependencies;
 
    -----------------------------------
@@ -242,6 +297,51 @@ package body Sem_Cat is
       end loop;
    end Check_Non_Static_Default_Expr;
 
+   -------------------------------------
+   -- Has_Stream_Attribute_Definition --
+   -------------------------------------
+
+   function Has_Stream_Attribute_Definition
+     (Typ : Entity_Id; Nam : TSS_Name_Type) return Boolean
+   is
+      Rep_Item : Node_Id;
+   begin
+      --  We start from the declaration node and then loop until the end of
+      --  the list until we find the requested attribute definition clause.
+      --  In Ada 2005 mode, clauses are ignored if they are not currently
+      --  visible (this is tested using the corresponding Entity, which is
+      --  inserted by the expander at the point where the clause occurs).
+
+      Rep_Item := First_Rep_Item (Typ);
+      while Present (Rep_Item) loop
+         if Nkind (Rep_Item) = N_Attribute_Definition_Clause then
+            case Chars (Rep_Item) is
+               when Name_Read =>
+                  exit when Nam = TSS_Stream_Read;
+
+               when Name_Write =>
+                  exit when Nam = TSS_Stream_Write;
+
+               when Name_Input =>
+                  exit when Nam = TSS_Stream_Input;
+
+               when Name_Output =>
+                  exit when Nam = TSS_Stream_Output;
+
+               when others =>
+                  null;
+
+            end case;
+         end if;
+
+         Next_Rep_Item (Rep_Item);
+      end loop;
+
+      return Present (Rep_Item)
+        and then (Ada_Version < Ada_05
+                   or else not Is_Hidden (Entity (Rep_Item)));
+   end Has_Stream_Attribute_Definition;
+
    ---------------------------
    -- In_Preelaborated_Unit --
    ---------------------------
@@ -253,7 +353,7 @@ package body Sem_Cat is
 
    begin
       --  There are no constraints on body of remote_call_interface or
-      --  remote_types packages..
+      --  remote_types packages.
 
       return (Unit_Entity /= Standard_Standard)
         and then (Is_Preelaborated (Unit_Entity)
@@ -311,7 +411,7 @@ package body Sem_Cat is
                       Nkind (Unit (Cunit (Current_Sem_Unit)));
 
    begin
-      --  There are no restrictions on the body of a Remote Types unit.
+      --  There are no restrictions on the body of a Remote Types unit
 
       return Is_Remote_Types (Unit_Entity)
         and then (Ekind (Unit_Entity) = E_Package
@@ -369,10 +469,19 @@ package body Sem_Cat is
    -------------------------------
 
    function Is_Non_Remote_Access_Type (E : Entity_Id) return Boolean is
+      U_E : constant Entity_Id := Underlying_Type (E);
    begin
-      return Is_Access_Type (E)
-        and then not Is_Remote_Access_To_Class_Wide_Type (E)
-        and then not Is_Remote_Access_To_Subprogram_Type (E);
+      if No (U_E) then
+
+         --  This case arises for the case of a generic formal type, in which
+         --  case E.2.2(8) rules will be enforced at instantiation time.
+
+         return False;
+      end if;
+
+      return Is_Access_Type (U_E)
+        and then not Is_Remote_Access_To_Class_Wide_Type (U_E)
+        and then not Is_Remote_Access_To_Subprogram_Type (U_E);
    end Is_Non_Remote_Access_Type;
 
    ------------------------------------
@@ -407,59 +516,47 @@ package body Sem_Cat is
    function Missing_Read_Write_Attributes (E : Entity_Id) return Boolean is
       Component      : Entity_Id;
       Component_Type : Entity_Id;
+      U_E            : constant Entity_Id := Underlying_Type (E);
 
       function Has_Read_Write_Attributes (E : Entity_Id) return Boolean;
-      --  Return True if entity has Read and Write attributes
+      --  Return True if entity has visible attribute definition clauses for
+      --  Read and Write attributes.
 
       -------------------------------
       -- Has_Read_Write_Attributes --
       -------------------------------
 
       function Has_Read_Write_Attributes (E : Entity_Id) return Boolean is
-         Rep_Item        : Node_Id := First_Rep_Item (E);
-         Read_Attribute  : Boolean := False;
-         Write_Attribute : Boolean := False;
-
       begin
-         --  We start from the declaration node and then loop until the end
-         --  of the list until we find those two attribute definition clauses.
-
-         while Present (Rep_Item) loop
-            if Chars (Rep_Item) = Name_Read then
-               Read_Attribute := True;
-            elsif Chars (Rep_Item) = Name_Write then
-               Write_Attribute := True;
-            end if;
-
-            if Read_Attribute and Write_Attribute then
-               return True;
-            end if;
-
-            Next_Rep_Item (Rep_Item);
-         end loop;
-
-         return False;
+         return True
+           and then Has_Stream_Attribute_Definition (E, TSS_Stream_Read)
+           and then Has_Stream_Attribute_Definition (E, TSS_Stream_Write);
       end Has_Read_Write_Attributes;
 
    --  Start of processing for Missing_Read_Write_Attributes
 
    begin
-      if Has_Read_Write_Attributes (E) then
+      if No (U_E) then
          return False;
-      elsif Is_Non_Remote_Access_Type (E) then
+
+      elsif Has_Read_Write_Attributes (E)
+        or else Has_Read_Write_Attributes (U_E)
+      then
+         return False;
+
+      elsif Is_Non_Remote_Access_Type (U_E) then
          return True;
       end if;
 
-      if Is_Record_Type (E) then
-         Component := First_Entity (E);
+      if Is_Record_Type (U_E) then
+         Component := First_Entity (U_E);
          while Present (Component) loop
-            Component_Type := Etype (Component);
+            if not Is_Tag (Component) then
+               Component_Type := Etype (Component);
 
-            if (Is_Non_Remote_Access_Type (Component_Type)
-                or else Is_Record_Type (Component_Type))
-              and then Missing_Read_Write_Attributes (Component_Type)
-            then
-               return True;
+               if Missing_Read_Write_Attributes (Component_Type) then
+                  return True;
+               end if;
             end if;
 
             Next_Entity (Component);
@@ -483,15 +580,21 @@ package body Sem_Cat is
          --  the argument of the pragma can be resolved properly, and reset
          --  afterwards.
 
-      procedure Set_Parents (Visibility : Boolean) is
-         Par : Entity_Id := Scope (S);
+      -----------------
+      -- Set_Parents --
+      -----------------
 
+      procedure Set_Parents (Visibility : Boolean) is
+         Par : Entity_Id;
       begin
+         Par := Scope (S);
          while Present (Par) and then Par /= Standard_Standard loop
             Set_Is_Immediately_Visible (Par, Visibility);
             Par := Scope (Par);
          end loop;
       end Set_Parents;
+
+   --  Start of processing for Set_Categorization_From_Pragmas
 
    begin
       --  Deal with categorization pragmas in Pragmas of Compilation_Unit.
@@ -505,16 +608,16 @@ package body Sem_Cat is
       end if;
 
       declare
-         PN : Node_Id := First (Pragmas_After (Aux_Decls_Node (P)));
+         PN : Node_Id;
 
       begin
-
          if Is_Child_Unit (S)
            and then Is_Generic_Instance (S)
          then
             Set_Parents (True);
          end if;
 
+         PN := First (Pragmas_After (Aux_Decls_Node (P)));
          while Present (PN) loop
 
             --  Skip implicit types that may have been introduced by
@@ -535,12 +638,12 @@ package body Sem_Cat is
 
             Next (PN);
          end loop;
+
          if Is_Child_Unit (S)
            and then Is_Generic_Instance (S)
          then
             Set_Parents (False);
          end if;
-
       end;
    end Set_Categorization_From_Pragmas;
 
@@ -624,34 +727,49 @@ package body Sem_Cat is
 
    begin
       case Nkind (Def) is
+
+         --  Access to subprogram case
+
          when N_Access_To_Subprogram_Definition =>
 
             --  A pure library_item must not contain the declaration of a
             --  named access type, except within a subprogram, generic
             --  subprogram, task unit, or protected unit (RM 10.2.1(16)).
 
-            if Comes_From_Source (T)
-               and then In_Pure_Unit
-               and then not In_Subprogram_Task_Protected_Unit
+            --  This test is skipped in Ada 2005 (see AI-366)
+
+            if Ada_Version < Ada_05
+              and then Comes_From_Source (T)
+              and then In_Pure_Unit
+              and then not In_Subprogram_Task_Protected_Unit
             then
                Error_Msg_N ("named access type not allowed in pure unit", T);
             end if;
 
-         when N_Access_To_Object_Definition =>
+         --  Access to object case
 
+         when N_Access_To_Object_Definition =>
             if Comes_From_Source (T)
               and then In_Pure_Unit
               and then not In_Subprogram_Task_Protected_Unit
             then
-               Error_Msg_N
-                 ("named access type not allowed in pure unit", T);
+               --  We can't give the message yet, since the type is not frozen
+               --  and in Ada 2005 mode, access types are allowed in pure units
+               --  if the type has no storage pool (see AI-366). So we set a
+               --  flag which will be checked at freeze time.
+
+               Set_Is_Pure_Unit_Access_Type (T);
             end if;
 
-            --  Check for RCI or RT unit type declaration. It should not
-            --  contain the declaration of an access-to-object type unless it
-            --  is a general access type that designates a class-wide limited
-            --  private type. There are also constraints about the primitive
-            --  subprograms of the class-wide type.
+            --  Check for RCI or RT unit type declaration: declaration of an
+            --  access-to-object type is illegal unless it is a general access
+            --  type that designates a class-wide limited private type.
+            --  Note that constraints on the primitive subprograms of the
+            --  designated tagged type are not enforced here but in
+            --  Validate_RACW_Primitives, which is done separately because the
+            --  designated type might not be frozen (and therefore its
+            --  primitive operations might not be completely known) at the
+            --  point of the RACW declaration.
 
             Validate_Remote_Access_Object_Type_Declaration (T);
 
@@ -661,7 +779,8 @@ package body Sem_Cat is
 
             Validate_SP_Access_Object_Type_Decl (T);
 
-         when others => null;
+         when others =>
+            null;
       end case;
 
       --  Set categorization flag from package on entity as well, to allow
@@ -745,14 +864,13 @@ package body Sem_Cat is
          loop
             U := Scope (U);
          end loop;
-
       end if;
 
       if Nkind (P) /= N_Compilation_Unit then
          return;
       end if;
 
-      --  Body of RCI unit does not need validation.
+      --  Body of RCI unit does not need validation
 
       if Is_Remote_Call_Interface (E)
         and then (Nkind (N) = N_Package_Body
@@ -761,7 +879,7 @@ package body Sem_Cat is
          return;
       end if;
 
-      --  Ada0Y (AI-50217): Process explicit with_clauses that are not limited
+      --  Ada 2005 (AI-50217): Process explicit non-limited with_clauses
 
       declare
          Item             : Node_Id;
@@ -769,7 +887,6 @@ package body Sem_Cat is
 
       begin
          Item := First (Context_Items (P));
-
          while Present (Item) loop
             if Nkind (Item) = N_With_Clause
               and then not (Implicit_With (Item)
@@ -784,10 +901,10 @@ package body Sem_Cat is
          end loop;
       end;
 
-      --  Child depends on parent; therefore parent should also
-      --  be categorized and satify the dependency hierarchy.
+      --  Child depends on parent; therefore parent should also be categorized
+      --  and satify the dependency hierarchy.
 
-      --  Check if N is a child spec.
+      --  Check if N is a child spec
 
       if (K in N_Generic_Declaration              or else
           K in N_Generic_Instantiation            or else
@@ -798,42 +915,18 @@ package body Sem_Cat is
           K =  N_Subprogram_Renaming_Declaration)
         and then Present (Parent_Spec (N))
       then
-         declare
-            Parent_Lib_U  : constant Node_Id   := Parent_Spec (N);
-            Parent_Kind   : constant Node_Kind :=
-                              Nkind (Unit (Parent_Lib_U));
-            Parent_Entity : Entity_Id;
+         Check_Categorization_Dependencies (E, Scope (E), N, False);
 
-         begin
-            if        Parent_Kind =  N_Package_Instantiation
-              or else Parent_Kind =  N_Procedure_Instantiation
-              or else Parent_Kind =  N_Function_Instantiation
-              or else Parent_Kind =  N_Package_Renaming_Declaration
-              or else Parent_Kind in N_Generic_Renaming_Declaration
-            then
-               Parent_Entity := Defining_Entity (Unit (Parent_Lib_U));
+         --  Verify that public child of an RCI library unit must also be an
+         --  RCI library unit (RM E.2.3(15)).
 
-            else
-               Parent_Entity :=
-                 Defining_Entity (Specification (Unit (Parent_Lib_U)));
-            end if;
-
-            Check_Categorization_Dependencies (E, Parent_Entity, N, False);
-
-            --  Verify that public child of an RCI library unit
-            --  must also be an RCI library unit (RM E.2.3(15)).
-
-            if Is_Remote_Call_Interface (Parent_Entity)
-              and then not Private_Present (P)
-              and then not Is_Remote_Call_Interface (E)
-            then
-               Error_Msg_N
-                 ("public child of rci unit must also be rci unit", N);
-               return;
-            end if;
-         end;
+         if Is_Remote_Call_Interface (Scope (E))
+           and then not Private_Present (P)
+           and then not Is_Remote_Call_Interface (E)
+         then
+            Error_Msg_N ("public child of rci unit must also be rci unit", N);
+         end if;
       end if;
-
    end Validate_Categorization_Dependency;
 
    --------------------------------
@@ -842,6 +935,13 @@ package body Sem_Cat is
 
    procedure Validate_Controlled_Object (E : Entity_Id) is
    begin
+      --  Don't need this check in Ada 2005 mode, where this is all taken
+      --  care of by the mechanism for Preelaborable Initialization.
+
+      if Ada_Version >= Ada_05 then
+         return;
+      end if;
+
       --  For now, never apply this check for internal GNAT units, since we
       --  have a number of cases in the library where we are stuck with objects
       --  of this type, and the RM requires Preelaborate.
@@ -879,13 +979,17 @@ package body Sem_Cat is
    begin
       if In_Preelaborated_Unit then
          Item := First (Statements (Handled_Statement_Sequence (N)));
-
          while Present (Item) loop
             if Nkind (Item) /= N_Label
               and then Nkind (Item) /= N_Null_Statement
             then
+               --  In GNAT mode, this is a warning, allowing the run-time
+               --  to judiciously bypass this error condition.
+
+               Error_Msg_Warn := GNAT_Mode;
                Error_Msg_N
-                 ("statements not allowed in preelaborated unit", Item);
+                 ("<statements not allowed in preelaborated unit", Item);
+
                exit;
             end if;
 
@@ -931,7 +1035,7 @@ package body Sem_Cat is
       --  on instantiations).
 
       if Inside_A_Generic
-        and then not Present (Enclosing_Generic_Body (Id))
+        and then No (Enclosing_Generic_Body (Id))
       then
          return;
       end if;
@@ -957,9 +1061,10 @@ package body Sem_Cat is
 
                if Is_Array_Type (Ent) then
                   declare
-                     Comp_Type : Entity_Id := Component_Type (Ent);
+                     Comp_Type : Entity_Id;
 
                   begin
+                     Comp_Type := Component_Type (Ent);
                      while Is_Array_Type (Comp_Type) loop
                         Comp_Type := Component_Type (Comp_Type);
                      end loop;
@@ -986,21 +1091,64 @@ package body Sem_Cat is
                   end if;
                end if;
 
-               --  We relax the restriction of 10.2.1(9) within GNAT
-               --  units. (There are ACVC tests that check that the
-               --  restriction is enforced, but note that AI-161,
-               --  once approved, will relax the restriction prohibiting
-               --  default-initialized objects of private types, and
-               --  will recommend a pragma for marking private types.)
+               --  Check for invalid use of private object. Note that Ada 2005
+               --  AI-161 modifies the rules for Ada 2005, including the use of
+               --  the new pragma Preelaborable_Initialization.
 
-               if (Is_Private_Type (Ent)
-                    or else Depends_On_Private (Ent))
-                 and then not Is_Internal_File_Name
-                                (Unit_File_Name (Get_Source_Unit (N)))
+               if Is_Private_Type (Ent)
+                 or else Depends_On_Private (Ent)
                then
-                  Error_Msg_N
-                    ("private object not allowed in preelaborated unit", N);
-                  return;
+                  --  Case where type has preelaborable initialization which
+                  --  means that a pragma Preelaborable_Initialization was
+                  --  given for the private type.
+
+                  if Has_Preelaborable_Initialization (Ent) then
+
+                     --  But for the predefined units, we will ignore this
+                     --  status unless we are in Ada 2005 mode since we want
+                     --  Ada 95 compatible behavior, in which the entities
+                     --  marked with this pragma in the predefined library are
+                     --  not treated specially.
+
+                     if Ada_Version < Ada_05 then
+                        Error_Msg_N
+                          ("private object not allowed in preelaborated unit",
+                           N);
+                        Error_Msg_N ("\(would be legal in Ada 2005 mode)", N);
+                     end if;
+
+                  --  Type does not have preelaborable initialization
+
+                  else
+                     --  We allow this when compiling in GNAT mode to make life
+                     --  easier for some cases where it would otherwise be hard
+                     --  to be exactly valid Ada.
+
+                     if not GNAT_Mode then
+                        Error_Msg_N
+                          ("private object not allowed in preelaborated unit",
+                           N);
+
+                        --  If we are in Ada 2005 mode, add a message if pragma
+                        --  Preelaborable_Initialization on the type of the
+                        --  object would help.
+
+                        --  If the type has no full view (generic type, or
+                        --  previous error), the warning does not apply.
+
+                        if Ada_Version >= Ada_05
+                          and then Is_Private_Type (Ent)
+                          and then Present (Full_View (Ent))
+                          and then
+                            Has_Preelaborable_Initialization (Full_View (Ent))
+                        then
+                           Error_Msg_Sloc := Sloc (Ent);
+                           Error_Msg_NE
+                             ("\would be legal if pragma Preelaborable_" &
+                              "Initialization given for & #", N, Ent);
+                        end if;
+                     end if;
+                  end if;
 
                --  Access to Task or Protected type
 
@@ -1063,9 +1211,9 @@ package body Sem_Cat is
          end if;
       end if;
 
-      --  A pure library_item must not contain the declaration of any
-      --  variable except within  a subprogram, generic subprogram, task
-      --  unit or protected unit (RM 10.2.1(16)).
+      --  A pure library_item must not contain the declaration of any variable
+      --  except within a subprogram, generic subprogram, task unit, or
+      --  protected unit (RM 10.2.1(16)).
 
       if In_Pure_Unit
         and then not In_Subprogram_Task_Protected_Unit
@@ -1088,9 +1236,116 @@ package body Sem_Cat is
 
    end Validate_Object_Declaration;
 
-   --------------------------------
-   --  Validate_RCI_Declarations --
-   --------------------------------
+   ------------------------------
+   -- Validate_RACW_Primitives --
+   ------------------------------
+
+   procedure Validate_RACW_Primitives (T : Entity_Id) is
+      Desig_Type             : Entity_Id;
+      Primitive_Subprograms  : Elist_Id;
+      Subprogram_Elmt        : Elmt_Id;
+      Subprogram             : Entity_Id;
+      Profile                : List_Id;
+      Param_Spec             : Node_Id;
+      Param                  : Entity_Id;
+      Param_Type             : Entity_Id;
+      Rtyp                   : Node_Id;
+
+   begin
+      Desig_Type := Etype (Designated_Type (T));
+
+      Primitive_Subprograms := Primitive_Operations (Desig_Type);
+
+      Subprogram_Elmt := First_Elmt (Primitive_Subprograms);
+      while Subprogram_Elmt /= No_Elmt loop
+         Subprogram := Node (Subprogram_Elmt);
+
+         if not Comes_From_Source (Subprogram) then
+            goto Next_Subprogram;
+         end if;
+
+         --  Check return type
+
+         if Ekind (Subprogram) = E_Function then
+            Rtyp := Etype (Subprogram);
+
+            if Has_Controlling_Result (Subprogram) then
+               null;
+
+            elsif Ekind (Rtyp) = E_Anonymous_Access_Type then
+               Error_Msg_N
+                 ("anonymous access result in remote object primitive", Rtyp);
+
+            elsif Is_Limited_Type (Rtyp) then
+               if No (TSS (Rtyp, TSS_Stream_Read))
+                    or else
+                  No (TSS (Rtyp, TSS_Stream_Write))
+               then
+                  Error_Msg_N
+                    ("limited return type must have Read and Write attributes",
+                     Parent (Subprogram));
+                  Explain_Limited_Type (Rtyp, Parent (Subprogram));
+               end if;
+
+            end if;
+         end if;
+
+         Profile := Parameter_Specifications (Parent (Subprogram));
+
+         --  Profile must exist, otherwise not primitive operation
+
+         Param_Spec := First (Profile);
+         while Present (Param_Spec) loop
+
+            --  Now find out if this parameter is a controlling parameter
+
+            Param      := Defining_Identifier (Param_Spec);
+            Param_Type := Etype (Param);
+
+            if Is_Controlling_Formal (Param) then
+
+               --  It is a controlling parameter, so specific checks below
+               --  do not apply.
+
+               null;
+
+            elsif Ekind (Param_Type) = E_Anonymous_Access_Type then
+
+               --  From RM E.2.2(14), no access parameter other than
+               --  controlling ones may be used.
+
+               Error_Msg_N
+                 ("non-controlling access parameter", Param_Spec);
+
+            elsif Is_Limited_Type (Param_Type) then
+
+               --  Not a controlling parameter, so type must have Read and
+               --  Write attributes.
+
+               if No (TSS (Param_Type, TSS_Stream_Read))
+                    or else
+                  No (TSS (Param_Type, TSS_Stream_Write))
+               then
+                  Error_Msg_N
+                    ("limited formal must have Read and Write attributes",
+                     Param_Spec);
+                  Explain_Limited_Type (Param_Type, Param_Spec);
+               end if;
+            end if;
+
+            --  Check next parameter in this subprogram
+
+            Next (Param_Spec);
+         end loop;
+
+         <<Next_Subprogram>>
+            Next_Elmt (Subprogram_Elmt);
+      end loop;
+   end Validate_RACW_Primitives;
+
+   -------------------------------
+   -- Validate_RCI_Declarations --
+   -------------------------------
 
    procedure Validate_RCI_Declarations (P : Entity_Id) is
       E : Entity_Id;
@@ -1101,7 +1356,7 @@ package body Sem_Cat is
          if Comes_From_Source (E) then
             if Is_Limited_Type (E) then
                Error_Msg_N
-                 ("Limited type not allowed in rci unit", Parent (E));
+                 ("limited type not allowed in rci unit", Parent (E));
                Explain_Limited_Type (E, Parent (E));
 
             elsif Ekind (E) = E_Generic_Function
@@ -1118,10 +1373,10 @@ package body Sem_Cat is
                Error_Msg_N
                  ("inlined subprogram not allowed in rci unit", Parent (E));
 
-            --  Inner packages that are renamings need not be checked.
-            --  Generic RCI packages are subject to the checks, but
-            --  entities that come from formal packages are not part of the
-            --  visible declarations of the package and are not checked.
+            --  Inner packages that are renamings need not be checked. Generic
+            --  RCI packages are subject to the checks, but entities that come
+            --  from formal packages are not part of the visible declarations
+            --  of the package and are not checked.
 
             elsif Ekind (E) = E_Package then
                if Present (Renamed_Entity (E)) then
@@ -1152,6 +1407,7 @@ package body Sem_Cat is
       Param_Spec      : Node_Id;
       Param_Type      : Entity_Id;
       Base_Param_Type : Entity_Id;
+      Base_Under_Type : Entity_Id;
       Type_Decl       : Node_Id;
       Error_Node      : Node_Id := N;
 
@@ -1188,7 +1444,6 @@ package body Sem_Cat is
 
       if Present (Profile) then
          Param_Spec := First (Profile);
-
          while Present (Param_Spec) loop
             Param_Type := Etype (Defining_Identifier (Param_Spec));
             Type_Decl  := Parent (Param_Type);
@@ -1199,7 +1454,7 @@ package body Sem_Cat is
                   Error_Node := Param_Spec;
                end if;
 
-               --  Report error only if declaration is in source program.
+               --  Report error only if declaration is in source program
 
                if Comes_From_Source
                  (Defining_Entity (Specification (N)))
@@ -1209,10 +1464,9 @@ package body Sem_Cat is
                       Error_Node);
                end if;
 
-            --  For limited private type parameter, we check only the
-            --  private declaration and ignore full type declaration,
-            --  unless this is the only declaration for the type, eg.
-            --  as a limited record.
+            --  For limited private type parameter, we check only the private
+            --  declaration and ignore full type declaration, unless this is
+            --  the only declaration for the type, eg. as a limited record.
 
             elsif Is_Limited_Type (Param_Type)
               and then (Nkind (Type_Decl) = N_Private_Type_Declaration
@@ -1221,32 +1475,69 @@ package body Sem_Cat is
                           and then not (Has_Private_Declaration (Param_Type))
                           and then Comes_From_Source (N)))
             then
-               --  A limited parameter is legal only if user-specified
-               --  Read and Write attributes exist for it.
-               --  second part of RM E.2.3 (14)
+               --  A limited parameter is legal only if user-specified Read and
+               --  Write attributes exist for it. Second part of RM E.2.3 (14).
 
                if No (Full_View (Param_Type))
                  and then Ekind (Param_Type) /= E_Record_Type
                then
-                  --  Type does not have completion yet, so if declared in
-                  --  in the current RCI scope it is illegal, and will be
-                  --  flagged subsequently.
+                  --  Type does not have completion yet, so if declared in in
+                  --  the current RCI scope it is illegal, and will be flagged
+                  --  subsequently.
+
                   return;
                end if;
 
-               Base_Param_Type := Base_Type (Underlying_Type (Param_Type));
+               --  In Ada 95 the rules permit using a limited type that has
+               --  user-specified Read and Write attributes that are specified
+               --  in the private part of the package, whereas Ada 2005
+               --  (AI-240) revises this to require the attributes to be
+               --  "available" (implying that the attribute clauses must be
+               --  visible to the RCI client). The Ada 95 rules violate the
+               --  contract model for privacy, but we support both semantics
+               --  for now for compatibility (note that ACATS test BXE2009
+               --  checks a case that conforms to the Ada 95 rules but is
+               --  illegal in Ada 2005).
 
-               if No (TSS (Base_Param_Type, TSS_Stream_Read))
-                    or else
-                  No (TSS (Base_Param_Type, TSS_Stream_Write))
+               Base_Param_Type := Base_Type (Param_Type);
+               Base_Under_Type := Base_Type (Underlying_Type
+                                              (Base_Param_Type));
+
+               if (Ada_Version < Ada_05
+                     and then
+                       (No (TSS (Base_Param_Type, TSS_Stream_Read))
+                          or else
+                        No (TSS (Base_Param_Type, TSS_Stream_Write)))
+                     and then
+                       (No (TSS (Base_Under_Type, TSS_Stream_Read))
+                          or else
+                        No (TSS (Base_Under_Type, TSS_Stream_Write))))
+                 or else
+                   (Ada_Version >= Ada_05
+                      and then
+                        (No (TSS (Base_Param_Type, TSS_Stream_Read))
+                           or else
+                         No (TSS (Base_Param_Type, TSS_Stream_Write))
+                           or else
+                         Is_Hidden (TSS (Base_Param_Type, TSS_Stream_Read))
+                           or else
+                         Is_Hidden (TSS (Base_Param_Type, TSS_Stream_Write))))
                then
                   if K = N_Subprogram_Declaration then
                      Error_Node := Param_Spec;
                   end if;
 
-                  Error_Msg_N
-                    ("limited parameter in rci unit "
-                       & "must have read/write attributes ", Error_Node);
+                  if Ada_Version >= Ada_05 then
+                     Error_Msg_N
+                       ("limited parameter in rci unit "
+                          & "must have visible read/write attributes ",
+                        Error_Node);
+                  else
+                     Error_Msg_N
+                       ("limited parameter in rci unit "
+                          & "must have read/write attributes ",
+                        Error_Node);
+                  end if;
                   Explain_Limited_Type (Param_Type, Error_Node);
                end if;
             end if;
@@ -1263,16 +1554,10 @@ package body Sem_Cat is
    procedure Validate_Remote_Access_Object_Type_Declaration (T : Entity_Id) is
       Direct_Designated_Type : Entity_Id;
       Desig_Type             : Entity_Id;
-      Primitive_Subprograms  : Elist_Id;
-      Subprogram             : Elmt_Id;
-      Subprogram_Node        : Node_Id;
-      Profile                : List_Id;
-      Param_Spec             : Node_Id;
-      Param_Type             : Entity_Id;
 
    begin
-      --  We are called from Analyze_Type_Declaration, and the Nkind
-      --  of the given node is N_Access_To_Object_Definition.
+      --  We are called from Analyze_Type_Declaration, and the Nkind of the
+      --  given node is N_Access_To_Object_Definition.
 
       if not Comes_From_Source (T)
         or else (not In_RCI_Declaration (Parent (T))
@@ -1289,11 +1574,11 @@ package body Sem_Cat is
          return;
       end if;
 
-      --  Check RCI or RT unit type declaration. It may not contain
-      --  the declaration of an access-to-object type unless it is a
-      --  general access type that designates a class-wide limited
-      --  private type. There are also constraints about the primitive
-      --  subprograms of the class-wide type (RM E.2.3(14)).
+      --  Check RCI or RT unit type declaration. It may not contain the
+      --  declaration of an access-to-object type unless it is a general access
+      --  type that designates a class-wide limited private type. There are
+      --  also constraints on the primitive subprograms of the class-wide type
+      --  (RM E.2.2(14), see Validate_RACW_Primitives).
 
       if Ekind (T) /= E_General_Access_Type
         or else Ekind (Designated_Type (T)) /= E_Class_Wide_Type
@@ -1321,88 +1606,12 @@ package body Sem_Cat is
          return;
       end if;
 
-      Primitive_Subprograms := Primitive_Operations (Desig_Type);
-      Subprogram            := First_Elmt (Primitive_Subprograms);
-
-      while Subprogram /= No_Elmt loop
-         Subprogram_Node := Node (Subprogram);
-
-         if not Comes_From_Source (Subprogram_Node) then
-            goto Next_Subprogram;
-         end if;
-
-         Profile := Parameter_Specifications (Parent (Subprogram_Node));
-
-         --  Profile must exist, otherwise not primitive operation
-
-         Param_Spec := First (Profile);
-
-         while Present (Param_Spec) loop
-
-            --  Now find out if this parameter is a controlling parameter
-
-            Param_Type := Parameter_Type (Param_Spec);
-
-            if (Nkind (Param_Type) = N_Access_Definition
-                  and then Etype (Subtype_Mark (Param_Type)) = Desig_Type)
-              or else (Nkind (Param_Type) /= N_Access_Definition
-                        and then Etype (Param_Type) = Desig_Type)
-            then
-               --  It is a controlling parameter, so specific checks below
-               --  do not apply.
-
-               null;
-
-            elsif
-              Nkind (Param_Type) = N_Access_Definition
-            then
-               --  From RM E.2.2(14), no access parameter other than
-               --  controlling ones may be used.
-
-               Error_Msg_N
-                 ("non-controlling access parameter", Param_Spec);
-
-            elsif
-              Is_Limited_Type (Etype (Defining_Identifier (Param_Spec)))
-            then
-               --  Not a controlling parameter, so type must have Read
-               --  and Write attributes.
-
-               if Nkind (Param_Type) in N_Has_Etype
-                 and then Nkind (Parent (Etype (Param_Type))) =
-                          N_Private_Type_Declaration
-               then
-                  Param_Type := Etype (Param_Type);
-
-                  if No (TSS (Param_Type, TSS_Stream_Read))
-                       or else
-                     No (TSS (Param_Type, TSS_Stream_Write))
-                  then
-                     Error_Msg_N
-                       ("limited formal must have Read and Write attributes",
-                         Param_Spec);
-                     Explain_Limited_Type
-                       (Etype (Defining_Identifier (Param_Spec)), Param_Spec);
-                  end if;
-               end if;
-            end if;
-
-            --  Check next parameter in this subprogram
-
-            Next (Param_Spec);
-         end loop;
-
-         <<Next_Subprogram>>
-            Next_Elmt (Subprogram);
-      end loop;
-
       --  Now this is an RCI unit access-to-class-wide-limited-private type
       --  declaration. Set the type entity to be Is_Remote_Call_Interface to
       --  optimize later checks by avoiding tree traversal to find out if this
       --  entity is inside an RCI unit.
 
       Set_Is_Remote_Call_Interface (T);
-
    end Validate_Remote_Access_Object_Type_Declaration;
 
    -----------------------------------------------
@@ -1415,20 +1624,20 @@ package body Sem_Cat is
       E  : Entity_Id;
 
    begin
-      --  This subprogram enforces the checks in (RM E.2.2(8)) for
-      --  certain uses of class-wide limited private types.
+      --  This subprogram enforces the checks in (RM E.2.2(8)) for certain uses
+      --  of class-wide limited private types.
 
       --    Storage_Pool and Storage_Size are not defined for such types
       --
       --    The expected type of allocator must not not be such a type.
 
-      --    The actual parameter of generic instantiation must not
-      --    be such a type if the formal parameter is of an access type.
+      --    The actual parameter of generic instantiation must not be such a
+      --    type if the formal parameter is of an access type.
 
       --  On entry, there are five cases
 
-      --    1. called from sem_attr Analyze_Attribute where attribute
-      --       name is either Storage_Pool or Storage_Size.
+      --    1. called from sem_attr Analyze_Attribute where attribute name is
+      --       either Storage_Pool or Storage_Size.
 
       --    2. called from exp_ch4 Expand_N_Allocator
 
@@ -1462,9 +1671,9 @@ package body Sem_Cat is
             return;
          end if;
 
-      --  This subprogram also enforces the checks in E.2.2(13).
-      --  A value of such type must not be dereferenced unless as a
-      --  controlling operand of a dispatching call.
+      --  This subprogram also enforces the checks in E.2.2(13). A value of
+      --  such type must not be dereferenced unless as controlling operand of
+      --  a dispatching call.
 
       elsif K = N_Explicit_Dereference
         and then (Comes_From_Source (N)
@@ -1483,16 +1692,15 @@ package body Sem_Cat is
          --  If we have a true dereference that comes from source and that
          --  is a controlling argument for a dispatching call, accept it.
 
-         if K = N_Explicit_Dereference
-           and then Is_Actual_Parameter (N)
+         if Is_Actual_Parameter (N)
            and then Is_Controlling_Actual (N)
          then
             return;
          end if;
 
          --  If we are just within a procedure or function call and the
-         --  dereference has not been analyzed, return because this
-         --  procedure will be called again from sem_res Resolve_Actuals.
+         --  dereference has not been analyzed, return because this procedure
+         --  will be called again from sem_res Resolve_Actuals.
 
          if Is_Actual_Parameter (N)
            and then not Analyzed (N)
@@ -1500,9 +1708,9 @@ package body Sem_Cat is
             return;
          end if;
 
-         --  The following is to let the compiler generated tags check
-         --  pass through without error message. This is a bit kludgy
-         --  isn't there some better way of making this exclusion ???
+         --  The following is to let the compiler generated tags check pass
+         --  through without error message. This is a bit kludgy isn't there
+         --  some better way of making this exclusion ???
 
          if (PK = N_Selected_Component
               and then Present (Parent (Parent (N)))
@@ -1546,20 +1754,29 @@ package body Sem_Cat is
       E : constant Entity_Id := Etype (Expression (N));
 
    begin
-      --  This test is required in the case where a conversion appears
-      --  inside a normal package, it does not necessarily have to be
-      --  inside an RCI, Remote_Types unit (RM E.2.2(9,12)).
+      --  This test is required in the case where a conversion appears inside a
+      --  normal package, it does not necessarily have to be inside an RCI,
+      --  Remote_Types unit (RM E.2.2(9,12)).
 
       if Is_Remote_Access_To_Subprogram_Type (E)
         and then not Is_Remote_Access_To_Subprogram_Type (S)
       then
-         Error_Msg_N ("incorrect conversion of remote operand", N);
+         Error_Msg_N
+           ("incorrect conversion of remote operand to local type", N);
+         return;
+
+      elsif not Is_Remote_Access_To_Subprogram_Type (E)
+        and then Is_Remote_Access_To_Subprogram_Type (S)
+      then
+         Error_Msg_N
+           ("incorrect conversion of local operand to remote type", N);
          return;
 
       elsif Is_Remote_Access_To_Class_Wide_Type (E)
         and then not Is_Remote_Access_To_Class_Wide_Type (S)
       then
-         Error_Msg_N ("incorrect conversion of remote operand", N);
+         Error_Msg_N
+           ("incorrect conversion of remote operand to local type", N);
          return;
       end if;
 
@@ -1579,11 +1796,11 @@ package body Sem_Cat is
    -------------------------------
 
    procedure Validate_RT_RAT_Component (N : Node_Id) is
-      Spec            : constant Node_Id   := Specification (N);
-      Name_U          : constant Entity_Id := Defining_Entity (Spec);
-      Typ             : Entity_Id;
-      First_Priv_Ent  : constant Entity_Id := First_Private_Entity (Name_U);
-      In_Visible_Part : Boolean            := True;
+      Spec           : constant Node_Id   := Specification (N);
+      Name_U         : constant Entity_Id := Defining_Entity (Spec);
+      Typ            : Entity_Id;
+      U_Typ          : Entity_Id;
+      First_Priv_Ent : constant Entity_Id := First_Private_Entity (Name_U);
 
    begin
       if not Is_Remote_Types (Name_U) then
@@ -1591,27 +1808,31 @@ package body Sem_Cat is
       end if;
 
       Typ := First_Entity (Name_U);
-      while Present (Typ) loop
-         if In_Visible_Part and then Typ = First_Priv_Ent then
-            In_Visible_Part := False;
+      while Present (Typ) and then Typ /= First_Priv_Ent loop
+         U_Typ := Underlying_Type (Typ);
+
+         if No (U_Typ) then
+            U_Typ := Typ;
          end if;
 
-         if Comes_From_Source (Typ)
-           and then Is_Type (Typ)
-           and then (In_Visible_Part or else Has_Private_Declaration (Typ))
-         then
+         if Comes_From_Source (Typ) and then Is_Type (Typ) then
             if Missing_Read_Write_Attributes (Typ) then
                if Is_Non_Remote_Access_Type (Typ) then
-                  Error_Msg_N
-                    ("non-remote access type without user-defined Read " &
-                     "and Write attributes", Typ);
+                  Error_Msg_N ("non-remote access type", U_Typ);
                else
                   Error_Msg_N
                     ("record type containing a component of a " &
-                     "non-remote access", Typ);
+                     "non-remote access type", U_Typ);
+               end if;
+
+               if Ada_Version >= Ada_05 then
                   Error_Msg_N
-                    ("\type without Read and Write attributes " &
-                     "('R'M E.2.2(8))", Typ);
+                    ("\without visible Read and Write attribute " &
+                     "definition clauses ('R'M E.2.2(8))", U_Typ);
+               else
+                  Error_Msg_N
+                    ("\without Read and Write attribute " &
+                     "definition clauses ('R'M E.2.2(8))", U_Typ);
                end if;
             end if;
          end if;
@@ -1630,6 +1851,10 @@ package body Sem_Cat is
       function Has_Entry_Declarations (E : Entity_Id) return Boolean;
       --  Return true if the protected type designated by T has
       --  entry declarations.
+
+      ----------------------------
+      -- Has_Entry_Declarations --
+      ----------------------------
 
       function Has_Entry_Declarations (E : Entity_Id) return Boolean is
          Ety : Entity_Id;
@@ -1695,14 +1920,17 @@ package body Sem_Cat is
       E : Entity_Id;
 
       function Is_Primary (N : Node_Id) return Boolean;
-      --  Determine whether node is syntactically a primary in an expression.
+      --  Determine whether node is syntactically a primary in an expression
+
+      ----------------
+      -- Is_Primary --
+      ----------------
 
       function Is_Primary (N : Node_Id) return Boolean is
          K : constant Node_Kind := Nkind (Parent (N));
 
       begin
          case K is
-
             when N_Op | N_In | N_Not_In =>
                return True;
 
@@ -1746,11 +1974,11 @@ package body Sem_Cat is
       then
          return;
 
-      --  Filter out cases where primary is default in a component
-      --  declaration, discriminant specification, or actual in a record
-      --  type initialization call.
+      --  Filter out cases where primary is default in a component declaration,
+      --  discriminant specification, or actual in a record type initialization
+      --  call.
 
-      --  Initialization call of internal types.
+      --  Initialization call of internal types
 
       elsif Nkind (Parent (N)) = N_Procedure_Call_Statement then
 
@@ -1776,14 +2004,16 @@ package body Sem_Cat is
         and then (not Inside_A_Generic
                    or else Present (Enclosing_Generic_Body (N)))
       then
-         if Ekind (Entity (N)) = E_Variable then
+         if Ekind (Entity (N)) = E_Variable
+           or else Ekind (Entity (N)) in Formal_Object_Kind
+         then
             Flag_Non_Static_Expr
               ("non-static object name in preelaborated unit", N);
 
          --  We take the view that a constant defined in another preelaborated
          --  unit is preelaborable, even though it may have a private type and
          --  thus appear non-static in a client. This must be the intent of
-         --  the language, but currently is an RM gap.
+         --  the language, but currently is an RM gap ???
 
          elsif Ekind (Entity (N)) = E_Constant
            and then not Is_Static_Expression (N)
@@ -1806,9 +2036,20 @@ package body Sem_Cat is
                                                 (Renamed_Object (E))))))
             then
                null;
+
+            --  This is the error case
+
             else
-               Flag_Non_Static_Expr
-                 ("non-static constant in preelaborated unit", N);
+               --  In GNAT mode, this is just a warning, to allow it to be
+               --  judiciously turned off. Otherwise it is a real error.
+
+               if GNAT_Mode then
+                  Error_Msg_N
+                    ("?non-static constant in preelaborated unit", N);
+               else
+                  Flag_Non_Static_Expr
+                    ("non-static constant in preelaborated unit", N);
+               end if;
             end if;
          end if;
       end if;

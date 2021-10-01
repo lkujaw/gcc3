@@ -1,12 +1,12 @@
 ------------------------------------------------------------------------------
 --                                                                          --
---                GNU ADA RUNTIME LIBRARY (GNARL) COMPONENTS                --
+--                 GNAT RUN-TIME LIBRARY (GNARL) COMPONENTS                 --
 --                                                                          --
 --      S Y S T E M . G E N E R I C _ V E C T O R _ O P E R A T I O N S     --
 --                                                                          --
 --                                 B o d y                                  --
 --                                                                          --
---          Copyright (C) 2002-2003 Free Software Foundation, Inc.          --
+--          Copyright (C) 2002-2005 Free Software Foundation, Inc.          --
 --                                                                          --
 -- GNAT is free software;  you can  redistribute it  and/or modify it under --
 -- terms of the  GNU General Public License as published  by the Free Soft- --
@@ -16,28 +16,32 @@
 -- or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License --
 -- for  more details.  You should have  received  a copy of the GNU General --
 -- Public License  distributed with GNAT;  see file COPYING.  If not, write --
--- to  the Free Software Foundation,  59 Temple Place - Suite 330,  Boston, --
--- MA 02111-1307, USA.                                                      --
+-- to  the  Free Software Foundation,  51  Franklin  Street,  Fifth  Floor, --
+-- Boston, MA 02110-1301, USA.                                              --
 --                                                                          --
--- As a special exception,  if other files  instantiate  generics from this --
--- unit, or you link  this unit with other files  to produce an executable, --
--- this  unit  does not  by itself cause  the resulting  executable  to  be --
--- covered  by the  GNU  General  Public  License.  This exception does not --
--- however invalidate  any other reasons why  the executable file  might be --
--- covered by the  GNU Public License.                                      --
---                                                                          --
+--
+--
+--
+--
+--
+--
+--
 -- GNAT was originally developed  by the GNAT team at  New York University. --
 -- Extensive contributions were provided by Ada Core Technologies Inc.      --
 --                                                                          --
 ------------------------------------------------------------------------------
 
-with System;                   use System;
-with System.Storage_Elements; use System.Storage_Elements;
-with Ada.Unchecked_Conversion; use Ada;
+with System;                    use System;
+with System.Address_Operations; use System.Address_Operations;
+with System.Storage_Elements;   use System.Storage_Elements;
+
+with Unchecked_Conversion;
 
 package body System.Generic_Vector_Operations is
-   VU : constant Address := Vectors.Vector'Size / Storage_Unit;
-   EU : constant Address := Element_Array'Component_Size / Storage_Unit;
+
+   IU : constant Integer := Integer (Storage_Unit);
+   VU : constant Address := Address (Vectors.Vector'Size / IU);
+   EU : constant Address := Address (Element_Array'Component_Size / IU);
 
    ----------------------
    -- Binary_Operation --
@@ -52,8 +56,11 @@ package body System.Generic_Vector_Operations is
       YA : Address := Y;
       --  Address of next element to process in R, X and Y
 
-      Unaligned : constant Boolean := (RA or XA or YA)  mod VU /= 0;
-      --  False iff one or more argument addresses is not aligned
+      VI : constant Integer_Address := To_Integer (VU);
+
+      Unaligned : constant Integer_Address :=
+                    Boolean'Pos (ModA (OrA (OrA (RA, XA), YA), VU) /= 0) - 1;
+      --  Zero iff one or more argument addresses is not aligned, else all 1's
 
       type Vector_Ptr is access all Vectors.Vector;
       type Element_Ptr is access all Element;
@@ -61,23 +68,24 @@ package body System.Generic_Vector_Operations is
       function VP is new Unchecked_Conversion (Address, Vector_Ptr);
       function EP is new Unchecked_Conversion (Address, Element_Ptr);
 
-      SA : constant Address := XA + ((Length + 0) / VU * VU
-                           and (Boolean'Pos (Unaligned) - Address'(1)));
+      SA : constant Address :=
+             AddA (XA, To_Address
+                         ((Integer_Address (Length) / VI * VI) and Unaligned));
       --  First address of argument X to start serial processing
 
    begin
       while XA < SA loop
          VP (RA).all := Vector_Op (VP (XA).all, VP (YA).all);
-         XA := XA + VU;
-         YA := YA + VU;
-         RA := RA + VU;
+         XA := AddA (XA, VU);
+         YA := AddA (YA, VU);
+         RA := AddA (RA, VU);
       end loop;
 
       while XA < X + Length loop
          EP (RA).all := Element_Op (EP (XA).all, EP (YA).all);
-         XA := XA + EU;
-         YA := YA + EU;
-         RA := RA + EU;
+         XA := AddA (XA, EU);
+         YA := AddA (YA, EU);
+         RA := AddA (RA, EU);
       end loop;
    end Binary_Operation;
 
@@ -93,8 +101,11 @@ package body System.Generic_Vector_Operations is
       XA : Address := X;
       --  Address of next element to process in R and X
 
-      Unaligned : constant Boolean := (RA or XA)  mod VU /= 0;
-      --  False iff one or more argument addresses is not aligned
+      VI : constant Integer_Address := To_Integer (VU);
+
+      Unaligned : constant Integer_Address :=
+                    Boolean'Pos (ModA (OrA (RA, XA), VU) /= 0) - 1;
+      --  Zero iff one or more argument addresses is not aligned, else all 1's
 
       type Vector_Ptr is access all Vectors.Vector;
       type Element_Ptr is access all Element;
@@ -102,21 +113,22 @@ package body System.Generic_Vector_Operations is
       function VP is new Unchecked_Conversion (Address, Vector_Ptr);
       function EP is new Unchecked_Conversion (Address, Element_Ptr);
 
-      SA : constant Address := XA + ((Length + 0) / VU * VU
-                           and (Boolean'Pos (Unaligned) - Address'(1)));
+      SA : constant Address :=
+             AddA (XA, To_Address
+                         ((Integer_Address (Length) / VI * VI) and Unaligned));
       --  First address of argument X to start serial processing
 
    begin
       while XA < SA loop
          VP (RA).all := Vector_Op (VP (XA).all);
-         XA := XA + VU;
-         RA := RA + VU;
+         XA := AddA (XA, VU);
+         RA := AddA (RA, VU);
       end loop;
 
       while XA < X + Length loop
          EP (RA).all := Element_Op (EP (XA).all);
-         XA := XA + EU;
-         RA := RA + EU;
+         XA := AddA (XA, EU);
+         RA := AddA (RA, EU);
       end loop;
    end Unary_Operation;
 

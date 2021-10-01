@@ -6,7 +6,7 @@
 --                                                                          --
 --                                 S p e c                                  --
 --                                                                          --
---          Copyright (C) 1992-2003 Free Software Foundation, Inc.          --
+--          Copyright (C) 1992-2005, Free Software Foundation, Inc.         --
 --                                                                          --
 -- GNAT is free software;  you can  redistribute it  and/or modify it under --
 -- terms of the  GNU General Public License as published  by the Free Soft- --
@@ -19,13 +19,13 @@
 -- to  the Free Software Foundation,  59 Temple Place - Suite 330,  Boston, --
 -- MA 02111-1307, USA.                                                      --
 --                                                                          --
--- As a special exception,  if other files  instantiate  generics from this --
--- unit, or you link  this unit with other files  to produce an executable, --
--- this  unit  does not  by itself cause  the resulting  executable  to  be --
--- covered  by the  GNU  General  Public  License.  This exception does not --
--- however invalidate  any other reasons why  the executable file  might be --
--- covered by the  GNU Public License.                                      --
---                                                                          --
+--
+--
+--
+--
+--
+--
+--
 -- GNAT was originally developed  by the GNAT team at  New York University. --
 -- Extensive contributions were provided by Ada Core Technologies Inc.      --
 --                                                                          --
@@ -39,8 +39,8 @@ package System.Secondary_Stack is
 
    package SSE renames System.Storage_Elements;
 
-   Default_Secondary_Stack_Size : Natural := 10 * 1024;
-   --  Default size of a secondary stack. May be modified by binder -D switch
+   Default_Secondary_Stack_Size : constant := 10 * 1024;
+   --  Default size of a secondary stack
 
    procedure SS_Init
      (Stk  : System.Address;
@@ -59,13 +59,8 @@ package System.Secondary_Stack is
    --  Allocate enough space for a 'Storage_Size' bytes object with Maximum
    --  alignment. The address of the allocated space is returned in 'Address'
 
-   procedure SS_Free (Stk : in out System.Address);
-   --  Release the memory allocated for the Secondary Stack. That is to say,
-   --  all the allocated chuncks.
-   --  Upon return, Stk will be set to System.Null_Address
-
    type Mark_Id is private;
-   --  Type used to mark the stack.
+   --  Type used to mark the stack
 
    function SS_Mark return Mark_Id;
    --  Return the Mark corresponding to the current state of the stack

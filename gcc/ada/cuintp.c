@@ -6,7 +6,7 @@
  *                                                                          *
  *                          C Implementation File                           *
  *                                                                          *
- *          Copyright (C) 1992-2003 Free Software Foundation, Inc.          *
+ *          Copyright (C) 1992-2005, Free Software Foundation, Inc.         *
  *                                                                          *
  * GNAT is free software;  you can  redistribute it  and/or modify it under *
  * terms of the  GNU General Public License as published  by the Free Soft- *
@@ -41,6 +41,7 @@
 #include "stringt.h"
 #include "fe.h"
 #include "gigi.h"
+#include "ada-tree.h"
 
 /* Universal integers are represented by the Uint type which is an index into
    the Uints_Ptr table containing Uint_Entry values.  A Uint_Entry contains an
@@ -61,23 +62,43 @@ UI_To_gnu (Uint Input, tree type)
 {
   tree gnu_ret;
 
+  /* We might have a TYPE with biased representation and be passed an
+     unbiased value that doesn't fit.  We always use an unbiased type able
+     to hold any such possible value for intermediate computations, and
+     then rely on a conversion back to TYPE to perform the bias adjustment
+     when need be.  */
+
+  int biased_type_p
+    = (TREE_CODE (type) == INTEGER_TYPE
+       && TYPE_BIASED_REPRESENTATION_P (type));
+
+  tree comp_type = biased_type_p ? get_base_type (type) : type;
+
   if (Input <= Uint_Direct_Last)
-    gnu_ret = convert (type, build_int_2 (Input - Uint_Direct_Bias,
-					  Input < Uint_Direct_Bias ? -1 : 0));
+    gnu_ret = convert (comp_type,
+		       build_int_2 (Input - Uint_Direct_Bias,
+				    Input < Uint_Direct_Bias ? -1 : 0));
   else
     {
       Int Idx =    Uints_Ptr[Input].Loc;
       Pos Length = Uints_Ptr[Input].Length;
       Int First = Udigits_Ptr[Idx];
-      /* Do computations in integer type or TYPE whichever is wider, then
-	 convert later.  This avoid overflow if type is short integer.  */
-      tree comp_type
-	= (TYPE_PRECISION (type) >= TYPE_PRECISION (integer_type_node)
-	   ? type : integer_type_node);
-      tree gnu_base = convert (comp_type, build_int_2 (Base, 0));
+      tree gnu_base;
 
       if (Length <= 0)
 	gigi_abort (601);
+
+      /* The computations we perform below always require a type at
+         least as large as an integer not to overflow.  REAL types are
+         always fine, but INTEGER types we are handed may be too short.
+         We use a base integer type node for the computations in this
+         case and will convert the final result back to the incoming
+         type later on.  */
+
+      if (TYPE_PRECISION (comp_type) < TYPE_PRECISION (integer_type_node))
+        comp_type = integer_type_node;
+
+      gnu_base = convert (comp_type, build_int_2 (Base, 0));
 
       gnu_ret = convert (comp_type, build_int_2 (First, First < 0 ? -1 : 0));
       if (First < 0)

@@ -1,0 +1,99 @@
+# This is the VMS Makefile.lib used to build an alternate DECLIB run-time
+# using GNATLbr and a custom gnat.adc file.
+
+vpath %.adb $(ADA_INCLUDE_PATH)
+vpath %.ads $(ADA_INCLUDE_PATH)
+
+gccversion:=$(shell mcr gnu:[bin]gcc -dumpversion)
+gccmachine:=$(shell mcr gnu:[bin]gcc -dumpmachine)
+
+CC = gcc
+CFLAGS = -O
+ADAFLAGS = -gnatn -gnatp -gnatwI
+ALL_ADAFLAGS = $(CFLAGS) $(ADA_CFLAGS) $(ADAFLAGS) -I. 
+
+# Say how to compile Ada programs.
+.SUFFIXES: .ada .adb .ads .s .sym
+
+.s.obj: 
+	$(CC) -c $< 
+.obj.sym: 
+	@ gnu:[bin]vmssymvec $<
+.c.obj:
+	$(CC) -c $(ALL_CFLAGS) $(ADA_CFLAGS) $(ALL_CPPFLAGS) $(INCLUDES) $<
+.adb.obj:
+	$(CC) -c $(ALL_ADAFLAGS) $<
+.ads.obj:
+	$(CC) -c $(ALL_ADAFLAGS) $<
+
+# Create a list of objects to build from the existing list of .ali files.
+SYMS := $(patsubst %.ali,%.sym,$(notdir $(wildcard $(ADA_OBJECTS_PATH)*.ali)))
+OBJS := $(patsubst %.ali,%.obj,$(notdir $(wildcard $(ADA_OBJECTS_PATH)*.ali)))
+
+# Create a list of objects to build from the list of .ads and .adb file.
+# Sort and remove duplicates (duplicates occur if both a .ads and .adb file
+#  exist for the same package).
+# Filter out dec- objects (some are internal generics which give an error
+#  when compiled) and known renamings of specs (also give an error when
+#  compiled).
+OBJSOTHER := \
+ $(filter-out \
+   dec-%.obj directio.obj generic_primitive_functions.obj sequenio.obj, \
+   $(sort $(patsubst %.ads,%.obj,$(wildcard *.ads)) \
+          $(patsubst %.adb,%.obj,$(wildcard *.adb))))
+
+# The list of dec- objects which are not generic and need compiling.
+DECOBJS := \
+ dec-direct_mixed_io.obj \
+ dec-indexed_mixed_io.obj \
+ dec-io.obj \
+ dec-relative_mixed_io.obj \
+ dec-sequential_mixed_io.obj \
+ dec-text_io.obj
+
+all: $(DECOBJS) $(OBJSOTHER)
+
+create:
+	create /dir [.declib]
+	copy $(GNAT_ADC_FILE) [.declib]gnat.adc
+	make -C declib ADA_INCLUDE_PATH=$(ADA_INCLUDE_PATH) \
+	               ADA_OBJECTS_PATH=$(ADA_OBJECTS_PATH) \
+	               LIBRARY_VERSION=$(LIBRARY_VERSION) \
+                       -f $(ADA_OBJECTS_PATH)Makefile.lib libdecgnat.olb
+
+symvec.opt: $(SYMS)
+	if f$$search ("symvec.opt").nes."" then del symvec.opt;* 
+	append /new *.sym symvec.opt
+
+libdecgnat.olb: $(OBJS)
+	copy gnu:[lib.gcc-lib.declib]libdecgnat.olb []
+	lib /replace libdecgnat.olb *.obj
+	set file/prot=(s:red,o:red,g:re,w:re) *.ali
+	del *.obj.*
+
+libdecgnat.exe: libdecgnat.olb symvec.opt
+	gcc -nostartfiles -share --for-linker=/noinform -o libdecgnat.exe \
+	  libdecgnat.olb symvec.opt --for-linker=gsmatch=lequal,3,10 
+
+# Compile with -gnatg to avoid "access to volatile object cannot
+# yield access-to-non-volatile type" error (hack).
+get_task_info.obj: get_task_info.adb get_task_info.ads
+	$(CC) -c -gnatg $(ALL_ADAFLAGS) $<
+
+# Compile DEC I/O packages without optimization. Workaround for 6420-003
+# until we get a test program to debug.
+dec-direct_mixed_io.obj: dec-direct_mixed_io.adb dec-direct_mixed_io.ads
+	$(CC) -c $(ALL_ADAFLAGS) -O0 $<
+
+dec-indexed_mixed_io.obj: dec-indexed_mixed_io.adb dec-indexed_mixed_io.ads
+	$(CC) -c $(ALL_ADAFLAGS) -O0 $<
+
+dec-relative_mixed_io.obj: dec-relative_mixed_io.adb dec-relative_mixed_io.ads
+	$(CC) -c $(ALL_ADAFLAGS) -O0 $<
+
+dec-sequential_mixed_io.obj: dec-sequential_mixed_io.adb dec-sequential_mixed_io.ads
+	$(CC) -c $(ALL_ADAFLAGS) -O0 $<
+
+dec-text_io.obj: dec-text_io.adb dec-text_io.ads
+	$(CC) -c $(ALL_ADAFLAGS) -O0 $<
+

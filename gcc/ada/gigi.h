@@ -6,7 +6,7 @@
  *                                                                          *
  *                              C Header File                               *
  *                                                                          *
- *          Copyright (C) 1992-2003 Free Software Foundation, Inc.          *
+ *          Copyright (C) 1992-2006 Free Software Foundation, Inc.          *
  *                                                                          *
  * GNAT is free software;  you can  redistribute it  and/or modify it under *
  * terms of the  GNU General Public License as published  by the Free Soft- *
@@ -19,12 +19,12 @@
  * to  the Free Software Foundation,  59 Temple Place - Suite 330,  Boston, *
  * MA 02111-1307, USA.                                                      *
  *                                                                          *
- * As a  special  exception,  if you  link  this file  with other  files to *
- * produce an executable,  this file does not by itself cause the resulting *
- * executable to be covered by the GNU General Public License. This except- *
- * ion does not  however invalidate  any other reasons  why the  executable *
- * file might be covered by the  GNU Public License.                        *
- *                                                                          *
+--
+--
+--
+--
+--
+--
  * GNAT was originally developed  by the GNAT team at  New York University. *
  * Extensive contributions were provided by Ada Core Technologies Inc.      *
  *                                                                          *
@@ -40,6 +40,11 @@ extern unsigned int largest_move_alignment;
    memory location and replace it with an indirect reference if so.
    This improves the debugger's ability to display the value.  */
 extern void adjust_decl_rtl (tree);
+
+/* Search the chain of currently reachable declarations for a builtin
+   FUNCTION_DECL node corresponding to function NAME (an IDENTIFIER_NODE).
+   Return the first node found, if any, or NULL_TREE otherwise.  */
+extern tree builtin_decl_for (tree);
 
 /* Record the current code position in GNAT_NODE.  */
 extern void record_code_position (Node_Id);
@@ -92,6 +97,10 @@ extern void init_dummy_type (void);
    DEFINITION, but a value of 2 is used in special circumstances, defined in
    the code.  */
 extern tree gnat_to_gnu_entity (Entity_Id, tree, int);
+
+/* Similar, but if the returned value is a COMPONENT_REF, return the
+   FIELD_DECL.  */
+extern tree gnat_to_gnu_field_decl (Entity_Id);
 
 /* Given GNAT_ENTITY, an entity in the incoming GNAT tree, return a
    GCC type corresponding to that entity.  GNAT_ENTITY is assumed to
@@ -245,10 +254,19 @@ extern void init_code_table (void);
    called.  */
 extern Node_Id error_gnat_node;
 
-/* This is equivalent to stabilize_reference in GCC's tree.c, but we know
-   how to handle our new nodes and we take an extra argument that says
-   whether to force evaluation of everything.  */
+/* This is equivalent to stabilize_reference in GCC's tree.c, but we know how
+   to handle our new nodes and we take extra arguments.
 
+   FORCE says whether to force evaluation of everything,
+
+   SUCCESS we set to true unless we walk through something we don't
+   know how to stabilize, or through something which is not an lvalue
+   and LVALUES_ONLY is true, in which cases we set to false.  */
+extern tree maybe_stabilize_reference (tree, int, int, int *);
+
+/* Wrapper around maybe_stabilize_reference, for common uses without
+   lvalue restrictions and without need to examine the success
+   indication.  */
 extern tree gnat_stabilize_reference (tree, int);
 
 /* Highest number in the front-end node table.  */
@@ -299,15 +317,22 @@ extern int force_global;
 
 /* Data structures used to represent attributes.  */
 
-enum attr_type {ATTR_MACHINE_ATTRIBUTE, ATTR_LINK_ALIAS,
-		ATTR_LINK_SECTION, ATTR_WEAK_EXTERNAL};
+enum attr_type
+{
+  ATTR_MACHINE_ATTRIBUTE,
+  ATTR_LINK_ALIAS,
+  ATTR_LINK_SECTION,
+  ATTR_LINK_CONSTRUCTOR,
+  ATTR_LINK_DESTRUCTOR,
+  ATTR_WEAK_EXTERNAL
+};
 
 struct attrib
 {
   struct attrib *next;
   enum attr_type type;
   tree name;
-  tree arg;
+  tree args;
   Node_Id error_point;
 };
 
@@ -349,10 +374,15 @@ enum standard_datatypes
   ADT_raise_nodefer_decl,
   ADT_begin_handler_decl,
   ADT_end_handler_decl,
+  ADT_others_decl,
+  ADT_all_others_decl,
   ADT_LAST};
 
 extern GTY(()) tree gnat_std_decls[(int) ADT_LAST];
 extern GTY(()) tree gnat_raise_decls[(int) LAST_REASON_CODE + 1];
+
+extern GTY(()) tree static_ctors;
+extern GTY(()) tree static_dtors;
 
 #define longest_float_type_node gnat_std_decls[(int) ADT_longest_float_type]
 #define void_type_decl_node gnat_std_decls[(int) ADT_void_type_decl]
@@ -371,6 +401,8 @@ extern GTY(()) tree gnat_raise_decls[(int) LAST_REASON_CODE + 1];
 #define longjmp_decl gnat_std_decls[(int) ADT_longjmp_decl]
 #define raise_nodefer_decl gnat_std_decls[(int) ADT_raise_nodefer_decl]
 #define begin_handler_decl gnat_std_decls[(int) ADT_begin_handler_decl]
+#define others_decl gnat_std_decls[(int) ADT_others_decl]
+#define all_others_decl gnat_std_decls[(int) ADT_all_others_decl]
 #define end_handler_decl gnat_std_decls[(int) ADT_end_handler_decl]
 
 /* Routines expected by the gcc back-end. They must have exactly the same
@@ -480,6 +512,9 @@ extern void init_gnat_to_gnu (void);
    on this type; it will be done later. */
 extern void finish_record_type (tree, tree, int, int);
 
+/*  Output the debug information associated to a record type.  */
+extern void write_record_type_debug_info (tree);
+
 /* Returns a FUNCTION_TYPE node. RETURN_TYPE is the type returned by the
    subprogram. If it is void_type_node, then we are dealing with a procedure,
    otherwise we are dealing with a function. PARAM_DECL_LIST is a list of
@@ -505,10 +540,11 @@ extern tree create_index_type (tree, tree, tree);
    information about this type.  */
 extern tree create_type_decl (tree, tree, struct attrib *, int, int);
 
-/* Returns a GCC VAR_DECL node. VAR_NAME gives the name of the variable.
-   ASM_NAME is its assembler name (if provided).  TYPE is
-   its data type (a GCC ..._TYPE node).  VAR_INIT is the GCC tree for an
-   optional initial expression; NULL_TREE if none.
+/* Returns a GCC VAR_DECL or CONST_DECL node.
+
+   VAR_NAME gives the name of the variable.  ASM_NAME is its assembler name
+   (if provided).  TYPE is its data type (a GCC ..._TYPE node).  VAR_INIT is
+   the GCC tree for an optional initial expression; NULL_TREE if none.
 
    CONST_FLAG is nonzero if this variable is constant.
 
@@ -520,7 +556,11 @@ extern tree create_type_decl (tree, tree, struct attrib *, int, int);
    STATIC_FLAG is only relevant when not at top level.  In that case
    it indicates whether to always allocate storage to the variable.  */
 extern tree create_var_decl (tree, tree, tree, tree, int, int, int, int,
-			     struct attrib *);
+			     struct attrib *, Node_Id);
+
+/* Similar to create_var_decl, forcing the creation of a VAR_DECL node.  */
+extern tree create_true_var_decl (tree, tree, tree, tree, int, int, int, int,
+				  struct attrib *, Node_Id);
 
 /* Given a DECL and ATTR_LIST, apply the listed attributes.  */
 extern void process_attributes (tree, struct attrib *);
@@ -547,7 +587,13 @@ extern tree get_elaboration_location (void);
 extern void insert_elaboration_list (tree);
 
 /* Add some pending elaborations to the current list.  */
-extern void add_pending_elaborations (tree, tree);
+extern void add_pending_elaborations (tree, tree, Node_Id);
+
+/* Obtain any global renaming pointers and clear the old list.  */
+extern tree get_global_renaming_pointers (void);
+
+/* Add one global renaming pointer on the list.  */
+extern void add_global_renaming_pointer (tree);
 
 /* Returns a FIELD_DECL node. FIELD_NAME the field name, FIELD_TYPE is its
    type, and RECORD_TYPE is the type of the parent.  PACKED is nonzero if
@@ -569,9 +615,9 @@ extern tree create_param_decl (tree, tree, int);
    PARM_DECL nodes chained through the TREE_CHAIN field).
 
    INLINE_FLAG, PUBLIC_FLAG, and EXTERN_FLAG are used to set the appropriate
-   fields in the FUNCTION_DECL.  */
+   fields in the FUNCTION_DECL.  GNAT_NODE gives the location.  */
 extern tree create_subprog_decl (tree, tree, tree, tree, int, int, int,
-				 struct attrib *);
+				 struct attrib *, Node_Id);
 
 /* Returns a LABEL_DECL node for LABEL_NAME.  */
 extern tree create_label_decl (tree);
@@ -579,7 +625,7 @@ extern tree create_label_decl (tree);
 /* Set up the framework for generating code for SUBPROG_DECL, a subprogram
    body. This routine needs to be invoked before processing the declarations
    appearing in the subprogram.  */
-extern void begin_subprog_body (tree);
+extern void begin_subprog_body (tree, Node_Id);
 
 /* Finish the definition of the current subprogram and compile it all the way
    to assembler language output.  */
@@ -606,6 +652,10 @@ extern tree build_vms_descriptor (tree, Mechanism_Type, Entity_Id);
    is used to represent an arbitrary unconstrained object.  Use NAME
    as the name of the record.  */
 extern tree build_unc_object_type (tree, tree, tree);
+
+/* Same as build_unc_object_type, but taking a thin or fat pointer type
+   instead of the template type. */
+extern tree build_unc_object_type_from_ptr (tree, tree, tree);
 
 /* Update anything previously pointing to OLD_TYPE to point to NEW_TYPE.  In
    the normal case this is just two adjustments, but we have more to do
@@ -649,14 +699,15 @@ extern tree gnat_truthvalue_conversion (tree);
 /* Return the base type of TYPE.  */
 extern tree get_base_type (tree);
 
-/* Likewise, but only return types known at Ada source.  */
-extern tree get_ada_base_type (tree);
-
 /* EXP is a GCC tree representing an address.  See if we can find how
    strictly the object at that address is aligned.   Return that alignment
    strictly the object at that address is aligned.   Return that alignment
    in bits.  If we don't know anything about the alignment, return 0.  */
 extern unsigned int known_alignment (tree);
+
+/* Return true if VALUE is a multiple of FACTOR. FACTOR must be a power
+   of 2. */
+extern int value_factor_p (tree, int);
 
 /* Make a binary operation of kind OP_CODE.  RESULT_TYPE is the type
    desired for the result.  Usually the operation is to be performed
@@ -682,8 +733,12 @@ extern tree build_call_2_expr (tree, tree, tree);
 extern tree build_call_0_expr (tree);
 
 /* Call a function that raises an exception and pass the line number and file
-   name, if requested.  MSG says which exception function to call.  */
-extern tree build_call_raise (int);
+   name, if requested.  MSG says which exception function to call.
+
+   GNAT_NODE is the gnat node conveying the source location for which
+   the error should be signaled, or Empty in which case the error is
+   signaled on the current ref_file_name/input_line.  */
+extern tree build_call_raise (int, Node_Id);
 
 /* Return a CONSTRUCTOR of TYPE whose list is LIST.  This is not the
    same as build_constructor in the language-independent tree.c.  */
@@ -709,8 +764,12 @@ extern tree build_call_alloc_dealloc (tree, tree, int, Entity_Id,
    RESULT_TYPE, which must be some type of pointer.  Return the tree.
    GNAT_PROC and GNAT_POOL optionally give the procedure to call and
    the storage pool to use.  GNAT_NODE is used to provide an error
-   location for restriction violations messages.  */
-extern tree build_allocator (tree, tree, tree, Entity_Id, Entity_Id, Node_Id);
+   location for restriction violations messages.  If IGNORE_INIT_TYPE is
+   true, ignore the type of INIT for the purpose of determining the size;
+   this will cause the maximum size to be allocated if TYPE is of
+   self-referential size.  */
+extern tree build_allocator (tree, tree, tree, Entity_Id, Entity_Id, Node_Id,
+			     int);
 
 /* Fill in a VMS descriptor for EXPR and return a constructor for it.
    GNAT_FORMAL is how we find the descriptor record.  */
@@ -756,7 +815,6 @@ extern Pos get_target_double_size (void);
 extern Pos get_target_long_double_size (void);
 extern Pos get_target_pointer_size (void);
 extern Pos get_target_maximum_alignment (void);
-extern Boolean get_target_no_dollar_in_label (void);
 extern Nat get_float_words_be (void);
 extern Nat get_words_be (void);
 extern Nat get_bytes_be (void);

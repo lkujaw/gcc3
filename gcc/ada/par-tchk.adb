@@ -6,7 +6,7 @@
 --                                                                          --
 --                                 B o d y                                  --
 --                                                                          --
---          Copyright (C) 1992-2003 Free Software Foundation, Inc.          --
+--          Copyright (C) 1992-2006, Free Software Foundation, Inc.         --
 --                                                                          --
 -- GNAT is free software;  you can  redistribute it  and/or modify it under --
 -- terms of the  GNU General Public License as published  by the Free Soft- --
@@ -16,15 +16,15 @@
 -- or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License --
 -- for  more details.  You should have  received  a copy of the GNU General --
 -- Public License  distributed with GNAT;  see file COPYING.  If not, write --
--- to  the Free Software Foundation,  59 Temple Place - Suite 330,  Boston, --
--- MA 02111-1307, USA.                                                      --
+-- to  the  Free Software Foundation,  51  Franklin  Street,  Fifth  Floor, --
+-- Boston, MA 02110-1301, USA.                                              --
 --                                                                          --
 -- GNAT was originally developed  by the GNAT team at  New York University. --
 -- Extensive contributions were provided by Ada Core Technologies Inc.      --
 --                                                                          --
 ------------------------------------------------------------------------------
 
---  Token scan routines.
+--  Token scan routines
 
 --  Error recovery: none of the T_xxx or TF_xxx routines raise Error_Resync
 
@@ -795,17 +795,12 @@ package body Tchk is
    -----------------
 
    procedure Wrong_Token (T : Token_Type; P : Position) is
-      Missing : constant String := "missing ";
-      Image : constant String := Token_Type'Image (T);
+      Missing  : constant String := "missing ";
+      Image    : constant String := Token_Type'Image (T);
       Tok_Name : constant String := Image (5 .. Image'Length);
-      M : String (1 .. Missing'Length + Tok_Name'Length);
+      M        : constant String := Missing & Tok_Name;
 
    begin
-      --  Set M to Missing & Tok_Name.
-
-      M (1 .. Missing'Length) := Missing;
-      M (Missing'Length + 1 .. M'Last) := Tok_Name;
-
       if Token = Tok_Semicolon then
          Scan;
 

@@ -6,7 +6,7 @@
 --                                                                          --
 --                                 B o d y                                  --
 --                                                                          --
---         Copyright (C) 2001-2003 Free Software Foundation, Inc.           --
+--         Copyright (C) 2001-2005 Free Software Foundation, Inc.           --
 --                                                                          --
 -- GNAT is free software;  you can  redistribute it  and/or modify it under --
 -- terms of the  GNU General Public License as published  by the Free Soft- --
@@ -16,8 +16,8 @@
 -- or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License --
 -- for  more details.  You should have  received  a copy of the GNU General --
 -- Public License  distributed with GNAT;  see file COPYING.  If not, write --
--- to  the Free Software Foundation,  59 Temple Place - Suite 330,  Boston, --
--- MA 02111-1307, USA.                                                      --
+-- to  the  Free Software Foundation,  51  Franklin  Street,  Fifth  Floor, --
+-- Boston, MA 02110-1301, USA.                                              --
 --                                                                          --
 -- GNAT was originally developed  by the GNAT team at  New York University. --
 -- Extensive contributions were provided by Ada Core Technologies Inc.      --
@@ -32,19 +32,17 @@ with Tree_IO;  use Tree_IO;
 package body Osint.C is
 
    Output_Object_File_Name : String_Ptr;
-   --  Argument of -o compiler option, if given. This is needed to
-   --  verify consistency with the ALI file name.
+   --  Argument of -o compiler option, if given. This is needed to verify
+   --  consistency with the ALI file name.
 
    procedure Adjust_OS_Resource_Limits;
    pragma Import (C, Adjust_OS_Resource_Limits,
                   "__gnat_adjust_os_resource_limits");
-   --  Procedure to make system specific adjustments to make GNAT
-   --  run better.
+   --  Procedure to make system specific adjustments to make GNAT run better
 
    function Create_Auxiliary_File
      (Src    : File_Name_Type;
-      Suffix : String)
-      return   File_Name_Type;
+      Suffix : String) return File_Name_Type;
    --  Common processing for Creat_Repinfo_File and Create_Debug_File.
    --  Src is the file name used to create the required output file and
    --  Suffix is the desired suffic (dg/rep for debug/repinfo file).
@@ -52,7 +50,8 @@ package body Osint.C is
    procedure Set_Library_Info_Name;
    --  Sets a default ali file name from the main compiler source name.
    --  This is used by Create_Output_Library_Info, and by the version of
-   --  Read_Library_Info that takes a default file name.
+   --  Read_Library_Info that takes a default file name. The name is in
+   --  Name_Buffer (with length in Name_Len) on return from the call
 
    ----------------------
    -- Close_Debug_File --
@@ -60,6 +59,7 @@ package body Osint.C is
 
    procedure Close_Debug_File is
       Status : Boolean;
+
    begin
       Close (Output_FD, Status);
 
@@ -76,6 +76,7 @@ package body Osint.C is
 
    procedure Close_Output_Library_Info is
       Status : Boolean;
+
    begin
       Close (Output_FD, Status);
 
@@ -92,6 +93,7 @@ package body Osint.C is
 
    procedure Close_Repinfo_File is
       Status : Boolean;
+
    begin
       Close (Output_FD, Status);
 
@@ -108,8 +110,7 @@ package body Osint.C is
 
    function Create_Auxiliary_File
      (Src    : File_Name_Type;
-      Suffix : String)
-      return   File_Name_Type
+      Suffix : String) return   File_Name_Type
    is
       Result : File_Name_Type;
 
@@ -256,18 +257,36 @@ package body Osint.C is
       --  To compare them, remove file name directories and extensions.
 
       if Output_Object_File_Name /= null then
+
          --  Make sure there is a dot at Dot_Index. This may not be the case
          --  if the source file name has no extension.
 
          Name_Buffer (Dot_Index) := '.';
+
+         --  If we are in multiple unit per file mode, then add ~nnn
+         --  extension to the name before doing the comparison.
+
+         if Multiple_Unit_Index /= 0 then
+            declare
+               Exten : constant String := Name_Buffer (Dot_Index .. Name_Len);
+            begin
+               Name_Len := Dot_Index - 1;
+               Add_Char_To_Name_Buffer (Multi_Unit_Index_Character);
+               Add_Nat_To_Name_Buffer (Multiple_Unit_Index);
+               Dot_Index := Name_Len + 1;
+               Add_Str_To_Name_Buffer (Exten);
+            end;
+         end if;
+
+         --  Remove extension preparing to replace it
 
          declare
             Name : constant String  := Name_Buffer (1 .. Dot_Index);
             Len  : constant Natural := Dot_Index;
 
          begin
-            Name_Buffer (1 .. Output_Object_File_Name'Length)
-               := Output_Object_File_Name.all;
+            Name_Buffer (1 .. Output_Object_File_Name'Length) :=
+              Output_Object_File_Name.all;
             Dot_Index := 0;
 
             for J in reverse Output_Object_File_Name'Range loop
@@ -277,8 +296,11 @@ package body Osint.C is
                end if;
             end loop;
 
+            --  Dot_Index should be zero now (we check for extension elsewhere)
+
             pragma Assert (Dot_Index /= 0);
-            --  We check for the extension elsewhere
+
+            --  Check name of object file is what we expect
 
             if Name /= Name_Buffer (Dot_Index - Len + 1 .. Dot_Index) then
                Fail ("incorrect object file name");
@@ -297,12 +319,12 @@ package body Osint.C is
    ---------------------------------
 
    procedure Set_Output_Object_File_Name (Name : String) is
-      Ext : constant String := Object_Suffix;
+      Ext : constant String  := Target_Object_Suffix;
       NL  : constant Natural := Name'Length;
       EL  : constant Natural := Ext'Length;
 
    begin
-      --  Make sure that the object file has the expected extension.
+      --  Make sure that the object file has the expected extension
 
       if NL <= EL
          or else

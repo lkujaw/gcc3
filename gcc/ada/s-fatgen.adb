@@ -6,7 +6,7 @@
 --                                                                          --
 --                                 B o d y                                  --
 --                                                                          --
---          Copyright (C) 1992-2003 Free Software Foundation, Inc.          --
+--          Copyright (C) 1992-2006, Free Software Foundation, Inc.         --
 --                                                                          --
 -- GNAT is free software;  you can  redistribute it  and/or modify it under --
 -- terms of the  GNU General Public License as published  by the Free Soft- --
@@ -16,16 +16,16 @@
 -- or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License --
 -- for  more details.  You should have  received  a copy of the GNU General --
 -- Public License  distributed with GNAT;  see file COPYING.  If not, write --
--- to  the Free Software Foundation,  59 Temple Place - Suite 330,  Boston, --
--- MA 02111-1307, USA.                                                      --
+-- to  the  Free Software Foundation,  51  Franklin  Street,  Fifth  Floor, --
+-- Boston, MA 02110-1301, USA.                                              --
 --                                                                          --
--- As a special exception,  if other files  instantiate  generics from this --
--- unit, or you link  this unit with other files  to produce an executable, --
--- this  unit  does not  by itself cause  the resulting  executable  to  be --
--- covered  by the  GNU  General  Public  License.  This exception does not --
--- however invalidate  any other reasons why  the executable file  might be --
--- covered by the  GNU Public License.                                      --
---                                                                          --
+--
+--
+--
+--
+--
+--
+--
 -- GNAT was originally developed  by the GNAT team at  New York University. --
 -- Extensive contributions were provided by Ada Core Technologies Inc.      --
 --                                                                          --
@@ -81,7 +81,10 @@ package body System.Fat_Gen is
    -----------------------
 
    procedure Decompose (XX : T; Frac : out T; Expo : out UI);
-   --  Decomposes a floating-point number into fraction and exponent parts
+   --  Decomposes a floating-point number into fraction and exponent parts.
+   --  Both results are signed, with Frac having the sign of XX, and UI has
+   --  the sign of the exponent. The absolute value of Frac is in the range
+   --  0.0 <= Frac < 1.0. If Frac = 0.0 or -0.0, then Expo is always zero.
 
    function Gradual_Scaling  (Adjustment : UI) return T;
    --  Like Scaling with a first argument of 1.0, but returns the smallest
@@ -96,10 +99,8 @@ package body System.Fat_Gen is
    begin
       if Towards = X then
          return X;
-
       elsif Towards > X then
          return Succ (X);
-
       else
          return Pred (X);
       end if;
@@ -111,14 +112,11 @@ package body System.Fat_Gen is
 
    function Ceiling (X : T) return T is
       XT : constant T := Truncation (X);
-
    begin
       if X <= 0.0 then
          return XT;
-
       elsif X = XT then
          return X;
-
       else
          return XT + 1.0;
       end if;
@@ -131,7 +129,6 @@ package body System.Fat_Gen is
    function Compose (Fraction : T; Exponent : UI) return T is
       Arg_Frac : T;
       Arg_Exp  : UI;
-
    begin
       Decompose (Fraction, Arg_Frac, Arg_Exp);
       return Scaling (Arg_Frac, Exponent);
@@ -173,7 +170,7 @@ package body System.Fat_Gen is
          --  T'Machine_Emin - T'Machine_Mantissa, which would preserve
          --  monotonicity of the exponent function ???
 
-      --  Check for infinities, transfinites, whatnot.
+      --  Check for infinities, transfinites, whatnot
 
       elsif X > T'Safe_Last then
          Frac := Invrad;
@@ -191,7 +188,7 @@ package body System.Fat_Gen is
             Ax : T  := abs X;
             Ex : UI := 0;
 
-         --  Ax * Rad ** Ex is invariant.
+         --  Ax * Rad ** Ex is invariant
 
          begin
             if Ax >= 1.0 then
@@ -254,7 +251,6 @@ package body System.Fat_Gen is
    function Exponent (X : T) return UI is
       X_Frac : T;
       X_Exp  : UI;
-
    begin
       Decompose (X, X_Frac, X_Exp);
       return X_Exp;
@@ -266,14 +262,11 @@ package body System.Fat_Gen is
 
    function Floor (X : T) return T is
       XT : constant T := Truncation (X);
-
    begin
       if X >= 0.0 then
          return XT;
-
       elsif XT = X then
          return X;
-
       else
          return XT - 1.0;
       end if;
@@ -286,7 +279,6 @@ package body System.Fat_Gen is
    function Fraction (X : T) return T is
       X_Frac : T;
       X_Exp  : UI;
-
    begin
       Decompose (X, X_Frac, X_Exp);
       return X_Frac;
@@ -302,12 +294,11 @@ package body System.Fat_Gen is
       Ex : UI := Adjustment;
 
    begin
-      if Adjustment < T'Machine_Emin then
+      if Adjustment < T'Machine_Emin - 1 then
          Y  := 2.0 ** T'Machine_Emin;
          Y1 := Y;
          Ex := Ex - T'Machine_Emin;
-
-         while Ex <= 0 loop
+         while Ex < 0 loop
             Y := T'Machine (Y / 2.0);
 
             if Y = 0.0 then
@@ -337,13 +328,15 @@ package body System.Fat_Gen is
       if Radix_Digits >= T'Machine_Mantissa then
          return X;
 
+      elsif Radix_Digits <= 0 then
+         raise Constraint_Error;
+
       else
          L := Exponent (X) - Radix_Digits;
          Y := Truncation (Scaling (X, -L));
          Z := Scaling (Y, L);
          return Z;
       end if;
-
    end Leading_Part;
 
    -------------
@@ -358,11 +351,42 @@ package body System.Fat_Gen is
    function Machine (X : T) return T is
       Temp : T;
       pragma Volatile (Temp);
-
    begin
       Temp := X;
       return Temp;
    end Machine;
+
+   ----------------------
+   -- Machine_Rounding --
+   ----------------------
+
+   --  For now, the implementation is identical to that of Rounding, which is
+   --  a permissible behavior, but is not the most efficient possible approach.
+
+   function Machine_Rounding (X : T) return T is
+      Result : T;
+      Tail   : T;
+
+   begin
+      Result := Truncation (abs X);
+      Tail   := abs X - Result;
+
+      if Tail >= 0.5  then
+         Result := Result + 1.0;
+      end if;
+
+      if X > 0.0 then
+         return Result;
+
+      elsif X < 0.0 then
+         return -Result;
+
+      --  For zero case, make sure sign of zero is preserved
+
+      else
+         return X;
+      end if;
+   end Machine_Rounding;
 
    -----------
    -- Model --
@@ -403,10 +427,14 @@ package body System.Fat_Gen is
          --  two, then we want to subtract half of what we would otherwise
          --  subtract, since the exponent is going to be reduced.
 
-         if X_Frac = 0.5 and then X > 0.0 then
+         --  Note that X_Frac has the same sign as X, so if X_Frac is 0.5,
+         --  then we know that we have a positive number (and hence a
+         --  positive power of 2).
+
+         if X_Frac = 0.5 then
             return X - Gradual_Scaling (X_Exp - T'Machine_Mantissa - 1);
 
-         --  Otherwise the exponent stays the same
+         --  Otherwise the exponent is unchanged
 
          else
             return X - Gradual_Scaling (X_Exp - T'Machine_Mantissa);
@@ -433,6 +461,10 @@ package body System.Fat_Gen is
       P_Even   : Boolean;
 
    begin
+      if Y = 0.0 then
+         raise Constraint_Error;
+      end if;
+
       if X > 0.0 then
          Sign_X :=  1.0;
          Arg := X;
@@ -488,7 +520,6 @@ package body System.Fat_Gen is
       end if;
 
       return Sign_X * IEEE_Rem;
-
    end Remainder;
 
    --------------
@@ -518,7 +549,6 @@ package body System.Fat_Gen is
       else
          return X;
       end if;
-
    end Rounding;
 
    -------------
@@ -534,7 +564,7 @@ package body System.Fat_Gen is
          return X;
       end if;
 
-      --  Nonzero x. essentially, just multiply repeatedly by Rad ** (+-2**n).
+      --  Nonzero x. essentially, just multiply repeatedly by Rad ** (+-2**n)
 
       declare
          Y  : T  := X;
@@ -579,10 +609,12 @@ package body System.Fat_Gen is
                end if;
 
                --  0 <= Ex < Log_Power (N)
+
             end loop;
 
             --  Ex = 0
          end if;
+
          return Y;
       end;
    end Scaling;
@@ -622,10 +654,14 @@ package body System.Fat_Gen is
          --  two, then we want to add half of what we would otherwise add,
          --  since the exponent is going to be reduced.
 
-         if X_Frac = 0.5 and then X < 0.0 then
+         --  Note that X_Frac has the same sign as X, so if X_Frac is -0.5,
+         --  then we know that we have a ngeative number (and hence a
+         --  negative power of 2).
+
+         if X_Frac = -0.5 then
             return X + Gradual_Scaling (X_Exp - T'Machine_Mantissa - 1);
 
-         --  Otherwise the exponent stays the same
+         --  Otherwise the exponent is unchanged
 
          else
             return X + Gradual_Scaling (X_Exp - T'Machine_Mantissa);
@@ -639,7 +675,7 @@ package body System.Fat_Gen is
 
    --  The basic approach is to compute
 
-   --    T'Machine (RM1 + N) - RM1.
+   --    T'Machine (RM1 + N) - RM1
 
    --  where N >= 0.0 and RM1 = radix ** (mantissa - 1)
 
@@ -680,7 +716,6 @@ package body System.Fat_Gen is
             return X;
          end if;
       end if;
-
    end Truncation;
 
    -----------------------
@@ -714,12 +749,15 @@ package body System.Fat_Gen is
       else
          return X;
       end if;
-
    end Unbiased_Rounding;
 
    -----------
    -- Valid --
    -----------
+
+   --  Note: this routine does not work for VAX float. We compensate for this
+   --  in Exp_Attr by using the Valid functions in Vax_Float_Operations rather
+   --  than the corresponding instantiation of this function.
 
    function Valid (X : access T) return Boolean is
 
@@ -731,17 +769,17 @@ package body System.Fat_Gen is
       subtype IEEE_Exponent_Range is
         Integer range IEEE_Emin - 1 .. IEEE_Emax + 1;
 
-      --  The implementation of this floating point attribute uses
-      --  a representation type Float_Rep that allows direct access to
-      --  the exponent and mantissa parts of a floating point number.
+      --  The implementation of this floating point attribute uses a
+      --  representation type Float_Rep that allows direct access to the
+      --  exponent and mantissa parts of a floating point number.
 
       --  The Float_Rep type is an array of Float_Word elements. This
-      --  representation is chosen to make it possible to size the
-      --  type based on a generic parameter. Since the array size is
-      --  known at compile-time, efficient code can still be generated.
-      --  The size of Float_Word elements should be large enough to allow
-      --  accessing the exponent in one read, but small enough so that all
-      --  floating point object sizes are a multiple of the Float_Word'Size.
+      --  representation is chosen to make it possible to size the type based
+      --  on a generic parameter. Since the array size is known at compile
+      --  time, efficient code can still be generated. The size of Float_Word
+      --  elements should be large enough to allow accessing the exponent in
+      --  one read, but small enough so that all floating point object sizes
+      --  are a multiple of the Float_Word'Size.
 
       --  The following conditions must be met for all possible
       --  instantiations of the attributes package:
@@ -751,16 +789,26 @@ package body System.Fat_Gen is
       --    - The exponent and sign are completely contained in a single
       --      component of Float_Rep, named Most_Significant_Word (MSW).
 
-      --    - The sign occupies the most significant bit of the MSW
-      --      and the exponent is in the following bits.
-      --      Unused bits (if any) are in the least significant part.
+      --    - The sign occupies the most significant bit of the MSW and the
+      --      exponent is in the following bits. Unused bits (if any) are in
+      --      the least significant part.
 
       type Float_Word is mod 2**Positive'Min (System.Word_Size, 32);
       type Rep_Index is range 0 .. 7;
 
-      Rep_Last : constant Rep_Index := (T'Size - 1) / Float_Word'Size;
+      Rep_Words : constant Positive :=
+         (T'Size + Float_Word'Size - 1) / Float_Word'Size;
+      Rep_Last  : constant Rep_Index := Rep_Index'Min
+        (Rep_Index (Rep_Words - 1), (T'Mantissa + 16) / Float_Word'Size);
+      --  Determine the number of Float_Words needed for representing the
+      --  entire floating-point value. Do not take into account excessive
+      --  padding, as occurs on IA-64 where 80 bits floats get padded to 128
+      --  bits. In general, the exponent field cannot be larger than 15 bits,
+      --  even for 128-bit floating-poin t types, so the final format size
+      --  won't be larger than T'Mantissa + 16.
 
-      type Float_Rep is array (Rep_Index range 0 .. Rep_Last) of Float_Word;
+      type Float_Rep is
+         array (Rep_Index range 0 .. Rep_Index (Rep_Words - 1)) of Float_Word;
 
       pragma Suppress_Initialization (Float_Rep);
       --  This pragma supresses the generation of an initialization procedure
@@ -771,26 +819,26 @@ package body System.Fat_Gen is
 
       Most_Significant_Word : constant Rep_Index :=
                                 Rep_Last * Standard'Default_Bit_Order;
-      --  Finding the location of the Exponent_Word is a bit tricky.
-      --  In general we assume Word_Order = Bit_Order.
-      --  This expression needs to be refined for VMS.
+      --  Finding the location of the Exponent_Word is a bit tricky. In general
+      --  we assume Word_Order = Bit_Order. This expression needs to be refined
+      --  for VMS.
 
       Exponent_Factor : constant Float_Word :=
                           2**(Float_Word'Size - 1) /
                             Float_Word (IEEE_Emax - IEEE_Emin + 3) *
-                              Boolean'Pos (T'Size /= 96) +
-                                Boolean'Pos (T'Size = 96);
-      --  Factor that the extracted exponent needs to be divided by
-      --  to be in range 0 .. IEEE_Emax - IEEE_Emin + 2.
-      --  Special kludge: Exponent_Factor is 0 for x86 double extended
-      --  as GCC adds 16 unused bits to the type.
+                              Boolean'Pos (Most_Significant_Word /= 2) +
+                                Boolean'Pos (Most_Significant_Word = 2);
+      --  Factor that the extracted exponent needs to be divided by to be in
+      --  range 0 .. IEEE_Emax - IEEE_Emin + 2. Special kludge: Exponent_Factor
+      --  is 1 for x86/IA64 double extended as GCC adds unused bits to the
+      --  type.
 
       Exponent_Mask : constant Float_Word :=
                         Float_Word (IEEE_Emax - IEEE_Emin + 2) *
                           Exponent_Factor;
-      --  Value needed to mask out the exponent field.
-      --  This assumes that the range IEEE_Emin - 1 .. IEEE_Emax + 1
-      --  contains 2**N values, for some N in Natural.
+      --  Value needed to mask out the exponent field. This assumes that the
+      --  range IEEE_Emin - 1 .. IEEE_Emax + contains 2**N values, for some N
+      --  in Natural.
 
       function To_Float is new Ada.Unchecked_Conversion (Float_Rep, T);
 
@@ -811,8 +859,8 @@ package body System.Fat_Gen is
              Integer ((R (Most_Significant_Word) and Exponent_Mask) /
                                                         Exponent_Factor)
                - IEEE_Bias;
-      --  Mask/Shift T to only get bits from the exponent
-      --  Then convert biased value to integer value.
+      --  Mask/Shift T to only get bits from the exponent. Then convert biased
+      --  value to integer value.
 
       SR : Float_Rep;
       --  Float_Rep representation of significant of X.all
@@ -820,8 +868,8 @@ package body System.Fat_Gen is
    begin
       if T'Denorm then
 
-         --  All denormalized numbers are valid, so only invalid numbers
-         --  are overflows and NaN's, both with exponent = Emax + 1.
+         --  All denormalized numbers are valid, so only invalid numbers are
+         --  overflows and NaN's, both with exponent = Emax + 1.
 
          return E /= IEEE_Emax + 1;
 
@@ -854,7 +902,16 @@ package body System.Fat_Gen is
       Local_T : aliased T;
 
    begin
+      --  Note that we have to be sure that we do not load the value into a
+      --  floating-point register, since a signalling NaN may cause a trap.
+      --  The following assignment is what does the actual alignment, since
+      --  we know that the target Local_T is aligned.
+
       To_FSP (Local_T'Address).all := To_FSP (A).all;
+
+      --  Now that we have an aligned value, we can use the normal aligned
+      --  version of Valid to obtain the required result.
+
       return Valid (Local_T'Access);
    end Unaligned_Valid;
 

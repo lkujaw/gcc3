@@ -6,7 +6,7 @@
 --                                                                          --
 --                                 B o d y                                  --
 --                                                                          --
---          Copyright (C) 1992-2003 Free Software Foundation, Inc.          --
+--          Copyright (C) 1992-2005, Free Software Foundation, Inc.         --
 --                                                                          --
 -- GNAT is free software;  you can  redistribute it  and/or modify it under --
 -- terms of the  GNU General Public License as published  by the Free Soft- --
@@ -16,16 +16,16 @@
 -- or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License --
 -- for  more details.  You should have  received  a copy of the GNU General --
 -- Public License  distributed with GNAT;  see file COPYING.  If not, write --
--- to  the Free Software Foundation,  59 Temple Place - Suite 330,  Boston, --
--- MA 02111-1307, USA.                                                      --
+-- to  the  Free Software Foundation,  51  Franklin  Street,  Fifth  Floor, --
+-- Boston, MA 02110-1301, USA.                                              --
 --                                                                          --
--- As a special exception,  if other files  instantiate  generics from this --
--- unit, or you link  this unit with other files  to produce an executable, --
--- this  unit  does not  by itself cause  the resulting  executable  to  be --
--- covered  by the  GNU  General  Public  License.  This exception does not --
--- however invalidate  any other reasons why  the executable file  might be --
--- covered by the  GNU Public License.                                      --
---                                                                          --
+--
+--
+--
+--
+--
+--
+--
 -- GNAT was originally developed  by the GNAT team at  New York University. --
 -- Extensive contributions were provided by Ada Core Technologies Inc.      --
 --                                                                          --
@@ -57,8 +57,7 @@ package body Exception_Traces is
 
    procedure Last_Chance_Handler
      (Except :  Exception_Occurrence);
-   pragma Import
-     (C, Last_Chance_Handler, "__gnat_last_chance_handler");
+   pragma Import (C, Last_Chance_Handler, "__gnat_last_chance_handler");
    pragma No_Return (Last_Chance_Handler);
    --  Users can replace the default version of this routine,
    --  Ada.Exceptions.Last_Chance_Handler.
@@ -76,11 +75,6 @@ package body Exception_Traces is
    --  latter case because Notify_Handled_Exception may be called for an
    --  actually unhandled occurrence in the Front-End-SJLJ case.
 
-   procedure To_Stderr (S : String);
-   pragma Export (Ada, To_Stderr, "__gnat_to_stderr");
-   --  Little routine to output string to stderr that is also used
-   --  in the tasking run time.
-
    ---------------------------------
    -- Debugger Interface Routines --
    ---------------------------------
@@ -91,10 +85,10 @@ package body Exception_Traces is
 
    procedure Unhandled_Exception;
    pragma Export (C, Unhandled_Exception, "__gnat_unhandled_exception");
-   --  Hook for GDB to support "break exception unhandled".
+   --  Hook for GDB to support "break exception unhandled"
 
    --  For "break exception", GDB uses __gnat_raise_nodefer_with_msg, which
-   --  is not in this section because it fullfills other purposes than a mere
+   --  is not in this section because it functions as more than simply a
    --  debugger interface.
 
    --------------------------------
@@ -167,8 +161,18 @@ package body Exception_Traces is
    --------------------------------
 
    procedure Notify_Unhandled_Exception is
+      Excep : constant EOA := Get_Current_Excep.all;
+
    begin
-      Notify_Exception (Get_Current_Excep.all, Is_Unhandled => True);
+      --  Check whether there is any termination handler to be executed for
+      --  the environment task, and execute it if needed. Here we handle both
+      --  the Abnormal and Unhandled_Exception task termination. Normal
+      --  task termination routine is executed elsewhere (either in the
+      --  Task_Wrapper or in the Adafinal routine for the environment task).
+
+      Task_Termination_Handler.all (Excep.all);
+
+      Notify_Exception (Excep, Is_Unhandled => True);
       Unhandled_Exception;
    end Notify_Unhandled_Exception;
 
@@ -185,8 +189,6 @@ package body Exception_Traces is
    -- Unhandled_Exception_Terminate --
    -----------------------------------
 
-   type int is new Integer;
-
    procedure Unhandled_Exception_Terminate is
       Excep : constant EOA := Save_Occurrence (Get_Current_Excep.all.all);
       --  This occurrence will be used to display a message after finalization.
@@ -197,23 +199,6 @@ package body Exception_Traces is
    begin
       Last_Chance_Handler (Excep.all);
    end Unhandled_Exception_Terminate;
-
-   ---------------
-   -- To_Stderr --
-   ---------------
-
-   procedure To_Stderr (S : String) is
-      procedure put_char_stderr (C : int);
-      pragma Import (C, put_char_stderr, "put_char_stderr");
-
-   begin
-      for J in 1 .. S'Length loop
-         if S (J) /= ASCII.CR then
-            put_char_stderr (Character'Pos (S (J)));
-         end if;
-      end loop;
-   end To_Stderr;
-
 
    ------------------------------------
    -- Handling GNAT.Exception_Traces --

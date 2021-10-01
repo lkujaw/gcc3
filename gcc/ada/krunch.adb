@@ -6,7 +6,7 @@
 --                                                                          --
 --                                 B o d y                                  --
 --                                                                          --
---          Copyright (C) 1992-2000 Free Software Foundation, Inc.          --
+--          Copyright (C) 1992-2006, Free Software Foundation, Inc.         --
 --                                                                          --
 -- GNAT is free software;  you can  redistribute it  and/or modify it under --
 -- terms of the  GNU General Public License as published  by the Free Soft- --
@@ -16,34 +16,40 @@
 -- or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License --
 -- for  more details.  You should have  received  a copy of the GNU General --
 -- Public License  distributed with GNAT;  see file COPYING.  If not, write --
--- to  the Free Software Foundation,  59 Temple Place - Suite 330,  Boston, --
--- MA 02111-1307, USA.                                                      --
+-- to  the  Free Software Foundation,  51  Franklin  Street,  Fifth  Floor, --
+-- Boston, MA 02110-1301, USA.                                              --
 --                                                                          --
--- As a special exception,  if other files  instantiate  generics from this --
--- unit, or you link  this unit with other files  to produce an executable, --
--- this  unit  does not  by itself cause  the resulting  executable  to  be --
--- covered  by the  GNU  General  Public  License.  This exception does not --
--- however invalidate  any other reasons why  the executable file  might be --
--- covered by the  GNU Public License.                                      --
---                                                                          --
+--
+--
+--
+--
+--
+--
+--
 -- GNAT was originally developed  by the GNAT team at  New York University. --
 -- Extensive contributions were provided by Ada Core Technologies Inc.      --
 --                                                                          --
 ------------------------------------------------------------------------------
 
 with Hostparm;
+
 procedure Krunch
-  (Buffer    : in out String;
-   Len       : in out Natural;
-   Maxlen    : Natural;
-   No_Predef : Boolean)
+  (Buffer        : in out String;
+   Len           : in out Natural;
+   Maxlen        : Natural;
+   No_Predef     : Boolean;
+   VMS_On_Target : Boolean := False)
 
 is
+   pragma Assert (Buffer'First = 1);
+   --  This is a documented requirement; the assert turns off index warnings
+
    B1       : Character renames Buffer (1);
    Curlen   : Natural;
    Krlen    : Natural;
    Num_Seps : Natural;
    Startloc : Natural;
+   J        : Natural;
 
 begin
    --  Deal with special predefined children cases. Startloc is the first
@@ -63,6 +69,15 @@ begin
       Buffer (6 .. Len - 12) := Buffer (18 .. Len);
       Curlen := Len - 12;
       Krlen  := 8;
+
+   elsif Len >= 23
+     and then Buffer (1 .. 22) = "ada-wide_wide_text_io-"
+   then
+      Startloc := 3;
+      Buffer (2 .. 5) := "-zt-";
+      Buffer (6 .. Len - 17) := Buffer (23 .. Len);
+      Curlen := Len - 17;
+      Krlen := 8;
 
    elsif Len >= 4 and then Buffer (1 .. 4) = "ada-" then
       Startloc := 3;
@@ -108,20 +123,35 @@ begin
    --  is A, G, I, or S. In order to prevent confusion with krunched names
    --  of predefined units use a tilde rather than a minus as the second
    --  character of the file name.  On VMS a tilde is an illegal character
-   --  in a file name, so a dollar_sign is used instead.
+   --  in a file name, two consecutive underlines ("__") are used instead.
 
    elsif Len > 1
      and then Buffer (2) = '-'
      and then (B1 = 'a' or else B1 = 'g' or else B1 = 'i' or else B1 = 's')
      and then Len <= Maxlen
    then
-      if Hostparm.OpenVMS then
-         Buffer (2) := '$';
+      --  When VMS is the host, it is always also the target.
+
+      if Hostparm.OpenVMS or else VMS_On_Target then
+         Len := Len + 1;
+         Buffer (4 .. Len) := Buffer (3 .. Len - 1);
+         Buffer (2) := '_';
+         Buffer (3) := '_';
       else
          Buffer (2) := '~';
       end if;
 
-      return;
+      if Len <= Maxlen then
+         return;
+
+      else
+         --  Case of VMS when the buffer had exactly the length Maxlen and now
+         --  has the length Maxlen + 1: krunching after "__" is needed.
+
+         Startloc := 4;
+         Curlen   := Len;
+         Krlen    := Maxlen;
+      end if;
 
    --  Normal case, not a predefined file
 
@@ -138,6 +168,26 @@ begin
       return;
    end if;
 
+   --  If string contains Wide_Wide, replace by a single z
+
+   J := Startloc;
+   while J <= Curlen - 8 loop
+      if Buffer (J .. J + 8) = "wide_wide"
+        and then (J = Startloc
+                    or else Buffer (J - 1) = '-'
+                    or else Buffer (J - 1) = '_')
+        and then (J + 8 = Curlen
+                    or else Buffer (J + 9) = '-'
+                    or else Buffer (J + 9) = '_')
+      then
+         Buffer (J) := 'z';
+         Buffer (J + 1 .. Curlen - 8) := Buffer (J + 9 .. Curlen);
+         Curlen := Curlen - 8;
+      end if;
+
+      J := J + 1;
+   end loop;
+
    --  For now, refuse to krunch a name that contains an ESC character (wide
    --  character sequence) since it's too much trouble to do this right ???
 
@@ -152,7 +202,6 @@ begin
    --  the krunching process, and then we eliminate them as the last step
 
    Num_Seps := 0;
-
    for J in Startloc .. Curlen loop
       if Buffer (J) = '-' or else Buffer (J) = '_' then
          Buffer (J) := ' ';

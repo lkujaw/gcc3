@@ -6,7 +6,7 @@
 --                                                                          --
 --                                 S p e c                                  --
 --                                                                          --
---          Copyright (C) 1992-2003 Free Software Foundation, Inc.          --
+--          Copyright (C) 1992-2006, Free Software Foundation, Inc.         --
 --                                                                          --
 -- GNAT is free software;  you can  redistribute it  and/or modify it under --
 -- terms of the  GNU General Public License as published  by the Free Soft- --
@@ -16,8 +16,8 @@
 -- or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License --
 -- for  more details.  You should have  received  a copy of the GNU General --
 -- Public License  distributed with GNAT;  see file COPYING.  If not, write --
--- to  the Free Software Foundation,  59 Temple Place - Suite 330,  Boston, --
--- MA 02111-1307, USA.                                                      --
+-- to  the  Free Software Foundation,  51  Franklin  Street,  Fifth  Floor, --
+-- Boston, MA 02110-1301, USA.                                              --
 --                                                                          --
 -- GNAT was originally developed  by the GNAT team at  New York University. --
 -- Extensive contributions were provided by Ada Core Technologies Inc.      --
@@ -28,6 +28,7 @@ with Types; use Types;
 package Sem_Ch6 is
 
    procedure Analyze_Abstract_Subprogram_Declaration (N : Node_Id);
+   procedure Analyze_Extended_Return_Statement       (N : Node_Id);
    procedure Analyze_Function_Call                   (N : Node_Id);
    procedure Analyze_Operator_Symbol                 (N : Node_Id);
    procedure Analyze_Parameter_Association           (N : Node_Id);
@@ -47,6 +48,11 @@ package Sem_Ch6 is
    --  then an error message is issued (by removing the last character of Msg).
    --  If Subp is not Always_Inlined, then a warning is issued if the flag
    --  Ineffective_Inline_Warnings is set, and if not, the call has no effect.
+
+   procedure Check_Conventions (Typ : Entity_Id);
+   --  Ada 2005 (AI-430): Check that the conventions of all inherited and
+   --  overridden dispatching operations of type Typ are consistent with
+   --  their respective counterparts.
 
    procedure Check_Delayed_Subprogram (Designator : Entity_Id);
    --  Designator can be a E_Subrpgram_Type, E_Procedure or E_Function. If a
@@ -143,11 +149,10 @@ package Sem_Ch6 is
    procedure New_Overloaded_Entity
      (S            : Entity_Id;
       Derived_Type : Entity_Id := Empty);
-   --  Process new overloaded entity. Overloaded entities are created
-   --  by enumeration type declarations, subprogram specifications,
-   --  entry declarations, and (implicitly) by type derivations.
-   --  If Derived_Type is not Empty, then it indicates that this
-   --  is subprogram derived for that type.
+   --  Process new overloaded entity. Overloaded entities are created by
+   --  enumeration type declarations, subprogram specifications, entry
+   --  declarations, and (implicitly) by type derivations. Derived_Type non-
+   --  Empty indicates that this is subprogram derived for that type.
 
    procedure Process_Formals (T : List_Id; Related_Nod : Node_Id);
    --  Enter the formals in the scope of the subprogram or entry, and
@@ -168,11 +173,14 @@ package Sem_Ch6 is
 
    function Subtype_Conformant (New_Id, Old_Id : Entity_Id) return Boolean;
    --  Determine whether two callable entities (subprograms, entries,
-   --  literals) are subtype conformant (RM6.3.1(16))
+   --  literals) are subtype conformant (RM6.3.1(16)).
 
-   function Type_Conformant (New_Id, Old_Id : Entity_Id) return Boolean;
+   function Type_Conformant
+     (New_Id                   : Entity_Id;
+      Old_Id                   : Entity_Id;
+      Skip_Controlling_Formals : Boolean := False) return Boolean;
    --  Determine whether two callable entities (subprograms, entries,
-   --  literals) are type conformant (RM6.3.1(14))
+   --  literals) are type conformant (RM6.3.1(14)).
 
    procedure Valid_Operator_Definition (Designator : Entity_Id);
    --  Verify that an operator definition has the proper number of formals

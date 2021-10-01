@@ -6,7 +6,7 @@
 --                                                                          --
 --                                 S p e c                                  --
 --                                                                          --
---          Copyright (C) 2000-2001 Free Software Foundation, Inc.          --
+--          Copyright (C) 2000-2004 Free Software Foundation, Inc.          --
 --                                                                          --
 -- GNAT is free software;  you can  redistribute it  and/or modify it under --
 -- terms of the  GNU General Public License as published  by the Free Soft- --
@@ -16,8 +16,8 @@
 -- or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License --
 -- for  more details.  You should have  received  a copy of the GNU General --
 -- Public License  distributed with GNAT;  see file COPYING.  If not, write --
--- to  the Free Software Foundation,  59 Temple Place - Suite 330,  Boston, --
--- MA 02111-1307, USA.                                                      --
+-- to  the  Free Software Foundation,  51  Franklin  Street,  Fifth  Floor, --
+-- Boston, MA 02110-1301, USA.                                              --
 --                                                                          --
 -- GNAT was originally developed  by the GNAT team at  New York University. --
 -- Extensive contributions were provided by Ada Core Technologies Inc.      --
@@ -68,10 +68,10 @@ package Layout is
    --  types, the RM_Size is simply set to zero. This routine also sets
    --  the Is_Constrained flag in Def_Id.
 
-   procedure Set_Prim_Alignment (E : Entity_Id);
-   --  The front end always sets alignments for primitive types by calling this
-   --  procedure. Note that we have to do this for discrete types (since the
-   --  Alignment attribute is static), so we might as well do it for all
-   --  scalar types, since the processing is the same.
+   procedure Set_Elem_Alignment (E : Entity_Id);
+   --  The front end always sets alignments for elementary types by calling
+   --  this procedure. Note that we have to do this for discrete types (since
+   --  the Alignment attribute is static), so we might as well do it for all
+   --  elementary types, since the processing is the same.
 
 end Layout;

@@ -6,7 +6,7 @@
  *                                                                          *
  *                          C Implementation File                           *
  *                                                                          *
- *          Copyright (C) 1992-2003, Free Software Foundation, Inc.         *
+ *          Copyright (C) 1992-2006, Free Software Foundation, Inc.         *
  *                                                                          *
  * GNAT is free software;  you can  redistribute it  and/or modify it under *
  * terms of the  GNU General Public License as published  by the Free Soft- *
@@ -34,6 +34,7 @@
 #include "ada.h"
 #include "types.h"
 #include "atree.h"
+#include "namet.h"
 #include "stringt.h"
 #include "uintp.h"
 #include "fe.h"
@@ -107,25 +108,12 @@ tree
 get_base_type (tree type)
 {
   if (TREE_CODE (type) == RECORD_TYPE
-      && TYPE_LEFT_JUSTIFIED_MODULAR_P (type))
+      && TYPE_JUSTIFIED_MODULAR_P (type))
     type = TREE_TYPE (TYPE_FIELDS (type));
 
   while (TREE_TYPE (type) != 0
 	 && (TREE_CODE (type) == INTEGER_TYPE
 	     || TREE_CODE (type) == REAL_TYPE))
-    type = TREE_TYPE (type);
-
-  return type;
-}
-
-/* Likewise, but only return types known to the Ada source.  */
-tree
-get_ada_base_type (tree type)
-{
-  while (TREE_TYPE (type) != 0
-	 && (TREE_CODE (type) == INTEGER_TYPE
-	     || TREE_CODE (type) == REAL_TYPE)
-	 && ! TYPE_EXTRA_SUBTYPE_P (type))
     type = TREE_TYPE (type);
 
   return type;
@@ -226,8 +214,13 @@ find_common_type (tree t1, tree t2)
   else if (TYPE_MODE (t2) != BLKmode)
     return t2;
 
-  /* Otherwise, return the type that has a constant size.  */
-  if (TREE_CONSTANT (TYPE_SIZE (t1)))
+  /* If both types have constant size, use the smaller one.  Keep returning
+     T1 if we have a tie, to be consistent with the other cases.  */
+  if (TREE_CONSTANT (TYPE_SIZE (t1)) && TREE_CONSTANT (TYPE_SIZE (t2)))
+    return tree_int_cst_lt (TYPE_SIZE (t2), TYPE_SIZE (t1)) ? t2 : t1;
+
+  /* Otherwise, if either type has a constant size, use it.  */
+  else if (TREE_CONSTANT (TYPE_SIZE (t1)))
     return t1;
   else if (TREE_CONSTANT (TYPE_SIZE (t2)))
     return t2;
@@ -641,7 +634,7 @@ build_binary_op (enum tree_code op_code,
 
   if (operation_type != 0
       && TREE_CODE (operation_type) == RECORD_TYPE
-      && TYPE_LEFT_JUSTIFIED_MODULAR_P (operation_type))
+      && TYPE_JUSTIFIED_MODULAR_P (operation_type))
     operation_type = TREE_TYPE (TYPE_FIELDS (operation_type));
 
   if (operation_type != 0
@@ -671,9 +664,9 @@ build_binary_op (enum tree_code op_code,
 		      || POINTER_TYPE_P (TREE_TYPE
 					 (TREE_OPERAND (left_operand, 0)))))
 		 || (((TREE_CODE (left_type) == RECORD_TYPE
-		       /* Don't remove conversions to left-justified modular
+		       /* Don't remove conversions to justified modular
 			  types. */
-		       && ! TYPE_LEFT_JUSTIFIED_MODULAR_P (left_type))
+		       && ! TYPE_JUSTIFIED_MODULAR_P (left_type))
 		      || TREE_CODE (left_type) == ARRAY_TYPE)
 		     && ((TREE_CODE (TREE_TYPE
 				     (TREE_OPERAND (left_operand, 0)))
@@ -701,13 +694,13 @@ build_binary_op (enum tree_code op_code,
 	 type, which we must not remove.  */
       while (TREE_CODE (right_operand) == VIEW_CONVERT_EXPR
 	     && ((TREE_CODE (right_type) == RECORD_TYPE
-		  && ! TYPE_LEFT_JUSTIFIED_MODULAR_P (right_type)
+		  && ! TYPE_JUSTIFIED_MODULAR_P (right_type)
 		  && ! TYPE_ALIGN_OK (right_type)
 		  && ! TYPE_IS_FAT_POINTER_P (right_type))
 		 || TREE_CODE (right_type) == ARRAY_TYPE)
 	     && (((TREE_CODE (TREE_TYPE (TREE_OPERAND (right_operand, 0)))
 		   == RECORD_TYPE)
-		  && ! (TYPE_LEFT_JUSTIFIED_MODULAR_P
+		  && ! (TYPE_JUSTIFIED_MODULAR_P
 			(TREE_TYPE (TREE_OPERAND (right_operand, 0))))
 		  && ! (TYPE_ALIGN_OK
 			(TREE_TYPE (TREE_OPERAND (right_operand, 0))))
@@ -716,9 +709,9 @@ build_binary_op (enum tree_code op_code,
 		 || (TREE_CODE (TREE_TYPE (TREE_OPERAND (right_operand, 0)))
 		     == ARRAY_TYPE))
 	     && (0 == (best_type
-		       == find_common_type (right_type,
-					    TREE_TYPE (TREE_OPERAND
-						       (right_operand, 0))))
+		       = find_common_type (right_type,
+					   TREE_TYPE (TREE_OPERAND
+						      (right_operand, 0))))
 		 || right_type != best_type))
 	{
 	  right_operand = TREE_OPERAND (right_operand, 0);
@@ -861,10 +854,10 @@ build_binary_op (enum tree_code op_code,
 			      TREE_OPERAND (right_operand, 0)),
 		      integer_zero_node);
 
-      /* If either object is a left-justified modular types, get the
+      /* If either object is a justified modular types, get the
 	 fields from within.  */
       if (TREE_CODE (left_type) == RECORD_TYPE
-	  && TYPE_LEFT_JUSTIFIED_MODULAR_P (left_type))
+	  && TYPE_JUSTIFIED_MODULAR_P (left_type))
 	{
 	  left_operand = convert (TREE_TYPE (TYPE_FIELDS (left_type)),
 				  left_operand);
@@ -873,7 +866,7 @@ build_binary_op (enum tree_code op_code,
 	}
 
       if (TREE_CODE (right_type) == RECORD_TYPE
-	  && TYPE_LEFT_JUSTIFIED_MODULAR_P (right_type))
+	  && TYPE_JUSTIFIED_MODULAR_P (right_type))
 	{
 	  right_operand = convert (TREE_TYPE (TYPE_FIELDS (right_type)),
 				  right_operand);
@@ -1104,7 +1097,7 @@ build_unary_op (enum tree_code op_code, tree result_type, tree operand)
 
   if (operation_type != 0
       && TREE_CODE (operation_type) == RECORD_TYPE
-      && TYPE_LEFT_JUSTIFIED_MODULAR_P (operation_type))
+      && TYPE_JUSTIFIED_MODULAR_P (operation_type))
     operation_type = TREE_TYPE (TYPE_FIELDS (operation_type));
 
   if (operation_type != 0
@@ -1284,9 +1277,12 @@ build_unary_op (enum tree_code op_code, tree result_type, tree operand)
 	}
 
       if (TYPE_FAT_POINTER_P (type))
-	result = build1 (UNCONSTRAINED_ARRAY_REF,
-			 TYPE_UNCONSTRAINED_ARRAY (type), operand);
-
+	{
+	  result = build1 (UNCONSTRAINED_ARRAY_REF,
+			   TYPE_UNCONSTRAINED_ARRAY (type), operand);
+	  TREE_READONLY (result) = TREE_STATIC (result)
+	    = TREE_READONLY (TYPE_UNCONSTRAINED_ARRAY (type));
+	}
       else if (TREE_CODE (operand) == ADDR_EXPR)
 	result = TREE_OPERAND (operand, 0);
 
@@ -1500,15 +1496,35 @@ build_call_0_expr (tree fundecl)
 }
 
 /* Call a function that raises an exception and pass the line number and file
-   name, if requested.  MSG says which exception function to call.  */
+   name, if requested.  MSG says which exception function to call.
+
+   GNAT_NODE is the gnat node conveying the source location for which
+   the error should be signaled, or Empty in which case the error is
+   signaled on the current ref_file_name/input_line.  */
 
 tree
-build_call_raise (int msg)
+build_call_raise (int msg, Node_Id gnat_node)
 {
   tree fndecl = gnat_raise_decls[msg];
-  const char *str = discard_file_names ? "" : ref_filename;
+
+  const char *str
+    = discard_file_names
+      ? ""
+      : (gnat_node != Empty)
+        ? IDENTIFIER_POINTER
+          (get_identifier (Get_Name_String
+			   (Debug_Source_Name
+			    (Get_Source_File_Index (Sloc (gnat_node))))))
+        : ref_filename;
+
+
   int len = strlen (str) + 1;
   tree filename = build_string (len, str);
+
+  int line_number
+    = (gnat_node != Empty)
+      ? Get_Logical_Line_Number (Sloc(gnat_node))
+      : input_line;
 
   TREE_TYPE (filename)
     = build_array_type (char_type_node,
@@ -1518,7 +1534,7 @@ build_call_raise (int msg)
     build_call_2_expr (fndecl,
 		       build1 (ADDR_EXPR, build_pointer_type (char_type_node),
 			       filename),
-		       build_int_2 (input_line, 0));
+		       build_int_2 (line_number, 0));
 }
 
 /* Return a CONSTRUCTOR of TYPE whose list is LIST.  */
@@ -1633,7 +1649,8 @@ build_simple_component_ref (tree record_variable,
 
       for (new_field = TYPE_FIELDS (record_type); new_field != 0;
 	   new_field = TREE_CHAIN (new_field))
-	if (DECL_ORIGINAL_FIELD (new_field) == field
+	if (field == new_field
+	    || DECL_ORIGINAL_FIELD (new_field) == field
 	    || new_field == DECL_ORIGINAL_FIELD (field)
 	    || (DECL_ORIGINAL_FIELD (field) != 0
 		&& (DECL_ORIGINAL_FIELD (field)
@@ -1664,6 +1681,14 @@ build_simple_component_ref (tree record_variable,
     }
 
   if (field == 0)
+    return 0;
+
+  /* If the field's offset has overflowed, do not attempt to access it
+     as doing so may trigger sanity checks deeper in the back-end.
+     Note that we don't need to warn since this will be done on trying
+     to declare the object.  */
+  if (TREE_CODE (DECL_FIELD_OFFSET (field)) == INTEGER_CST
+      && TREE_CONSTANT_OVERFLOW (DECL_FIELD_OFFSET (field)))
     return 0;
 
   /* It would be nice to call "fold" here, but that can lose a type
@@ -1700,7 +1725,7 @@ build_component_ref (tree record_variable,
 
   else if (field != 0)
     return build1 (NULL_EXPR, TREE_TYPE (field),
-		   build_call_raise (CE_Discriminant_Check_Failed));
+		   build_call_raise (CE_Discriminant_Check_Failed, Empty));
   else
     gigi_abort (512);
 }
@@ -1808,14 +1833,15 @@ build_call_alloc_dealloc (tree gnu_obj,
     {
       /* If the size is a constant, we can put it in the fixed portion of
 	 the stack frame to avoid the need to adjust the stack pointer.  */
-      if (TREE_CODE (gnu_size) == INTEGER_CST && ! flag_stack_check)
+      if (TREE_CODE (gnu_size) == INTEGER_CST && flag_stack_check != 1)
 	{
 	  tree gnu_range
 	    = build_range_type (NULL_TREE, size_one_node, gnu_size);
 	  tree gnu_array_type = build_array_type (char_type_node, gnu_range);
 	  tree gnu_decl =
 	    create_var_decl (get_identifier ("RETVAL"), NULL_TREE,
-			     gnu_array_type, NULL_TREE, 0, 0, 0, 0, 0);
+			     gnu_array_type, NULL_TREE, 0, 0, 0, 0, 0,
+			     gnat_node);
 
 	  return convert (ptr_void_type_node,
 			  build_unary_op (ADDR_EXPR, NULL_TREE, gnu_decl));
@@ -1835,7 +1861,11 @@ build_call_alloc_dealloc (tree gnu_obj,
    initial value is INIT, if INIT is nonzero.  Convert the expression to
    RESULT_TYPE, which must be some type of pointer.  Return the tree.
    GNAT_PROC and GNAT_POOL optionally give the procedure to call and
-   the storage pool to use.  */
+   the storage pool to use.  GNAT_NODE is used to provide an error
+   location for restriction violations messages.  If IGNORE_INIT_TYPE is
+   true, ignore the type of INIT for the purpose of determining the size;
+   this will cause the maximum size to be allocated if TYPE is of
+   self-referential size.  */
 
 tree
 build_allocator (tree type,
@@ -1843,7 +1873,8 @@ build_allocator (tree type,
                  tree result_type,
                  Entity_Id gnat_proc,
                  Entity_Id gnat_pool,
-                 Node_Id gnat_node)
+                 Node_Id gnat_node,
+		 int ignore_init_type)
 {
   tree size = TYPE_SIZE_UNIT (type);
   tree result;
@@ -1857,13 +1888,10 @@ build_allocator (tree type,
      fill in the parts that are known.  */
   else if (TYPE_FAT_OR_THIN_POINTER_P (result_type))
     {
-      tree template_type
-	= (TYPE_FAT_POINTER_P (result_type)
-	   ? TREE_TYPE (TREE_TYPE (TREE_CHAIN (TYPE_FIELDS (result_type))))
-	   : TREE_TYPE (TYPE_FIELDS (TREE_TYPE (result_type))));
       tree storage_type
-	= build_unc_object_type (template_type, type,
-				 get_identifier ("ALLOC"));
+	= build_unc_object_type_from_ptr (result_type, type,
+					  get_identifier ("ALLOC"));
+      tree template_type = TREE_TYPE (TYPE_FIELDS (storage_type));
       tree storage_ptr_type = build_pointer_type (storage_type);
       tree storage;
       tree template_cons = NULL_TREE;
@@ -1929,7 +1957,7 @@ build_allocator (tree type,
 
   /* If we have an initializing expression, see if its size is simpler
      than the size from the type.  */
-  if (init != 0 && TYPE_SIZE_UNIT (TREE_TYPE (init)) != 0
+  if (!ignore_init_type && init != 0 && TYPE_SIZE_UNIT (TREE_TYPE (init)) != 0
       && (TREE_CODE (TYPE_SIZE_UNIT (TREE_TYPE (init))) == INTEGER_CST
 	  || CONTAINS_PLACEHOLDER_P (size)))
     size = TYPE_SIZE_UNIT (TREE_TYPE (init));
@@ -1940,7 +1968,7 @@ build_allocator (tree type,
      the maximum size.  */
   if (CONTAINS_PLACEHOLDER_P (size))
     {
-      if (init == 0)
+      if (!ignore_init_type && init == 0)
 	size = max_size (size, 1);
       else
 	size = build (WITH_RECORD_EXPR, sizetype, size, init);

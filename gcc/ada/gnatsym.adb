@@ -6,7 +6,7 @@
 --                                                                          --
 --                                 B o d y                                  --
 --                                                                          --
---          Copyright (C) 2003-2004 Free Software Foundation, Inc.          --
+--          Copyright (C) 2003-2005, Free Software Foundation, Inc.         --
 --                                                                          --
 -- GNAT is free software;  you can  redistribute it  and/or modify it under --
 -- terms of the  GNU General Public License as published  by the Free Soft- --
@@ -16,8 +16,8 @@
 -- or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License --
 -- for  more details.  You should have  received  a copy of the GNU General --
 -- Public License  distributed with GNAT;  see file COPYING.  If not, write --
--- to  the Free Software Foundation,  59 Temple Place - Suite 330,  Boston, --
--- MA 02111-1307, USA.                                                      --
+-- to  the  Free Software Foundation,  51  Franklin  Street,  Fifth  Floor, --
+-- Boston, MA 02110-1301, USA.                                              --
 --                                                                          --
 -- GNAT was originally developed  by the GNAT team at  New York University. --
 -- Extensive contributions were provided by Ada Core Technologies Inc.      --
@@ -78,7 +78,7 @@ procedure Gnatsym is
    --  The name of the reference symbol file
 
    Version_String : String_Access := Empty;
-   --  The version of the library. Used on VMS.
+   --  The version of the library (used on VMS)
 
    package Object_Files is new Table.Table
      (Table_Component_Type => String_Access,
@@ -111,7 +111,8 @@ procedure Gnatsym is
          Write_Eol;
          Write_Str ("GNATSYMB ");
          Write_Str (Gnat_Version_String);
-         Write_Str (" Copyright 2003-2004 Free Software Foundation, Inc");
+         Write_Eol;
+         Write_Str ("Copyright 2003-2004 Free Software Foundation, Inc");
          Write_Eol;
          Copyright_Displayed := True;
       end if;
@@ -124,7 +125,7 @@ procedure Gnatsym is
    procedure Parse_Cmd_Line is
    begin
       loop
-         case GNAT.Command_Line.Getopt ("c C q r: s: v V:") is
+         case GNAT.Command_Line.Getopt ("c C q r: R s: v V:") is
             when ASCII.NUL =>
                exit;
 
@@ -140,6 +141,9 @@ procedure Gnatsym is
             when 'r' =>
                Reference_Symbol_File_Name :=
                  new String'(GNAT.Command_Line.Parameter);
+
+            when 'R' =>
+               Symbol_Policy := Restricted;
 
             when 's' =>
                Symbol_File_Name := new String'(GNAT.Command_Line.Parameter);
@@ -183,10 +187,11 @@ procedure Gnatsym is
    begin
       Write_Line ("gnatsym [options] object_file {object_file}");
       Write_Eol;
-      Write_Line ("   -c       Compliant policy");
-      Write_Line ("   -C       Controlled policy");
+      Write_Line ("   -c       Compliant symbol policy");
+      Write_Line ("   -C       Controlled symbol policy");
       Write_Line ("   -q       Quiet mode");
       Write_Line ("   -r<ref>  Reference symbol file name");
+      Write_Line ("   -R       Restricted symbol policy");
       Write_Line ("   -s<sym>  Symbol file name");
       Write_Line ("   -v       Verbose mode");
       Write_Line ("   -V<ver>  Version");
@@ -248,7 +253,7 @@ begin
             Write_Line ("""");
          end if;
 
-         Process (Object_Files.Table (Object_File).all, Success);
+         Processing.Process (Object_Files.Table (Object_File).all, Success);
       end loop;
 
       --  Finalize the object file

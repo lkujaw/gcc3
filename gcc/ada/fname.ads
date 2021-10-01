@@ -6,7 +6,7 @@
 --                                                                          --
 --                                 S p e c                                  --
 --                                                                          --
---          Copyright (C) 1992-2003 Free Software Foundation, Inc.          --
+--          Copyright (C) 1992-2004 Free Software Foundation, Inc.          --
 --                                                                          --
 -- GNAT is free software;  you can  redistribute it  and/or modify it under --
 -- terms of the  GNU General Public License as published  by the Free Soft- --
@@ -16,16 +16,16 @@
 -- or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License --
 -- for  more details.  You should have  received  a copy of the GNU General --
 -- Public License  distributed with GNAT;  see file COPYING.  If not, write --
--- to  the Free Software Foundation,  59 Temple Place - Suite 330,  Boston, --
--- MA 02111-1307, USA.                                                      --
+-- to  the  Free Software Foundation,  51  Franklin  Street,  Fifth  Floor, --
+-- Boston, MA 02110-1301, USA.                                              --
 --                                                                          --
--- As a special exception,  if other files  instantiate  generics from this --
--- unit, or you link  this unit with other files  to produce an executable, --
--- this  unit  does not  by itself cause  the resulting  executable  to  be --
--- covered  by the  GNU  General  Public  License.  This exception does not --
--- however invalidate  any other reasons why  the executable file  might be --
--- covered by the  GNU Public License.                                      --
---                                                                          --
+--
+--
+--
+--
+--
+--
+--
 -- GNAT was originally developed  by the GNAT team at  New York University. --
 -- Extensive contributions were provided by Ada Core Technologies Inc.      --
 --                                                                          --
@@ -64,17 +64,6 @@ package Fname is
    -- Subprograms --
    -----------------
 
-   type Expected_Unit_Type is (Expect_Body, Expect_Spec, Unknown);
-   --  Return value from Get_Expected_Unit_Type
-
-   function Get_Expected_Unit_Type
-     (Fname : File_Name_Type)
-      return  Expected_Unit_Type;
-   --  If possible, determine whether the given file name corresponds to a unit
-   --  that is a spec or body (e.g. by examining the extension). If this cannot
-   --  be determined with the file naming conventions in use, then the returned
-   --  value is set to Unknown.
-
    function Is_Predefined_File_Name
      (Fname              : File_Name_Type;
       Renamings_Included : Boolean := True) return Boolean;
@@ -92,8 +81,7 @@ package Fname is
 
    function Is_Internal_File_Name
      (Fname              : File_Name_Type;
-      Renamings_Included : Boolean := True)
-      return               Boolean;
+      Renamings_Included : Boolean := True) return Boolean;
    --  Similar to Is_Predefined_File_Name. The internal file set is a
    --  superset of the predefined file set including children of GNAT,
    --  and also children of DEC for the VMS case.

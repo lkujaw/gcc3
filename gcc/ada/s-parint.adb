@@ -7,7 +7,7 @@
 --                                  B o d y                                 --
 --                   (Dummy body for non-distributed case)                  --
 --                                                                          --
---          Copyright (C) 1995-2001 Free Software Foundation, Inc.          --
+--          Copyright (C) 1995-2005, Free Software Foundation, Inc.         --
 --                                                                          --
 -- GNARL is free software; you can  redistribute it  and/or modify it under --
 -- terms of the  GNU General Public License as published  by the Free Soft- --
@@ -17,16 +17,16 @@
 -- or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License --
 -- for  more details.  You should have  received  a copy of the GNU General --
 -- Public License  distributed with GNARL; see file COPYING.  If not, write --
--- to  the Free Software Foundation,  59 Temple Place - Suite 330,  Boston, --
--- MA 02111-1307, USA.                                                      --
+-- to  the  Free Software Foundation,  51  Franklin  Street,  Fifth  Floor, --
+-- Boston, MA 02110-1301, USA.                                              --
 --                                                                          --
--- As a special exception,  if other files  instantiate  generics from this --
--- unit, or you link  this unit with other files  to produce an executable, --
--- this  unit  does not  by itself cause  the resulting  executable  to  be --
--- covered  by the  GNU  General  Public  License.  This exception does not --
--- however invalidate  any other reasons why  the executable file  might be --
--- covered by the  GNU Public License.                                      --
---                                                                          --
+--
+--
+--
+--
+--
+--
+--
 -- GNAT was originally developed  by the GNAT team at  New York University. --
 -- Extensive contributions were provided by Ada Core Technologies Inc.      --
 --                                                                          --
@@ -40,13 +40,15 @@ package body System.Partition_Interface is
 
    type String_Access is access String;
 
-   --  To have a minimal implementation of U'Partition_ID.
+   --  To have a minimal implementation of U'Partition_ID
 
    type Pkg_Node;
    type Pkg_List is access Pkg_Node;
    type Pkg_Node is record
-      Name : String_Access;
-      Next : Pkg_List;
+      Name          : String_Access;
+      Subp_Info     : System.Address;
+      Subp_Info_Len : Integer;
+      Next          : Pkg_List;
    end record;
 
    Pkg_Head : Pkg_List;
@@ -63,9 +65,9 @@ package body System.Partition_Interface is
    --  String prepended in top of shared passive packages
 
    procedure Check
-     (Name    : in Unit_Name;
-      Version : in String;
-      RCI     : in Boolean := True)
+     (Name    : Unit_Name;
+      Version : String;
+      RCI     : Boolean := True)
    is
    begin
       null;
@@ -76,8 +78,7 @@ package body System.Partition_Interface is
    -----------------------------
 
    function Get_Active_Partition_ID
-     (Name : Unit_Name)
-      return System.RPC.Partition_ID
+     (Name : Unit_Name) return System.RPC.Partition_ID
    is
       P : Pkg_List := Pkg_Head;
       N : String   := Lower (Name);
@@ -98,10 +99,7 @@ package body System.Partition_Interface is
    -- Get_Active_Version --
    ------------------------
 
-   function Get_Active_Version
-     (Name : Unit_Name)
-      return String
-   is
+   function Get_Active_Version (Name : Unit_Name) return String is
    begin
       return "";
    end Get_Active_Version;
@@ -120,8 +118,7 @@ package body System.Partition_Interface is
    ------------------------------
 
    function Get_Passive_Partition_ID
-     (Name : Unit_Name)
-      return System.RPC.Partition_ID
+     (Name : Unit_Name) return System.RPC.Partition_ID
    is
    begin
       return Get_Local_Partition_ID;
@@ -131,21 +128,50 @@ package body System.Partition_Interface is
    -- Get_Passive_Version --
    -------------------------
 
-   function Get_Passive_Version
-     (Name : Unit_Name)
-      return String
-   is
+   function Get_Passive_Version (Name : Unit_Name) return String is
    begin
       return "";
    end Get_Passive_Version;
+
+   ------------------
+   -- Get_RAS_Info --
+   ------------------
+
+   procedure Get_RAS_Info
+     (Name          :  Unit_Name;
+      Subp_Id       :  Subprogram_Id;
+      Proxy_Address : out Interfaces.Unsigned_64)
+   is
+      LName : constant String := Lower (Name);
+      N : Pkg_List;
+   begin
+      N := Pkg_Head;
+      while N /= null loop
+         if N.Name.all = LName then
+            declare
+               subtype Subprogram_Array is RCI_Subp_Info_Array
+                 (First_RCI_Subprogram_Id ..
+                  First_RCI_Subprogram_Id + N.Subp_Info_Len - 1);
+               Subprograms : Subprogram_Array;
+               for Subprograms'Address use N.Subp_Info;
+               pragma Import (Ada, Subprograms);
+            begin
+               Proxy_Address :=
+                 Interfaces.Unsigned_64 (Subprograms (Integer (Subp_Id)).Addr);
+               return;
+            end;
+         end if;
+         N := N.Next;
+      end loop;
+      Proxy_Address := 0;
+   end Get_RAS_Info;
 
    ------------------------------
    -- Get_RCI_Package_Receiver --
    ------------------------------
 
    function Get_RCI_Package_Receiver
-     (Name : Unit_Name)
-      return Interfaces.Unsigned_64
+     (Name : Unit_Name) return Interfaces.Unsigned_64
    is
    begin
       return 0;
@@ -161,20 +187,6 @@ package body System.Partition_Interface is
    begin
       null;
    end Get_Unique_Remote_Pointer;
-
-   ------------
-   -- Launch --
-   ------------
-
-   procedure Launch
-     (Rsh_Command  : in String;
-      Name_Is_Host : in Boolean;
-      General_Name : in String;
-      Command_Line : in String)
-   is
-   begin
-      null;
-   end Launch;
 
    -----------
    -- Lower --
@@ -195,34 +207,23 @@ package body System.Partition_Interface is
       return T;
    end Lower;
 
-   ------------------------------------
-   -- Raise_Program_Error_For_E_4_18 --
-   ------------------------------------
-
-   procedure Raise_Program_Error_For_E_4_18 is
-   begin
-      Ada.Exceptions.Raise_Exception
-        (Program_Error'Identity,
-        "Illegal usage of remote access to class-wide type. See RM E.4(18)");
-   end Raise_Program_Error_For_E_4_18;
-
    -------------------------------------
    -- Raise_Program_Error_Unknown_Tag --
    -------------------------------------
 
    procedure Raise_Program_Error_Unknown_Tag
-     (E : in Ada.Exceptions.Exception_Occurrence)
+     (E : Ada.Exceptions.Exception_Occurrence)
    is
    begin
       Ada.Exceptions.Raise_Exception
         (Program_Error'Identity, Ada.Exceptions.Exception_Message (E));
    end Raise_Program_Error_Unknown_Tag;
 
-   --------------
-   -- RCI_Info --
-   --------------
+   -----------------
+   -- RCI_Locator --
+   -----------------
 
-   package body RCI_Info is
+   package body RCI_Locator is
 
       -----------------------------
       -- Get_Active_Partition_ID --
@@ -253,18 +254,19 @@ package body System.Partition_Interface is
          return 0;
       end Get_RCI_Package_Receiver;
 
-   end RCI_Info;
+   end RCI_Locator;
 
    ------------------------------
    -- Register_Passive_Package --
    ------------------------------
 
    procedure Register_Passive_Package
-     (Name    : in Unit_Name;
-      Version : in String := "")
+     (Name    : Unit_Name;
+      Version : String := "")
    is
    begin
-      Register_Receiving_Stub (Passive_Prefix & Name, null, Version);
+      Register_Receiving_Stub
+        (Passive_Prefix & Name, null, Version, System.Null_Address, 0);
    end Register_Passive_Package;
 
    -----------------------------
@@ -272,19 +274,23 @@ package body System.Partition_Interface is
    -----------------------------
 
    procedure Register_Receiving_Stub
-     (Name     : in Unit_Name;
-      Receiver : in RPC.RPC_Receiver;
-      Version  : in String := "")
+     (Name          : Unit_Name;
+      Receiver      : RPC_Receiver;
+      Version       : String := "";
+      Subp_Info     : System.Address;
+      Subp_Info_Len : Integer)
    is
+      N : constant Pkg_List :=
+            new Pkg_Node'(new String'(Lower (Name)),
+                          Subp_Info, Subp_Info_Len,
+                          Next => null);
    begin
       if Pkg_Tail = null then
-         Pkg_Head := new Pkg_Node'(new String'(Lower (Name)), null);
-         Pkg_Tail := Pkg_Head;
-
+         Pkg_Head := N;
       else
-         Pkg_Tail.Next := new Pkg_Node'(new String'(Lower (Name)), null);
-         Pkg_Tail := Pkg_Tail.Next;
+         Pkg_Tail.Next := N;
       end if;
+      Pkg_Tail := N;
    end Register_Receiving_Stub;
 
    ---------
@@ -292,12 +298,26 @@ package body System.Partition_Interface is
    ---------
 
    procedure Run
-     (Main : in Main_Subprogram_Type := null)
+     (Main : Main_Subprogram_Type := null)
    is
    begin
       if Main /= null then
          Main.all;
       end if;
    end Run;
+
+   --------------------
+   -- Same_Partition --
+   --------------------
+
+   function Same_Partition
+      (Left  : access RACW_Stub_Type;
+       Right : access RACW_Stub_Type) return Boolean
+   is
+      pragma Unreferenced (Left);
+      pragma Unreferenced (Right);
+   begin
+      return True;
+   end Same_Partition;
 
 end System.Partition_Interface;

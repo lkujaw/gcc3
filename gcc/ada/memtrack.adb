@@ -6,7 +6,7 @@
 --                                                                          --
 --                                 B o d y                                  --
 --                                                                          --
---          Copyright (C) 2001-2004 Free Software Foundation, Inc.          --
+--          Copyright (C) 2001-2005 Free Software Foundation, Inc.          --
 --                                                                          --
 -- GNAT is free software;  you can  redistribute it  and/or modify it under --
 -- terms of the  GNU General Public License as published  by the Free Soft- --
@@ -16,22 +16,22 @@
 -- or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License --
 -- for  more details.  You should have  received  a copy of the GNU General --
 -- Public License  distributed with GNAT;  see file COPYING.  If not, write --
--- to  the Free Software Foundation,  59 Temple Place - Suite 330,  Boston, --
--- MA 02111-1307, USA.                                                      --
+-- to  the  Free Software Foundation,  51  Franklin  Street,  Fifth  Floor, --
+-- Boston, MA 02110-1301, USA.                                              --
 --                                                                          --
--- As a special exception,  if other files  instantiate  generics from this --
--- unit, or you link  this unit with other files  to produce an executable, --
--- this  unit  does not  by itself cause  the resulting  executable  to  be --
--- covered  by the  GNU  General  Public  License.  This exception does not --
--- however invalidate  any other reasons why  the executable file  might be --
--- covered by the  GNU Public License.                                      --
---                                                                          --
+--
+--
+--
+--
+--
+--
+--
 -- GNAT was originally developed  by the GNAT team at  New York University. --
 -- Extensive contributions were provided by Ada Core Technologies Inc.      --
 --                                                                          --
 ------------------------------------------------------------------------------
 
---  This version contains allocation tracking capability.
+--  This version contains allocation tracking capability
 
 --  The object file corresponding to this instrumented version is to be found
 --  in libgmem.
@@ -53,7 +53,7 @@
 
 --    gnatmem -i gmem.out program
 
---  See gnatmem section in the GNAT User's Guide for more details.
+--  See gnatmem section in the GNAT User's Guide for more details
 
 --  NOTE: This capability is currently supported on the following targets:
 
@@ -120,13 +120,13 @@ package body System.Memory is
    pragma Import (C, fclose);
 
    procedure Finalize;
-   --  Replace the default __gnat_finalize to properly close the log file.
    pragma Export (C, Finalize, "__gnat_finalize");
+   --  Replace the default __gnat_finalize to properly close the log file
 
-   Address_Size    : constant := System.Address'Max_Size_In_Storage_Elements;
+   Address_Size : constant := System.Address'Max_Size_In_Storage_Elements;
    --  Size in bytes of a pointer
 
-   Max_Call_Stack  : constant := 200;
+   Max_Call_Stack : constant := 200;
    --  Maximum number of frames supported
 
    Tracebk   : aliased array (0 .. Max_Call_Stack) of Traceback_Entry;
@@ -137,7 +137,7 @@ package body System.Memory is
    --  ??? What about Ada.Command_Line.Command_Name & ".out" instead of static
    --  gmem.out
 
-   Gmemfile  : File_Ptr;
+   Gmemfile : File_Ptr;
    --  Global C file pointer to the allocation log
 
    procedure Gmem_Initialize;
@@ -235,6 +235,7 @@ package body System.Memory is
 
    procedure Free (Ptr : System.Address) is
       Addr : aliased constant System.Address := Ptr;
+
    begin
       Lock_Task.all;
 
@@ -265,7 +266,6 @@ package body System.Memory is
          c_free (Ptr);
 
          First_Call := True;
-
       end if;
 
       Unlock_Task.all;
@@ -280,10 +280,12 @@ package body System.Memory is
       if Needs_Init then
          Needs_Init := False;
          Gmemfile := fopen (Gmemfname, "wb" & ASCII.NUL);
+
          if Gmemfile = System.Null_Address then
             Put_Line ("Couldn't open gnatmem log file for writing");
             OS_Exit (255);
          end if;
+
          fwrite ("GMEM DUMP" & ASCII.LF, 10, 1, Gmemfile);
       end if;
    end Gmem_Initialize;
@@ -295,14 +297,67 @@ package body System.Memory is
    function Realloc
      (Ptr : System.Address; Size : size_t) return System.Address
    is
-      Result : System.Address;
+      Addr : aliased constant System.Address := Ptr;
+      Result : aliased System.Address;
+
    begin
+      --  For the purposes of allocations logging, we treat realloc as a free
+      --  followed by malloc. This is not exactly accurate, but is a good way
+      --  to fit it into malloc/free-centered reports.
+
       if Size = size_t'Last then
          Raise_Exception (Storage_Error'Identity, "object too large");
       end if;
 
       Abort_Defer.all;
-      Result := c_realloc (Ptr, Size);
+      Lock_Task.all;
+
+      if First_Call then
+         First_Call := False;
+
+         --  We first log deallocation call
+
+         Gmem_Initialize;
+         Call_Chain (Tracebk'Address, Max_Call_Stack, Num_Calls,
+                     Skip_Frames => 2);
+         fputc (Character'Pos ('D'), Gmemfile);
+         fwrite (Addr'Address, Address_Size, 1, Gmemfile);
+         fwrite (Num_Calls'Address, Integer'Max_Size_In_Storage_Elements, 1,
+                 Gmemfile);
+
+         for J in Tracebk'First .. Tracebk'First + Num_Calls - 1 loop
+            declare
+               Ptr : System.Address := PC_For (Tracebk (J));
+            begin
+               fwrite (Ptr'Address, Address_Size, 1, Gmemfile);
+            end;
+         end loop;
+
+         --  Now perform actual realloc
+
+         Result := c_realloc (Ptr, Size);
+
+         --   Log allocation call using the same backtrace
+
+         fputc (Character'Pos ('A'), Gmemfile);
+         fwrite (Result'Address, Address_Size, 1, Gmemfile);
+         fwrite (Size'Address, size_t'Max_Size_In_Storage_Elements, 1,
+                 Gmemfile);
+         fwrite (Num_Calls'Address, Integer'Max_Size_In_Storage_Elements, 1,
+                 Gmemfile);
+
+         for J in Tracebk'First .. Tracebk'First + Num_Calls - 1 loop
+            declare
+               Ptr : System.Address := PC_For (Tracebk (J));
+            begin
+               fwrite (Ptr'Address, Address_Size, 1, Gmemfile);
+            end;
+         end loop;
+
+         First_Call := True;
+      end if;
+
+      Unlock_Task.all;
       Abort_Undefer.all;
 
       if Result = System.Null_Address then

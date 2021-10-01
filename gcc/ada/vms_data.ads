@@ -6,7 +6,7 @@
 --                                                                          --
 --                                 S p e c                                  --
 --                                                                          --
---          Copyright (C) 1996-2003 Free Software Foundation, Inc.          --
+--          Copyright (C) 1996-2006, Free Software Foundation, Inc.         --
 --                                                                          --
 -- GNAT is free software;  you can  redistribute it  and/or modify it under --
 -- terms of the  GNU General Public License as published  by the Free Soft- --
@@ -16,8 +16,8 @@
 -- or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License --
 -- for  more details.  You should have  received  a copy of the GNU General --
 -- Public License  distributed with GNAT;  see file COPYING.  If not, write --
--- to  the Free Software Foundation,  59 Temple Place - Suite 330,  Boston, --
--- MA 02111-1307, USA.                                                      --
+-- to  the  Free Software Foundation,  51  Franklin  Street,  Fifth  Floor, --
+-- Boston, MA 02110-1301, USA.                                              --
 --                                                                          --
 -- GNAT was originally developed  by the GNAT team at  New York University. --
 -- Extensive contributions were provided by Ada Core Technologies Inc.      --
@@ -190,7 +190,6 @@ package VMS_Data is
    ----------------------------
    -- Switches for GNAT BIND --
    ----------------------------
-
 
    S_Bind_Bind    : aliased constant S := "/BIND_FILE="                    &
                                             "ADA "                         &
@@ -490,7 +489,6 @@ package VMS_Data is
                                             "!-b,!-v";
    --  NODOC (see /REPORT_ERRORS)
 
-
    S_Bind_Restr   : aliased constant S := "/RESTRICTION_LIST "             &
                                             "-r";
    --        /NORESTRICTION_LIST (D)
@@ -499,6 +497,21 @@ package VMS_Data is
    --   Generate list of pragma Rerstrictions that could be applied to the
    --   current unit. This is useful for code audit purposes, and also may be
    --   used to improve code generation in some cases.
+
+   S_Bind_Return  : aliased constant S := "/RETURN_CODES="                 &
+                                            "POSIX "                       &
+                                               "!-X1 "                     &
+                                            "VMS "                         &
+                                               "-X1";
+   --        /RETURN_CODES=POSIX (D)
+   --        /RETURN_CODES=VMS
+   --
+   --   Specifies the style of default exit code returned. Must be used in
+   --   conjunction with and match the Link qualifer with same name.
+   --
+   --        POSIX (D)   Return Posix success (0) by default.
+   --
+   --        VMS         Return VMS success (1) by default.
 
    S_Bind_RTS     : aliased constant S := "/RUNTIME_SYSTEM=|"              &
                                             "--RTS=|";
@@ -517,8 +530,8 @@ package VMS_Data is
    --   for a directory.
 
    S_Bind_Shared  : aliased constant S := "/SHARED "                       &
-                                            "-shared";
-   --        /SHARED (D)
+                                            "-shared,!-static";
+   --        /SHARED
    --        /NOSHARED
    --
    --    Link against a shared GNAT run time when available.
@@ -536,6 +549,13 @@ package VMS_Data is
    --        /SOURCE_SEARCH=(directory[,...])
    --
    --    When looking for source files also look in directories specified.
+
+   S_Bind_Static  : aliased constant S := "/STATIC "                       &
+                                            "-static,!-shared";
+   --        /STATIC
+   --        /NOSTATIC
+   --
+   --    Link against a static GNAT run time.
 
    S_Bind_Store   : aliased constant S := "/STORE_TRACEBACKS "             &
                                             "-E";
@@ -631,17 +651,158 @@ package VMS_Data is
       S_Bind_Report  'Access,
       S_Bind_ReportX 'Access,
       S_Bind_Restr   'Access,
+      S_Bind_Return  'Access,
       S_Bind_RTS     'Access,
       S_Bind_Search  'Access,
       S_Bind_Shared  'Access,
       S_Bind_Slice   'Access,
       S_Bind_Source  'Access,
+      S_Bind_Static  'Access,
       S_Bind_Store   'Access,
       S_Bind_Time    'Access,
       S_Bind_Verbose 'Access,
       S_Bind_Warn    'Access,
       S_Bind_WarnX   'Access,
       S_Bind_Zero    'Access);
+
+   -----------------------------
+   -- Switches for GNAT CHECK --
+   -----------------------------
+
+   S_Check_All    : aliased constant S := "/ALL "                         &
+                                            "-a";
+   --        /NOALL (D)
+   --        /ALL
+   --
+   --   Also check the components of the GNAT run time and process the needed
+   --  components of the GNAT RTL when building and analyzing the global
+   --  structure for checking the global rules.
+
+   S_Check_Ext     : aliased constant S := "/EXTERNAL_REFERENCE=" & '"'   &
+                                             "-X" & '"';
+   --       /EXTERNAL_REFERENCE="name=val"
+   --
+   --   Specifies an external reference to the project manager. Useful only if
+   --   /PROJECT_FILE is used.
+   --
+   --   Example:
+   --      /EXTERNAL_REFERENCE="DEBUG=TRUE"
+
+   S_Check_Files  : aliased constant S := "/FILES=@"                      &
+                                             "-files=@";
+   --      /FILES=filename
+   --
+   --   Take as arguments the files that are listed in the specified
+   --   text file.
+
+   S_Check_Help   : aliased constant S := "/HELP "                        &
+                                            "-h";
+   --        /NOHELP (D)
+   --        /HELP
+   --
+   --   Print information about currently implemented checks.
+
+   S_Check_Locs   : aliased constant S := "/LOCS "                        &
+                                            "-l";
+   --        /NOLOCS (D)
+   --        /LOCS
+   --
+   --   Use full source locations referebces in the report file.
+
+   S_Check_Mess    : aliased constant S := "/MESSAGES_PROJECT_FILE="      &
+                                             "DEFAULT "                   &
+                                                "-vP0 "                   &
+                                             "MEDIUM "                    &
+                                                "-vP1 "                   &
+                                             "HIGH "                      &
+                                                "-vP2";
+   --        /MESSAGES_PROJECT_FILE[=messages-option]
+   --
+   --   Specifies the "verbosity" of the parsing of project files.
+   --   messages-option may be one of the following:
+   --
+   --      DEFAULT (D)  No messages are output if there is no error or warning.
+   --
+   --      MEDIUM       A small number of messages are output.
+   --
+   --      HIGH         A great number of messages are output, most of them not
+   --                   being useful for the user.
+
+   S_Check_Project : aliased constant S := "/PROJECT_FILE=<"              &
+                                             "-P>";
+   --        /PROJECT_FILE=filename
+   --
+   --   Specifies the main project file to be used. The project files rooted
+   --   at the main project file will be parsed before the invocation of the
+   --   gnatcheck. The source directories to be searched will be communicated
+   --   to gnatcheck through logical name ADA_PRJ_INCLUDE_FILE.
+
+   S_Check_Quiet  : aliased constant S := "/QUIET "                       &
+                                            "-q";
+   --        /NOQUIET (D)
+   --        /QUIET
+   --
+   --   Work quietly, only output warnings and errors.
+
+   S_Check_Sections : aliased constant S := "/SECTIONS= "                 &
+                                            "DEFAULT "                    &
+                                               "-s123 "                   &
+                                            "COMPILER_STYLE "             &
+                                               "-s1 "                     &
+                                            "BY_RULES "                   &
+                                               "-s2 "                     &
+                                            "BY_FILES_BY_RULES "          &
+                                               "-s3 ";
+   --        /SECTIONS[=section-option, section-option, ...]
+   --
+   --   Specify what sections should be included into the report file.
+   --   By default, all three section (diagnises in the format correcponding
+   --   to compiler error and warning messages, diagnoses grouped by rules and
+   --   then - by files, diagnoses grouped by files and then - by rules) are
+   --   included in the report file.
+   --
+   --   section-option may be one of the following:
+   --
+   --      COMPILER_STYLE      Include diagnoses in compile-style format
+   --                          (diagoses are grouped by files, for each file
+   --                          they are ordered according to the references
+   --                          into the source)
+   --      BY_RULES            Include diagnoses grouped first by rules and
+   --                          then by files
+   --      BY_FILES_BY_RULES   Include diagnoses grouped first by files and
+   --                          then by rules
+   --
+   --   If one of these options is specified, then the report file contains
+   --   only sections set by these options
+
+   S_Check_Short  : aliased constant S := "/SHORT "                       &
+                                            "-s";
+   --        /NOSHORT (D)
+   --        /SHORT
+   --
+   --   Generate a short form of the report file.
+
+   S_Check_Verb   : aliased constant S := "/VERBOSE "                     &
+                                            "-v";
+   --        /NOVERBOSE (D)
+   --        /VERBOSE
+   --
+   --   The version number and copyright notice are output, as well as exact
+   --   copies of the gnat1 commands spawned to obtain the chop control
+   --   information.
+
+   Check_Switches : aliased constant Switches :=
+                      (S_Check_All      'Access,
+                       S_Check_Ext      'Access,
+                       S_Check_Files    'Access,
+                       S_Check_Help     'Access,
+                       S_Check_Locs     'Access,
+                       S_Check_Mess     'Access,
+                       S_Check_Project  'Access,
+                       S_Check_Quiet    'Access,
+                       S_Check_Sections 'Access,
+                       S_Check_Short    'Access,
+                       S_Check_Verb     'Access);
 
    ----------------------------
    -- Switches for GNAT CHOP --
@@ -806,6 +967,13 @@ package VMS_Data is
    --
    --   Output a message explaining the usage of gnatclean.
 
+   S_Clean_Index   : aliased constant S := "/SOURCE_INDEX=#"               &
+                                             "-i#";
+   --        /SOURCE_INDEX=nnn
+   --
+   --   Specifies the index of the units in the source file
+   --   By default, source files are mono-unit and there is no index
+
    S_Clean_Mess    : aliased constant S := "/MESSAGES_PROJECT_FILE="       &
                                             "DEFAULT "                     &
                                                "-vP0 "                     &
@@ -824,7 +992,6 @@ package VMS_Data is
    --
    --      HIGH        A great number of messages are output, most of them not
    --                  being useful for the user.
-
 
    S_Clean_Object  : aliased constant S := "/OBJECT_SEARCH=*"              &
                                             "-aO*";
@@ -884,6 +1051,7 @@ package VMS_Data is
       S_Clean_Ext    'Access,
       S_Clean_Full   'Access,
       S_Clean_Help   'Access,
+      S_Clean_Index  'Access,
       S_Clean_Mess   'Access,
       S_Clean_Object 'Access,
       S_Clean_Project'Access,
@@ -920,14 +1088,18 @@ package VMS_Data is
    --   Ada 95 program.
 
    S_GCC_Ada_95  : aliased constant S := "/95 "                            &
-                                             "!-gnat83";
+                                             "-gnat95";
    --        /95 (D)
    --
-   --   Same as /NO83.
+   --   Allows GNAT to recognize the full range of Ada 95 constructs.
+   --   This is the normal default for GNAT Pro.
+
+   S_GCC_Ada_05 : aliased constant S := "/05 "                            &
+                                             "-gnat05";
+   --        /05 (D)
    --
-   --        /NO95
-   --
-   --   Same as /83.
+   --   Allows GNAT to recognize all implemented proposed Ada 2005
+   --   extensions. See features file for list of implemented features.
 
    S_GCC_Asm     : aliased constant S := "/ASM "                           &
                                              "-S,!-c";
@@ -935,7 +1107,7 @@ package VMS_Data is
    --        /ASM
    --
    --   Use to cause the assembler source file to be generated, using S as the
-   --   filetype, instead of the object file.  This may be useful if you need
+   --   filetype, instead of the object file. This may be useful if you need
    --   to examine the generated assembly code.
 
    S_GCC_Checks  : aliased constant S := "/CHECKS="                        &
@@ -1394,22 +1566,33 @@ package VMS_Data is
                                              "!-gnatn,!-gnatN";
    --  NODOC (see /INLINE)
 
-   S_GCC_Jumps   : aliased constant S := "/LONGJMP_SETJMP "                &
+   S_GCC_Intsrc  : aliased constant S := "/INTERSPERSE_SOURCE "            &
                                              "-gnatL";
-   --        /NOLONGJMP_SETJMP (D)
-   --        /LONGJMP_SETJMP
+
+   --        /NO_INTERSPERSE_SOURCE (D)
+   --        /INTERSPERSE_SOURCE
    --
-   --   Causes the longjmp/setjmp approach to be used for exception handling.
+   --   Causes output from /XDEBUG or /EXPAND_SOURCE to be interspersed with
+   --   lines from the original source file, output as comment lines with the
+   --   associated line number.
+
+   S_GCC_Just   : aliased constant S := "/JUSTIFY_MESSAGES=#"             &
+                                             "-gnatj#";
+
+   --        /NO_JUSTIFY_MESSAGES (D)
+   --        /JUSTIFY_MESSAGES=nnn
    --
-   --   The default mechanism for OpenVMS is zero cost exceptions. This
-   --   qualifier can be used to modify this default, but it must be used for
-   --   all units in the partition, including all run-time library units.
-   --   One way to achieve this is to use the /ALL_FILES and /FORCE_COMPILE
-   --   for gnatmake.
-   --   This option is rarely used. One case in which it may be advantageous is
-   --   in an application where exception raising is common and the overall
-   --   performance of the application is improved by favoring exception
-   --   propagation.
+   --   Causes error messages to be reformatted so that a message and all its
+   --   continuation lines count as one warning or error in the statistics on
+   --   total errors, and the message is broken down into lines (justified) so
+   --   that no line is longer than nnn characters. The default message
+   --   behavior (each message counted separately and not reformatted to fit
+   --   a particular line length) can be obtained using /NO_JUSTIFY_MESSAGES.
+
+   S_GCC_JustX  : aliased constant S := "/NO_JUSTIFY_MESSAGES "           &
+                                             "-gnatj0";
+
+   --  NODOC (see /JUSTIFY_MESSAGES)
 
    S_GCC_Length  : aliased constant S := "/MAX_LINE_LENGTH=#"              &
                                              "-gnatyM#";
@@ -1488,6 +1671,15 @@ package VMS_Data is
    --      HIGH        A great number of messages are output, most of them not
    --                  being useful for the user.
 
+   S_GCC_Nesting  : aliased constant S := "/MAX_NESTING=#"                &
+                                             "-gnatyL#";
+   --        /MAX_NESTING=nnn
+   --
+   --   Set maximum level of nesting of constructs (including subprograms,
+   --   loops, blocks, packages, and conditionals).
+   --   The level of nesting must not exceed the given value nnn.
+   --   A value of zero disable this style check (not enabled by default).
+
    S_GCC_Noadc   : aliased constant S := "/NO_GNAT_ADC "                   &
                                              "-gnatA";
    --        /NO_GNAT_ADC
@@ -1543,6 +1735,8 @@ package VMS_Data is
                                                "-O1,!-O0,!-O2,!-O3 "       &
                                             "UNROLL_LOOPS "                &
                                                "-funroll-loops "           &
+                                            "NO_STRICT_ALIASING "          &
+                                               "-fno-strict-aliasing "     &
                                             "INLINING "                    &
                                                "-O3,!-O0,!-O1,!-O2";
    --        /NOOPTIMIZE (D)
@@ -1554,20 +1748,31 @@ package VMS_Data is
    --      ALL (D)       Perform most optimizations, including those that
    --                    may be expensive.
    --
-   --      NONE          Do not do any optimizations.  Same as /NOOPTIMIZE.
+   --      NONE          Do not do any optimizations. Same as /NOOPTIMIZE.
    --
    --      SOME          Perform some optimizations, but omit ones that
-   --                    are costly.
+   --                    are costly in compilation time.
    --
    --      DEVELOPMENT   Same as SOME.
    --
    --      INLINING      Full optimization, and also attempt automatic inlining
    --                    of small subprograms within a unit
    --
-   --      UNROLL_LOOPS  Try to unroll loops.  This keyword may be specified
-   --                    with any keyword above other than NONE.  Loop
+   --      UNROLL_LOOPS  Try to unroll loops. This keyword may be specified
+   --                    with any keyword above other than NONE. Loop
    --                    unrolling usually, but not always, improves the
    --                    performance of programs.
+   --
+   --      NO_STRICT_ALIASING
+   --                    Suppress aliasing analysis. When optimization is
+   --                    enabled (ALL or SOME above), the compiler assumes
+   --                    that pointers do in fact point to legitimate values
+   --                    of the pointer type (allocated from the proper pool).
+   --                    If this assumption is violated, e.g. by the use of
+   --                    unchecked conversion, then it may be necessary to
+   --                    suppress this assumption using this keyword (which
+   --                    may be specified only in conjunction with any
+   --                    keyword above, other than NONE).
 
    S_GCC_OptX    : aliased constant S := "/NOOPTIMIZE "                    &
                                             "-O0,!-O1,!-O2,!-O3";
@@ -1745,6 +1950,8 @@ package VMS_Data is
                                                "-gnatyb "                  &
                                             "COMMENTS "                    &
                                                "-gnatyc "                  &
+                                            "DOS_LINE_ENDINGS "            &
+                                               "-gnatyd "                  &
                                             "END "                         &
                                                "-gnatye "                  &
                                             "VTABS "                       &
@@ -1761,12 +1968,14 @@ package VMS_Data is
                                                "-gnatyl "                  &
                                             "LINE_LENGTH "                 &
                                                "-gnatym "                  &
+                                            "MODE_IN "                     &
+                                               "-gnatyI "                  &
+                                            "NONE "                        &
+                                               "-gnatyN "                  &
                                             "STANDARD_CASING "             &
                                                "-gnatyn "                  &
                                             "ORDERED_SUBPROGRAMS "         &
                                                "-gnatyo "                  &
-                                            "NONE "                        &
-                                               "!-gnatg,!-gnaty* "         &
                                             "PRAGMA "                      &
                                                "-gnatyp "                  &
                                             "REFERENCES "                  &
@@ -1774,7 +1983,11 @@ package VMS_Data is
                                             "SPECS "                       &
                                                "-gnatys "                  &
                                             "TOKEN "                       &
-                                               "-gnatyt ";
+                                               "-gnatyt "                  &
+                                            "UNNECESSARY_BLANK_LINES "     &
+                                               "-gnatyu "                  &
+                                            "XTRA_PARENS "                 &
+                                               "-gnatyx ";
    --        /NOSTYLE_CHECKS (D)
    --        /STYLE_CHECKS[=(keyword,[...])]
    --
@@ -1852,11 +2065,14 @@ package VMS_Data is
    --                               construction of box comments, as shown in
    --                               the following example:
    --
+   --                               ---------------------------
+   --                               -- This is a box comment --
+   --                               ---------------------------
    --
-   --                           ---------------------------
-   --                           -- This is a box comment --
-   --                           -- with two text lines.  --
-   --                           ---------------------------
+   --      DOS_LINE_ENDINGS     Check that no DOS line terminators are present
+   --                           All lines must be terminated by a single
+   --                           ASCII.LF character. In particular the DOS line
+   --                           terminator sequence CR / LF is not allowed).
    --
    --      END                  Check end/exit labels.
    --                           Optional labels on end statements ending
@@ -1975,6 +2191,8 @@ package VMS_Data is
    --                           for possible special treatment of 80 character
    --                           lines.
    --
+   --      NONE                 Clear any previously set style checks.
+   --
    --      ORDERED_SUBPROGRAMS  Check order of subprogram bodies.
    --                           All subprogram bodies in a given scope (e.g.
    --                           a package body) must be in alphabetical order.
@@ -1984,8 +2202,6 @@ package VMS_Data is
    --                           suffix, then the value of this suffix is used
    --                           in the ordering (e.g. Junk2 comes before
    --                           Junk10).
-   --
-   --      NONE                 The default behavior.  Same as /NOSTYLE_CHECKS.
    --
    --      PRAGMA               Check pragma casing.
    --                           Pragma names must be written in mixed case,
@@ -1999,15 +2215,6 @@ package VMS_Data is
    --                           No specific casing style is imposed on
    --                           identifiers. The only requirement is for
    --                           consistency of references with declarations.
-   --
-   --      RM_COLUMN_LAYOUT     Enforce the layout conventions suggested by
-   --                           the examples and syntax rules of the Ada
-   --                           Language Reference Manual. For example, an
-   --                           "else" must line up with an "if" and code in
-   --                           the "then" and "else" parts must be indented.
-   --                           The compiler considers violations of the
-   --                           layout rules a syntax error if you specify
-   --                           this keyword.
    --
    --      SPECS                Check separate specs.
    --                           Separate declarations ("specs") are required
@@ -2079,9 +2286,20 @@ package VMS_Data is
    --                           or as meeting a requirement for no following
    --                           space.
    --
+   --      UNNECESSARY_BLANK_LINES
+   --                           Check for unnecessary blank lines.
+   --                           A blank line is considered unnecessary if it
+   --                           appears at the end of the file, or if more
+   --                           than one blank line occurs in sequence.
+   --
    --      VTABS                No form feeds or vertical tabs.
    --                           Form feeds or vertical tab characters are not
    --                           permitted in the source text.
+   --
+   --      XTRA_PARENS          Check for the use of an unnecessary extra
+   --                           level of parentheses (C - style) around
+   --                           conditions in if statements, while statements
+   --                           and exit statements.
 
    S_GCC_StyleX  : aliased constant S := "/NOSTYLE_CHECKS "                &
                                             "!-gnatg,!-gnaty*";
@@ -2280,6 +2498,15 @@ package VMS_Data is
    --   debugging purposes or if you need to be sure what version of the
    --   compiler you are executing.
 
+   S_GCC_Verb_Asm : aliased constant S := "/VERBOSE_ASM " &
+                                          "-S,-verbose_asm,!-c";
+   --        /NOASM (D)
+   --        /ASM
+   --
+   --   Use to cause the assembler source file to be generated, using S as the
+   --   filetype, instead of the object file. This may be useful if you need
+   --   to examine the generated assembly code.
+
    S_GCC_Warn    : aliased constant S := "/WARNINGS="                      &
                                             "DEFAULT "                     &
                                                "!-gnatws,!-gnatwe "        &
@@ -2289,6 +2516,10 @@ package VMS_Data is
                                                "-gnatwA "                  &
                                             "ALL_GCC "                     &
                                                "-Wall "                    &
+                                            "BAD_FIXED_VALUES "            &
+                                               "-gnatwb "                  &
+                                            "NO_BAD_FIXED_VALUES "         &
+                                               "-gnatwB "                  &
                                             "CONDITIONALS "                &
                                                "-gnatwc "                  &
                                             "NOCONDITIONALS "              &
@@ -2343,6 +2574,10 @@ package VMS_Data is
                                                "-gnatwR "                  &
                                             "SUPPRESS "                    &
                                                "-gnatws "                  &
+                                            "DELETED_CODE "                &
+                                               "-gnatwt "                  &
+                                            "NODELETED_CODE "              &
+                                               "-gnatwT "                  &
                                             "UNINITIALIZED "               &
                                                "-Wuninitialized "          &
                                             "UNREFERENCED_FORMALS "        &
@@ -2361,10 +2596,18 @@ package VMS_Data is
                                                "-gnatwv "                  &
                                             "NOVARIABLES_UNINITIALIZED "   &
                                                "-gnatwV "                  &
+                                            "LOWBOUND_ASSUMED "            &
+                                               "-gnatww "                  &
+                                            "NOLOWBOUND_ASSUMED "          &
+                                               "-gnatwW "                  &
                                             "IMPORT_EXPORT_PRAGMAS "       &
                                                "-gnatwx "                  &
                                             "NOIMPORT_EXPORT_PRAGMAS "     &
                                                "-gnatwX "                  &
+                                            "ADA_2005_COMPATIBILITY "      &
+                                               "-gnatwy "                  &
+                                            "NOADA_2005_COMPATIBILITY "    &
+                                               "-gnatwY "                  &
                                             "UNCHECKED_CONVERSIONS "       &
                                                "-gnatwz "                  &
                                             "NOUNCHECKED_CONVERSIONS "     &
@@ -2629,8 +2872,6 @@ package VMS_Data is
    S_GCC_Wide    : aliased constant S := "/WIDE_CHARACTER_ENCODING="       &
                                              "BRACKETS "                   &
                                                 "-gnatWb "                 &
-                                             "NONE "                       &
-                                                "-gnatWn "                 &
                                              "HEX "                        &
                                                 "-gnatWh "                 &
                                              "UPPER "                      &
@@ -2753,18 +2994,10 @@ package VMS_Data is
    --                                speed up compilation, but means that some
    --                                tools cannot be used.
 
-   S_GCC_Zero    : aliased constant S := "/ZERO_COST_EXCEPTIONS "          &
-                                             "-gnatZ";
-   --        /ZERO_COST_EXCEPTIONS
-   --        /NOZERO_COST_EXCEPTIONS
-   --
-   --   As zero-cost exceptions is the default on VMS, this qualifier has
-   --   no effect, except that it cancels the effect of a previous
-   --   /LONGJMP_SETJUMP qualifier.
-
    GCC_Switches : aliased constant Switches :=
      (S_GCC_Ada_83  'Access,
       S_GCC_Ada_95  'Access,
+      S_GCC_Ada_05  'Access,
       S_GCC_Asm     'Access,
       S_GCC_Checks  'Access,
       S_GCC_ChecksX 'Access,
@@ -2790,11 +3023,14 @@ package VMS_Data is
       S_GCC_Immed   'Access,
       S_GCC_Inline  'Access,
       S_GCC_InlineX 'Access,
-      S_GCC_Jumps   'Access,
+      S_GCC_Intsrc  'Access,
+      S_GCC_Just    'Access,
+      S_GCC_JustX   'Access,
       S_GCC_Length  'Access,
       S_GCC_List    'Access,
       S_GCC_Mapping 'Access,
       S_GCC_Mess    'Access,
+      S_GCC_Nesting 'Access,
       S_GCC_Noadc   'Access,
       S_GCC_Noload  'Access,
       S_GCC_Nostinc 'Access,
@@ -2823,14 +3059,14 @@ package VMS_Data is
       S_GCC_Upcase  'Access,
       S_GCC_Valid   'Access,
       S_GCC_Verbose 'Access,
+      S_GCC_Verb_Asm'Access,
       S_GCC_Warn    'Access,
       S_GCC_WarnX   'Access,
       S_GCC_Wide    'Access,
       S_GCC_WideX   'Access,
       S_GCC_No_Back 'Access,
       S_GCC_Xdebug  'Access,
-      S_GCC_Xref    'Access,
-      S_GCC_Zero    'Access);
+      S_GCC_Xref    'Access);
 
    ----------------------------
    -- Switches for GNAT ELIM --
@@ -2875,12 +3111,50 @@ package VMS_Data is
    --
    --        Look for source files in the default directory.
 
+   S_Elim_Ext     : aliased constant S := "/EXTERNAL_REFERENCE=" & '"'     &
+                                             "-X" & '"';
+   --       /EXTERNAL_REFERENCE="name=val"
+   --
+   --   Specifies an external reference to the project manager. Useful only if
+   --   /PROJECT_FILE is used.
+   --
+   --   Example:
+   --      /EXTERNAL_REFERENCE="DEBUG=TRUE"
+
    S_Elim_GNATMAKE : aliased constant S := "/GNATMAKE=@"                   &
                                             "--GNATMAKE=@";
    --        /GNATMAKE=path_name
    --
    --   Instructs GNAT MAKE to use a specific gnatmake instead of one available
    --   on the path.
+
+   S_Elim_Mess    : aliased constant S := "/MESSAGES_PROJECT_FILE="        &
+                                             "DEFAULT "                    &
+                                                "-vP0 "                    &
+                                             "MEDIUM "                     &
+                                                "-vP1 "                    &
+                                             "HIGH "                       &
+                                                "-vP2";
+   --        /MESSAGES_PROJECT_FILE[=messages-option]
+   --
+   --   Specifies the "verbosity" of the parsing of project files.
+   --   messages-option may be one of the following:
+   --
+   --      DEFAULT (D)  No messages are output if there is no error or warning.
+   --
+   --      MEDIUM       A small number of messages are output.
+   --
+   --      HIGH         A great number of messages are output, most of them not
+   --                   being useful for the user.
+
+   S_Elim_Project : aliased constant S := "/PROJECT_FILE=<"                &
+                                             "-P>";
+   --        /PROJECT_FILE=filename
+   --
+   --   Specifies the main project file to be used. The project files rooted
+   --   at the main project file will be parsed before the invocation of the
+   --   gnatelim. The source directories to be searched will be communicated
+   --   to gnatelim through logical name ADA_PRJ_INCLUDE_FILE.
 
    S_Elim_Quiet  : aliased constant S := "/QUIET "                         &
                                             "-q";
@@ -2908,15 +3182,18 @@ package VMS_Data is
    --   being processed.
 
    Elim_Switches : aliased constant Switches :=
-     (S_Elim_All     'Access,
-      S_Elim_Bind    'Access,
-      S_Elim_Comp    'Access,
-      S_Elim_Config  'Access,
-      S_Elim_Current 'Access,
-      S_Elim_GNATMAKE'Access,
-      S_Elim_Quiet   'Access,
-      S_Elim_Search  'Access,
-      S_Elim_Verb    'Access);
+                     (S_Elim_All     'Access,
+                      S_Elim_Bind    'Access,
+                      S_Elim_Comp    'Access,
+                      S_Elim_Config  'Access,
+                      S_Elim_Current 'Access,
+                      S_Elim_Ext     'Access,
+                      S_Elim_GNATMAKE'Access,
+                      S_Elim_Mess    'Access,
+                      S_Elim_Project 'Access,
+                      S_Elim_Quiet   'Access,
+                      S_Elim_Search  'Access,
+                      S_Elim_Verb    'Access);
 
    ----------------------------
    -- Switches for GNAT FIND --
@@ -3121,40 +3398,6 @@ package VMS_Data is
    Krunch_Switches : aliased constant Switches  :=
      (1 .. 1 => S_Krunch_Count  'Access);
 
-   -------------------------------
-   -- Switches for GNAT LIBRARY --
-   -------------------------------
-
-   S_Lbr_Config    : aliased constant S := "/CONFIG=@"                     &
-                                            "--config=@";
-   --        /CONFIG=file
-   --
-   --   File containing configuration pragmas.
-
-   S_Lbr_Create    : aliased constant S := "/CREATE=%"                     &
-                                            "--create=%";
-   --        /CREATE=directory
-   --
-   --   Directory to create and build alternate library in.
-
-   S_Lbr_Delete    : aliased constant S := "/DELETE=%"                     &
-                                            "--delete=%";
-   --        /DELETE=directory
-   --
-   --   Directory containing alternate library to be deleted.
-
-   S_Lbr_Set       : aliased constant S := "/SET=%"                        &
-                                            "--set=%";
-   --        /SET=directory
-   --
-   --   Directory containing alternate library to be made the current library.
-
-   Lbr_Switches : aliased constant Switches  :=
-     (S_Lbr_Config 'Access,
-      S_Lbr_Create 'Access,
-      S_Lbr_Delete 'Access,
-      S_Lbr_Set    'Access);
-
    ----------------------------
    -- Switches for GNAT LINK --
    ----------------------------
@@ -3313,7 +3556,8 @@ package VMS_Data is
    --        /RETURN_CODES=VMS
    --
    --   Specifies the style of codes returned by
-   --   Ada.Command_Line.Set_Exit_Status.
+   --   Ada.Command_Line.Set_Exit_Status. Must be used in conjunction with
+   --   and match the Bind qualifer with the same name.
    --
    --        POSIX (D)   Return Posix compatible exit codes.
    --
@@ -3396,6 +3640,13 @@ package VMS_Data is
    --
    --   Example:
    --      /EXTERNAL_REFERENCE="DEBUG=TRUE"
+
+   S_List_Files   : aliased constant S := "/FILES=@"                       &
+                                            "-files=@";
+   --        /FILES=filename
+   --
+   --   Take as arguments the files that are listed in the specified
+   --   text file.
 
    S_List_Mess    : aliased constant S := "/MESSAGES_PROJECT_FILE="        &
                                             "DEFAULT "                     &
@@ -3487,6 +3738,7 @@ package VMS_Data is
       S_List_Current 'Access,
       S_List_Depend  'Access,
       S_List_Ext     'Access,
+      S_List_Files   'Access,
       S_List_Mess    'Access,
       S_List_Nostinc 'Access,
       S_List_Object  'Access,
@@ -3564,7 +3816,7 @@ package VMS_Data is
    --
    --   Implies /Unique.
    --   When used without project files, it is equivalent to /UNIQUE.
-   --   When used with a project file wit no main (neither on the command
+   --   When used with a project file with no main (neither on the command
    --   line nor in the attribute Main) check every source of every project,
    --   recompile all sources that are not up to date and rebuild libraries
    --   if necessary.
@@ -3699,6 +3951,14 @@ package VMS_Data is
    --   /VERBOSE), then error lines start with the full path name of the
    --   project file, rather than its simple file name.
 
+   S_Make_Hi_Verb : aliased constant S := "/HIGH_VERBOSITY "               &
+                                          "-vh";
+   --        /NOHIGH_VERBOSITY (D)
+   --        /HIGH_VERBOSITY
+   --
+   --   Displays the reason for all recompilations GNAT MAKE decides are
+   --   necessary, in high verbosity. Equivalent to /VERBOSE.
+
    S_Make_Inplace : aliased constant S := "/IN_PLACE "                     &
                                             "-i";
    --        /NOIN_PLACE (D)
@@ -3712,6 +3972,15 @@ package VMS_Data is
    --   automatically maintain and update this organization. If no ALI files
    --   are found on the Ada object path, the new object and ALI files are
    --   created in the directory containing the source being compiled.
+
+   S_Make_Index   : aliased constant S := "/SOURCE_INDEX=#"               &
+                                             "-eI#";
+   --        /SOURCE_INDEX=nnn
+   --
+   --   Specifies the index of the units in the source file
+   --   By default, source files are mono-unit and there is no index
+   --   When /SOURCE_INDEX=nnn is specified, only one main may be specified
+   --   on the command line.
 
    S_Make_Library : aliased constant S := "/LIBRARY_SEARCH=*"              &
                                             "-L*";
@@ -3727,6 +3996,15 @@ package VMS_Data is
    --   Any qualifiers specified after this qualifier other than
    --   /COMPILER_QUALIFIERS, /BINDER_QUALIFIERS and /MAKE_QUALIFIERS will be
    --   passed to any GNAT LINK commands generated by GNAT LINK.
+
+   S_Make_Low_Verb : aliased constant S := "/LOW_VERBOSITY "               &
+                                           "-vl";
+   --        /NOLOW_VERBOSITY (D)
+   --        /LOW_VERBOSITY
+   --
+   --   Displays the reason for all recompilations GNAT MAKE decides are
+   --   necessary, in low verbosity, that is with less output than
+   --   /MEDIUM_VERBOSITY, /HIGH_VERBOSITY or /VERBOSE.
 
    S_Make_Make    : aliased constant S := "/MAKE_QUALIFIERS=?"             &
                                             "-margs MAKE";
@@ -3751,6 +4029,15 @@ package VMS_Data is
    --   Each invocation of the compiler will add the newly accessed sources to
    --   the mapping file. This will improve the source search during the next
    --   invocations of the compiler
+
+   S_Make_Med_Verb : aliased constant S := "/MEDIUM_VERBOSITY "            &
+                                           "-vm";
+   --        /NOMEDIUM_VERBOSITY (D)
+   --        /MEDIUM_VERBOSITY
+   --
+   --   Displays the reason for all recompilations GNAT MAKE decides are
+   --   necessary, in medium verbosity, that is with potentially less output
+   --   than /HIGH_VERBOSITY or /VERBOSE.
 
    S_Make_Mess    : aliased constant S := "/MESSAGES_PROJECT_FILE="        &
                                             "DEFAULT "                     &
@@ -3799,6 +4086,14 @@ package VMS_Data is
    --   given on the command line is a package name. The resulting executable
    --   will execute the elaboration routines of the package and its closure,
    --   then the finalization routines.
+
+   S_Make_Nonpro  : aliased constant S := "/NON_PROJECT_UNIT_COMPILATION " &
+                                            "-x";
+   --        /NON_PROJECT_UNIT_COMPILATION
+   --
+   --    Normally, when using project files, a unit that is not part of any
+   --    project file, cannot be compile. These units may be compile, when
+   --    needed, if this qualifier is specified.
 
    S_Make_Nostinc : aliased constant S := "/NOSTD_INCLUDES "               &
                                             "-nostdinc";
@@ -3939,15 +4234,20 @@ package VMS_Data is
       S_Make_Ext     'Access,
       S_Make_Force   'Access,
       S_Make_Full    'Access,
+      S_Make_Hi_Verb 'Access,
       S_Make_Inplace 'Access,
+      S_Make_Index   'Access,
       S_Make_Library 'Access,
       S_Make_Link    'Access,
+      S_Make_Low_Verb'Access,
       S_Make_Make    'Access,
       S_Make_Mapping 'Access,
+      S_Make_Med_Verb'Access,
       S_Make_Mess    'Access,
       S_Make_Minimal 'Access,
       S_Make_Nolink  'Access,
       S_Make_Nomain  'Access,
+      S_Make_Nonpro  'Access,
       S_Make_Nostinc 'Access,
       S_Make_Nostlib 'Access,
       S_Make_Object  'Access,
@@ -3964,6 +4264,255 @@ package VMS_Data is
       S_Make_Unique  'Access,
       S_Make_Use_Map 'Access,
       S_Make_Verbose 'Access);
+
+   ------------------------------
+   -- Switches for GNAT METRIC --
+   ------------------------------
+
+   S_Metric_All_Prjs : aliased constant S := "/ALL_PROJECTS "              &
+                                               "-U";
+   --        /NOALL_PROJECTS (D)
+   --        /ALL_PROJECTS
+   --   When GNAT METRIC is used with a Project File and no source is
+   --   specified, the underlying tool gnatmetric is called for all the
+   --   sources of all the Project Files in the project tree.
+
+   S_Metric_Debug    : aliased constant S := "/DEBUG_OUTPUT "               &
+                                             "-dv";
+   --      /DEBUG_OUTPUT
+   --
+   --   Generate the debug information
+
+   S_Metric_Direct   : aliased constant S := "/DIRECTORY=@"                 &
+                                             "-d=@";
+   --      /DIRECTORY=pathname
+   --
+   --   Put the files with detailed metric information into the specified
+   --   directory
+
+   S_Metric_Element : aliased constant S := "/ELEMENT_METRICS="             &
+                                             "ALL "                         &
+                                              "!-ed,!-es,!-enl,!-eps,"      &
+                                              "!-eas,!-ept,!-eat,!-enu,"    &
+                                              "!-ec "                       &
+                                             "DECLARATION_TOTAL "           &
+                                              "-ed "                        &
+                                             "STATEMENT_TOTAL "             &
+                                              "-es "                        &
+                                             "LOOP_NESTING_MAX "            &
+                                              "-enl "                       &
+                                             "INT_SUBPROGRAMS "             &
+                                              "-eps "                       &
+                                             "SUBPROGRAMS_ALL "             &
+                                              "-eas "                       &
+                                             "INT_TYPES "                   &
+                                              "-ept "                       &
+                                             "TYPES_ALL "                   &
+                                              "-eat "                       &
+                                             "PROGRAM_NESTING_MAX "         &
+                                              "-enu "                       &
+                                             "CONSTRUCT_NESTING_MAX "       &
+                                              "-ec";
+   --       /ELEMENT_METRICS=(option, option ...)
+   --
+   --   Specifies the element metrics to be computed (if not set, all the
+   --   element metrics are set on, otherwise only specified metrics are
+   --   computed and reported)
+   --
+   --   option may be one of the following:
+   --
+   --     ALL (D)               All the element metrics are computed
+   --     DECLARATION_TOTAL     Compute the total number of declarations
+   --     STATEMENT_TOTAL       Compute the total number of statements
+   --     LOOP_NESTING_MAX      Compute the maximal loop nesting level
+   --     INT_SUBPROGRAMS       Compute the number of interface subprograms
+   --     SUBPROGRAMS_ALL       Compute the number of all the subprograms
+   --     INT_TYPES             Compute the number of interface types
+   --     TYPES_ALL             Compute the number of all the types
+   --     PROGRAM_NESTING_MAX   Compute the maximal program unit nesting level
+   --
+   --   All combinations of element metrics options are allowed.
+
+   S_Metric_Ext     : aliased constant S := "/EXTERNAL_REFERENCE=" & '"'    &
+                                             "-X" & '"';
+   --       /EXTERNAL_REFERENCE="name=val"
+   --
+   --   Specifies an external reference to the project manager. Useful only if
+   --   /PROJECT_FILE is used.
+   --
+   --   Example:
+   --      /EXTERNAL_REFERENCE="DEBUG=TRUE"
+
+   S_Metric_Files   : aliased constant S := "/FILES=@"                 &
+                                             "-files=@";
+   --      /FILES=filename
+   --
+   --   Take as arguments the files that are listed in the specified
+   --   text file.
+
+   S_Metric_Format  : aliased constant S := "/FORMAT_OUTPUT="               &
+                                             "DEFAULT "                     &
+                                              "!-x,!-nt,!-sfn "             &
+                                             "XML "                         &
+                                              "-x "                         &
+                                             "NO_TEXT "                     &
+                                              "-nt "                        &
+                                             "SHORT_SOURCE_FILE_NAME "      &
+                                              "-sfn";
+   --       /FORMAT_OUTPUT=(option, option ...)
+   --
+   --   Specifies the details of the tool output
+   --
+   --   option may be one of the following:
+   --
+   --     DEFAULT (D)             Generate the text output only, use full
+   --                             argument source names in global information
+   --     XML                     Generate the output in XML format
+   --     NO_TEXT                 Do not generate the text output (implies XML)
+   --     SHORT_SOURCE_FILE_NAME  Use short argument source names in output
+
+   S_Metric_Globout : aliased constant S := "/GLOBAL_OUTPUT=@"              &
+                                             "-og@";
+   --        /GLOBAL_OUTPUT=filename
+   --
+   --   Put the textual global metric information into the specified file
+
+   S_Metric_Line     : aliased constant S := "/LINE_METRICS="               &
+                                                "ALL "                      &
+                                                 "!-la,!-lcode,!-lcomm,"    &
+                                                 "!-leol,!-lb "             &
+                                                "LINES_ALL "                &
+                                                 "-la "                     &
+                                                "CODE_LINES "               &
+                                                 "-lcode "                  &
+                                                "COMENT_LINES "             &
+                                                 "-lcomm "                  &
+                                                "MIXED_CODE_COMMENTS "      &
+                                                 "-leol "                   &
+                                                "BLANK_LINES "              &
+                                                 "-lb ";
+   --      /LINE_METRICS=(option, option ...)
+
+   --   Specifies the line metrics to be computed (if not set, all the line
+   --   metrics are set on, otherwise only specified metrics are computed and
+   --   reported)
+   --
+   --   option may be one of the following:
+   --
+   --     ALL (D)              All the line metrics are computed
+   --     LINES_ALL            All lines are computed
+   --     CODE_LINES           Lines with Ada code are computed
+   --     COMENT_LINES         All comment lines are computed
+   --     MIXED_CODE_COMMENTS  All lines containing both code and comment are
+   --                          computed
+   --     BLANK_LINES          Blank lines are computed
+   --
+   --   All combinations of line metrics options are allowed.
+
+   S_Metric_Mess    : aliased constant S := "/MESSAGES_PROJECT_FILE="       &
+                                             "DEFAULT "                     &
+                                                "-vP0 "                     &
+                                             "MEDIUM "                      &
+                                                "-vP1 "                     &
+                                             "HIGH "                        &
+                                                "-vP2";
+   --        /MESSAGES_PROJECT_FILE[=messages-option]
+   --
+   --   Specifies the "verbosity" of the parsing of project files.
+   --   messages-option may be one of the following:
+   --
+   --      DEFAULT (D)  No messages are output if there is no error or warning.
+   --
+   --      MEDIUM       A small number of messages are output.
+   --
+   --      HIGH         A great number of messages are output, most of them not
+   --                   being useful for the user.
+
+   S_Metric_Project : aliased constant S := "/PROJECT_FILE=<"               &
+                                             "-P>";
+   --        /PROJECT_FILE=filename
+   --
+   --   Specifies the main project file to be used. The project files rooted
+   --   at the main project file will be parsed before the invocation of the
+   --   binder.
+
+   S_Metric_Quiet    : aliased constant S := "/QUIET "                      &
+                                             "-q";
+   --        /NOQUIET (D)
+   --        /QUIET
+   --
+   --   Quiet mode: by default GNAT METRIC outputs to the standard error stream
+   --   the number of program units left to be processed. This option turns
+   --   this trace off.
+
+   S_Metric_Suffix  : aliased constant S := "/SUFFIX_DETAILS=" & '"'        &
+                                             "-o" & '"';
+   --        /SUFFIX_DETAILS=suffix
+   --
+   --   Use the given suffix as the suffix for the name of the file to place
+   --   the detailed metrics into.
+
+   S_Metric_Suppress : aliased constant S :=  "/SUPPRESS="                  &
+                                               "NOTHING "                   &
+                                                "!-nocc,!-noec,!-nonl,"     &
+                                                "!-ne,!-nolocal "           &
+                                               "CYCLOMATIC_COMPLEXITY "     &
+                                                "-nocc "                    &
+                                               "ESSENTIAL_COMPLEXITY "      &
+                                                "-noec "                    &
+                                               "MAXIMAL_LOOP_NESTING "      &
+                                                "-nonl "                    &
+                                               "EXITS_AS_GOTOS "            &
+                                                "-ne "                      &
+                                               "LOCAL_DETAILS "             &
+                                                "-nolocal ";
+   --      /SUPPRESS=(option, option ...)
+   --
+   --   Specifies the metric that should not be computed
+   --
+   --   option may be one of the following:
+   --
+   --     NOTHING (D)             Do not suppress computation of any metric
+   --     CYCLOMATIC_COMPLEXITY   Do not compute the Cyclomatic Complexity
+   --     ESSENTIAL_COMPLEXITY    Do not compute the Essential Complexity
+   --     MAXIMAL_LOOP_NESTING    Do not compute the maximal loop nesting
+   --     EXITS_AS_GOTOS          Do not count EXIT statements as GOTOs when
+   --                             computing the  Essential Complexity
+   --     LOCAL_DETAILS           Do not compute the detailed metrics for local
+   --                             program units
+   --
+   --   All combinations of options are allowed.
+
+   S_Metric_Verbose  : aliased constant S := "/VERBOSE "                    &
+                                             "-v";
+   --        /NOVERBOSE (D)
+   --        /VERBOSE
+   --
+   --   Verbose mode.
+
+   S_Metric_XMLout  : aliased constant S := "/XML_OUTPUT=@"                 &
+                                             "-ox@";
+   --        /XML_OUTPUT=filename
+   --
+   --   Place the XML output into the specified file
+
+   Metric_Switches : aliased constant Switches :=
+     (S_Metric_All_Prjs 'Access,
+      S_Metric_Debug    'Access,
+      S_Metric_Direct   'Access,
+      S_Metric_Element  'Access,
+      S_Metric_Ext      'Access,
+      S_Metric_Files    'Access,
+      S_Metric_Format   'Access,
+      S_Metric_Globout  'Access,
+      S_Metric_Line     'Access,
+      S_Metric_Mess     'Access,
+      S_Metric_Project  'Access,
+      S_Metric_Quiet    'Access,
+      S_Metric_Suffix   'Access,
+      S_Metric_Suppress 'Access,
+      S_Metric_Verbose  'Access,
+      S_Metric_XMLout   'Access);
 
    ----------------------------
    -- Switches for GNAT NAME --
@@ -4123,6 +4672,14 @@ package VMS_Data is
    --   Preprocessor lines and deleted lines are completely removed from the
    --   output.
 
+   S_Prep_Replace : aliased constant S := "/REPLACE_IN_COMMENTS "          &
+                                            "-C";
+   --        /NOREPLACE_IN_COMMENTS (D)
+   --        /REPLACE_IN_COMMENTS
+   --
+   --   Causes preprocessor to scan comments and perform replacements on
+   --   any $symbol occurrences within the comment text.
+
    S_Prep_Symbols : aliased constant S := "/SYMBOLS "                      &
                                             "-s";
    --        /NOSYMBOLS (D)
@@ -4142,6 +4699,7 @@ package VMS_Data is
       S_Prep_Com     'Access,
       S_Prep_Ref     'Access,
       S_Prep_Remove  'Access,
+      S_Prep_Replace 'Access,
       S_Prep_Symbols 'Access,
       S_Prep_Undef   'Access);
 
@@ -4151,7 +4709,7 @@ package VMS_Data is
 
    S_Pretty_Align  : aliased constant S := "/ALIGN="                       &
                                            "DEFAULT "                      &
-                                               "-A1234 "                   &
+                                               "-A12345 "                  &
                                            "OFF "                          &
                                                "-A0 "                      &
                                            "COLONS "                       &
@@ -4161,7 +4719,9 @@ package VMS_Data is
                                            "STATEMENTS "                   &
                                                "-A3 "                      &
                                            "ARROWS "                       &
-                                              "-A4";
+                                               "-A4 "                      &
+                                           "COMPONENT_CLAUSES "            &
+                                               "-A5";
    --        /ALIGN[=align-option, align-option, ...]
    --
    --   Set alignments. By default, all alignments (colons in declarations,
@@ -4170,14 +4730,25 @@ package VMS_Data is
    --
    --   align-option may be one of the following:
    --
-   --      OFF (D)      Set all alignments to OFF
-   --      COLONS       Set alignments of colons in declarations to ON
-   --      DECLARATIONS Set alignments of initialisations in declarations to ON
-   --      STATEMENTS   Set alignments of assignments statements to ON
-   --      ARROWS       Set alignments of arrow delimiters to ON.
+   --      OFF (D)           Set all alignments to OFF
+   --      COLONS            Set alignments of colons in declarations to ON
+   --      DECLARATIONS      Set alignments of initialisations in declarations
+   --                        to ON
+   --      STATEMENTS        Set alignments of assignments statements to ON
+   --      ARROWS            Set alignments of arrow delimiters to ON.
+   --      COMPONENT_CLAUSES Set alignments of AT keywords in component
+   --                        clauses ON
    --
    --   Specifying one of the ON options without first specifying the OFF
    --   option has no effect, because by default all alignments are set to ON.
+
+   S_Pretty_All_Prjs : aliased constant S := "/ALL_PROJECTS "             &
+                                              "-U";
+   --        /NOALL_PROJECTS (D)
+   --        /ALL_PROJECTS
+   --   When GNAT PRETTY is used with a Project File and no source is
+   --   specified, the underlying tool gnatpp is called for all the
+   --   sources of all the Project Files in the project tree.
 
    S_Pretty_Attrib : aliased constant S := "/ATTRIBUTE_CASING="            &
                                            "MIXED_CASE "                   &
@@ -4197,6 +4768,8 @@ package VMS_Data is
    --      UPPER_CASE
 
    S_Pretty_Comments  : aliased constant S := "/COMMENTS_LAYOUT="          &
+                                              "UNTOUCHED "                 &
+                                                 "-c0 "                    &
                                               "DEFAULT "                   &
                                                  "-c1 "                    &
                                               "STANDARD_INDENT "           &
@@ -4207,17 +4780,20 @@ package VMS_Data is
                                                  "-c4";
    --        /COMMENTS_LAYOUT[=layout-option, layout-option, ...]
    --
-   --   Set the comment layout. By default, comments use the GNAT style comment
-   --   line indentation.
+   --   Set the comment layout. By default, comments use the GNAT style
+   --   comment line indentation.
+   --
    --   layout-option may be one of the following:
    --
+   --     UNTOUCHED           All the comments remain unchanged
    --     DEFAULT (D)         GNAT style comment line indentation
    --     STANDARD_INDENT     Standard comment line indentation
    --     GNAT_BEGINNING      GNAT style comment beginning
    --     REFORMAT            Reformat comment blocks
    --
    --     All combinations of layout options are allowed, except for DEFAULT
-   --     and STANDARD_INDENT which are mutually exclusive.
+   --     and STANDARD_INDENT which are mutually exclusive, and also if
+   --     UNTOUCHED is specified, this must be the only option.
    --
    --     The difference between "GNAT style comment line indentation" and
    --     "standard comment line indentation" is the following: for standard
@@ -4315,6 +4891,31 @@ package VMS_Data is
    --   unless the indentation is set to 1: in that case the default value for
    --   continuation line indentation is also 1.
 
+   S_Pretty_Compact_Is : aliased constant S := "/NO_SEPARATE_IS "          &
+                                                 "--no-separate-is";
+   --        /NO_SEPARATE_IS
+   --
+   --   Do not place the IS keyword on a separate line in a subprogram body in
+   --   case if the specification occupies more then one line.
+
+   S_Pretty_Eol       : aliased constant S := "/END_OF_LINE="              &
+                                                "DOS "                     &
+                                                   "--eol=dos "            &
+                                                "UNIX "                    &
+                                                   "--eol=unix "           &
+                                                "CRLF "                    &
+                                                   "--eol=crlf "           &
+                                                "LF "                      &
+                                                   "--eol=lf";
+   --        /END_OF_LINE=[option]
+   --
+   --   Specifies the form of the line terminators in the produced source.
+   --   By default, the form of the line terminator depends on the platforms.
+   --   On Unix and VMS, it is a Line Feed (LF) chararcter. On Windows (DOS),
+   --   It is a Carriage Return (CR) followed by a Line Feed.
+   --   The Options DOS and CRLF are equivalent. The options UNIX and LF are
+   --   also equivalent.
+
    S_Pretty_Ext       : aliased constant S := "/EXTERNAL_REFERENCE=" & '"' &
                                             "-X" & '"';
    --        /EXTERNAL_REFERENCE="name=val"
@@ -4349,6 +4950,13 @@ package VMS_Data is
    --   The structure of a dictionary file, and details on the conventions
    --   used in the default dictionary file, are defined in the GNAT User's
    --   Guide.
+
+   S_Pretty_Files     : aliased constant S := "/FILES=@"                   &
+                                                 "-files=@";
+   --      /FILES=filename
+   --
+   --   Take as arguments the files that are listed in the specified
+   --   text file.
 
    S_Pretty_Forced    : aliased constant S := "/FORCED_OUTPUT=@"           &
                                                  "-of@";
@@ -4443,6 +5051,13 @@ package VMS_Data is
    --
    --      MIXED_CASE        Names are in mixed case.
 
+   S_Pretty_No_Backup : aliased constant S := "/NO_BACKUP "               &
+                                                 "-rnb";
+   --        /REPLACE_NO_BACKUP
+   --
+   --   Replace the argument source with the pretty-printed source without
+   --   creating any backup copy of the argument source.
+
    S_Pretty_No_Labels : aliased constant S := "/NO_MISSED_LABELS "         &
                                                  "-e";
    --        /NO_MISSED_LABELS
@@ -4455,6 +5070,12 @@ package VMS_Data is
    --   inserts these end/exit labels when they are absent in the original
    --   source. This qualifier /NO_MISSED_LABELS suppresses this insertion,
    --   so that the formatted source reflects the original.
+
+   S_Pretty_Notabs    : aliased constant S := "/NOTABS "                   &
+                                                 "-notabs";
+   --        /NOTABS
+   --
+   --   Replace all tabulations in comments with spaces.
 
    S_Pretty_Output    : aliased constant S := "/OUTPUT=@"                  &
                                               "-o@";
@@ -4478,7 +5099,8 @@ package VMS_Data is
                                               "LOWER_CASE "                &
                                                  "-pL "                    &
                                               "UPPER_CASE "                &
-      --        /PRAGMA_CASING[=pragma-option]
+                                                 "-pU";
+   --        /PRAGMA_CASING[=pragma-option]
    --
    --   Set the case of pragma identifiers. The default is Mixed case.
    --   pragma-option may be one of the following:
@@ -4486,9 +5108,9 @@ package VMS_Data is
    --      MIXED_CASE (D)
    --      LOWER_CASE
    --      UPPER_CASE
-                                              "-pU";
-   S_Pretty_Project   : aliased constant S := "/PROJECT_FILE=<"               &
-                                            "-P>";
+
+   S_Pretty_Project   : aliased constant S := "/PROJECT_FILE=<"            &
+                                                "-P>";
    --        /PROJECT_FILE=filename
    --
    --   Specifies the main project file to be used. The project files rooted
@@ -4503,6 +5125,12 @@ package VMS_Data is
    --   Replace the argument source with the pretty-printed source and copy the
    --   argument source into filename.NPP. If filename.NPP already exists,
    --   report an error and exit.
+
+   S_Pretty_RTS       : aliased constant S := "/RUNTIME_SYSTEM=|"          &
+                                               "--RTS=|";
+   --        /RUNTIME_SYSTEM=xxx
+   --
+   --    Compile against an alternate runtime system named xxx or RTS-xxx.
 
    S_Pretty_Search    : aliased constant S := "/SEARCH=*"                  &
                                               "-I*";
@@ -4544,14 +5172,18 @@ package VMS_Data is
 
    Pretty_Switches : aliased constant Switches :=
      (S_Pretty_Align     'Access,
+      S_Pretty_All_Prjs  'Access,
       S_Pretty_Attrib    'Access,
       S_Pretty_Comments  'Access,
+      S_Pretty_Compact_Is'Access,
       S_Pretty_Config    'Access,
       S_Pretty_Constr    'Access,
       S_Pretty_Comind    'Access,
-      S_Pretty_Ext       'Access,
       S_Pretty_Current   'Access,
       S_Pretty_Dico      'Access,
+      S_Pretty_Eol       'Access,
+      S_Pretty_Ext       'Access,
+      S_Pretty_Files     'Access,
       S_Pretty_Forced    'Access,
       S_Pretty_Formfeed  'Access,
       S_Pretty_Indent    'Access,
@@ -4560,17 +5192,83 @@ package VMS_Data is
       S_Pretty_Maxind    'Access,
       S_Pretty_Mess      'Access,
       S_Pretty_Names     'Access,
+      S_Pretty_No_Backup 'Access,
       S_Pretty_No_Labels 'Access,
+      S_Pretty_Notabs    'Access,
       S_Pretty_Output    'Access,
       S_Pretty_Override  'Access,
       S_Pretty_Pragma    'Access,
       S_Pretty_Replace   'Access,
       S_Pretty_Project   'Access,
+      S_Pretty_RTS       'Access,
       S_Pretty_Search    'Access,
       S_Pretty_Specific  'Access,
       S_Pretty_Standard  'Access,
       S_Pretty_Verbose   'Access,
       S_Pretty_Warnings  'Access);
+
+   -----------------------------
+   -- Switches for GNAT SETUP --
+   -----------------------------
+
+   S_Setup_Ext       : aliased constant S := "/EXTERNAL_REFERENCE=" & '"' &
+                                              "-X" & '"';
+   --        /EXTERNAL_REFERENCE="name=val"
+   --
+   --   Specifies an external reference to the project manager. Useful only if
+   --   /PROJECT_FILE is used.
+   --
+   --   Example:
+   --      /EXTERNAL_REFERENCE="DEBUG=TRUE"
+
+   S_Setup_Mess      : aliased constant S := "/MESSAGES_PROJECT_FILE="    &
+                                             "DEFAULT "                   &
+                                                "-vP0 "                   &
+                                             "MEDIUM "                    &
+                                                "-vP1 "                   &
+                                             "HIGH "                      &
+                                                "-vP2";
+   --        /MESSAGES_PROJECT_FILE[=messages-option]
+   --
+   --   Specifies the "verbosity" of the parsing of project files.
+   --   messages-option may be one of the following:
+   --
+   --      DEFAULT (D)  No messages are output if there is no error or warning.
+   --
+   --      MEDIUM       A small number of messages are output.
+   --
+   --      HIGH         A great number of messages are output, most of them not
+   --                   being useful for the user.
+
+   S_Setup_Project   : aliased constant S := "/PROJECT_FILE=<"            &
+                                                "-P>";
+   --        /PROJECT_FILE=filename
+   --
+   --   Specifies the main project file to be used. The project files rooted
+   --   at the main project file are parsed and non existing object
+   --   directories, library directories and exec directories are created.
+
+   S_Setup_Quiet     : aliased constant S := "/QUIET "                    &
+                                            "-q";
+   --        /NOQUIET (D)
+   --        /QUIET
+   --
+   --   Work quietly, only output warnings and errors.
+
+   S_Setup_Verbose   : aliased constant S := "/VERBOSE "                  &
+                                              "-v";
+   --        /NOVERBOSE (D)
+   --        /VERBOSE
+   --
+   --   Verbose mode; GNAT PRETTY generates version information and then a
+   --   trace of the actions it takes to produce or obtain the ASIS tree.
+
+   Setup_Switches : aliased constant Switches :=
+     (S_Setup_Ext     'Access,
+      S_Setup_Mess    'Access,
+      S_Setup_Project 'Access,
+      S_Setup_Quiet   'Access,
+      S_Setup_Verbose 'Access);
 
    ------------------------------
    -- Switches for GNAT SHARED --

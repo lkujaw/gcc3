@@ -6,7 +6,7 @@
 --                                                                          --
 --                                 B o d y                                  --
 --                                                                          --
---          Copyright (C) 1992-2002 Free Software Foundation, Inc.          --
+--          Copyright (C) 1992-2006, Free Software Foundation, Inc.         --
 --                                                                          --
 -- GNAT is free software;  you can  redistribute it  and/or modify it under --
 -- terms of the  GNU General Public License as published  by the Free Soft- --
@@ -16,16 +16,16 @@
 -- or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License --
 -- for  more details.  You should have  received  a copy of the GNU General --
 -- Public License  distributed with GNAT;  see file COPYING.  If not, write --
--- to  the Free Software Foundation,  59 Temple Place - Suite 330,  Boston, --
--- MA 02111-1307, USA.                                                      --
+-- to  the  Free Software Foundation,  51  Franklin  Street,  Fifth  Floor, --
+-- Boston, MA 02110-1301, USA.                                              --
 --                                                                          --
--- As a special exception,  if other files  instantiate  generics from this --
--- unit, or you link  this unit with other files  to produce an executable, --
--- this  unit  does not  by itself cause  the resulting  executable  to  be --
--- covered  by the  GNU  General  Public  License.  This exception does not --
--- however invalidate  any other reasons why  the executable file  might be --
--- covered by the  GNU Public License.                                      --
---                                                                          --
+--
+--
+--
+--
+--
+--
+--
 -- GNAT was originally developed  by the GNAT team at  New York University. --
 -- Extensive contributions were provided by Ada Core Technologies Inc.      --
 --                                                                          --
@@ -47,9 +47,8 @@ package body Widechar is
    ---------------------------
 
    function Is_Start_Of_Wide_Char
-     (S    : Source_Buffer_Ptr;
-      P    : Source_Ptr)
-      return Boolean
+     (S : Source_Buffer_Ptr;
+      P : Source_Ptr) return Boolean
    is
    begin
       case Wide_Character_Encoding_Method is
@@ -89,8 +88,15 @@ package body Widechar is
       C   : out Char_Code;
       Err : out Boolean)
    is
+      P_Init : constant Source_Ptr := P;
+      Chr    : Character;
+
       function In_Char return Character;
       --  Function to obtain characters of wide character escape sequence
+
+      -------------
+      -- In_Char --
+      -------------
 
       function In_Char return Character is
       begin
@@ -98,12 +104,25 @@ package body Widechar is
          return S (P - 1);
       end In_Char;
 
-      function WC_In is new Char_Sequence_To_Wide_Char (In_Char);
+      function WC_In is new Char_Sequence_To_UTF_32 (In_Char);
+
+   --  Start of processingf for Scan_Wide
 
    begin
-      C := Char_Code (Wide_Character'Pos
-                       (WC_In (In_Char, Wide_Character_Encoding_Method)));
+      Chr := In_Char;
+
+      --  Scan out the wide character. if the first character is a bracket,
+      --  we allow brackets encoding regardless of the standard encoding
+      --  method being used, but otherwise we use this standard method.
+
+      if Chr = '[' then
+         C := Char_Code (WC_In (Chr, WCEM_Brackets));
+      else
+         C := Char_Code (WC_In (Chr, Wide_Character_Encoding_Method));
+      end if;
+
       Err := False;
+      Wide_Char_Byte_Count := Wide_Char_Byte_Count + Nat (P - P_Init - 1);
 
    exception
       when Constraint_Error =>
@@ -124,16 +143,22 @@ package body Widechar is
       procedure Out_Char (C : Character);
       --  Procedure to store one character of wide character sequence
 
+      --------------
+      -- Out_Char --
+      --------------
+
       procedure Out_Char (C : Character) is
       begin
          P := P + 1;
          S (P) := C;
       end Out_Char;
 
-      procedure WC_Out is new Wide_Char_To_Char_Sequence (Out_Char);
+      procedure WC_Out is new UTF_32_To_Char_Sequence (Out_Char);
+
+   --  Start of processing for Set_Wide
 
    begin
-      WC_Out (Wide_Character'Val (C), Wide_Character_Encoding_Method);
+      WC_Out (UTF_32_Code (C), Wide_Character_Encoding_Method);
    end Set_Wide;
 
    ---------------
@@ -141,8 +166,14 @@ package body Widechar is
    ---------------
 
    procedure Skip_Wide (S : String; P : in out Natural) is
+      P_Init : constant Natural := P;
+
       function Skip_Char return Character;
       --  Function to skip one character of wide character escape sequence
+
+      ---------------
+      -- Skip_Char --
+      ---------------
 
       function Skip_Char return Character is
       begin
@@ -150,13 +181,48 @@ package body Widechar is
          return S (P - 1);
       end Skip_Char;
 
-      function WC_Skip is new Char_Sequence_To_Wide_Char (Skip_Char);
+      function WC_Skip is new Char_Sequence_To_UTF_32 (Skip_Char);
 
-      Discard : Wide_Character;
+      Discard : UTF_32_Code;
       pragma Warnings (Off, Discard);
+
+   --  Start of processing for Skip_Wide
 
    begin
       Discard := WC_Skip (Skip_Char, Wide_Character_Encoding_Method);
+      Wide_Char_Byte_Count := Wide_Char_Byte_Count + Nat (P - P_Init - 1);
+   end Skip_Wide;
+
+   ---------------
+   -- Skip_Wide --
+   ---------------
+
+   procedure Skip_Wide (S : Source_Buffer_Ptr; P : in out Source_Ptr) is
+      P_Init : constant Source_Ptr := P;
+
+      function Skip_Char return Character;
+      --  Function to skip one character of wide character escape sequence
+
+      ---------------
+      -- Skip_Char --
+      ---------------
+
+      function Skip_Char return Character is
+      begin
+         P := P + 1;
+         return S (P - 1);
+      end Skip_Char;
+
+      function WC_Skip is new Char_Sequence_To_UTF_32 (Skip_Char);
+
+      Discard : UTF_32_Code;
+      pragma Warnings (Off, Discard);
+
+   --  Start of processing for Skip_Wide
+
+   begin
+      Discard := WC_Skip (Skip_Char, Wide_Character_Encoding_Method);
+      Wide_Char_Byte_Count := Wide_Char_Byte_Count + Nat (P - P_Init - 1);
    end Skip_Wide;
 
 end Widechar;

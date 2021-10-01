@@ -6,7 +6,7 @@
 --                                                                          --
 --                                 S p e c                                  --
 --                                                                          --
---           Copyright (C) 2000-2003 Ada Core Technologies, Inc.            --
+--                     Copyright (C) 2000-2006, AdaCore                     --
 --                                                                          --
 -- GNAT is free software;  you can  redistribute it  and/or modify it under --
 -- terms of the  GNU General Public License as published  by the Free Soft- --
@@ -16,16 +16,16 @@
 -- or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License --
 -- for  more details.  You should have  received  a copy of the GNU General --
 -- Public License  distributed with GNAT;  see file COPYING.  If not, write --
--- to  the Free Software Foundation,  59 Temple Place - Suite 330,  Boston, --
--- MA 02111-1307, USA.                                                      --
+-- to  the  Free Software Foundation,  51  Franklin  Street,  Fifth  Floor, --
+-- Boston, MA 02110-1301, USA.                                              --
 --                                                                          --
--- As a special exception,  if other files  instantiate  generics from this --
--- unit, or you link  this unit with other files  to produce an executable, --
--- this  unit  does not  by itself cause  the resulting  executable  to  be --
--- covered  by the  GNU  General  Public  License.  This exception does not --
--- however invalidate  any other reasons why  the executable file  might be --
--- covered by the  GNU Public License.                                      --
---                                                                          --
+--
+--
+--
+--
+--
+--
+--
 -- GNAT was originally developed  by the GNAT team at  New York University. --
 -- Extensive contributions were provided by Ada Core Technologies Inc.      --
 --                                                                          --
@@ -68,7 +68,7 @@
 --        procedure New_Client is
 --           use GNAT;
 
---           procedure Add_Client_To_Database (Name : in String) is
+--           procedure Add_Client_To_Database (Name : String) is
 --           begin
 --              ...
 --           end Add_Client_To_Database;
@@ -115,7 +115,7 @@ package GNAT.CGI is
    --  and will be raised when calling any services below (except for Ok).
 
    Parameter_Not_Found : exception;
-   --  This exception is raised when a specific parameter is not found.
+   --  This exception is raised when a specific parameter is not found
 
    Default_Header : constant String := "Content-type: text/html";
    --  This is the default header returned by Put_Header. If the CGI program
@@ -186,12 +186,11 @@ package GNAT.CGI is
    --  the exception Data_Error.
 
    function Method return Method_Type;
-   --  Returns the method used to call the CGI.
+   --  Returns the method used to call the CGI
 
    function Metavariable
      (Name     : Metavariable_Name;
-      Required : Boolean := False)
-      return     String;
+      Required : Boolean := False) return String;
    --  Returns parameter Name value. Returns the null string if Name
    --  environment variable is not defined or raises Data_Error if
    --  Required is set to True.
@@ -215,8 +214,7 @@ package GNAT.CGI is
 
    function Value
      (Key      : String;
-      Required : Boolean := False)
-      return     String;
+      Required : Boolean := False) return String;
    --  Returns the parameter value associated to the parameter named Key.
    --  If parameter does not exist, returns an empty string if Required
    --  is False and raises the exception Parameter_Not_Found otherwise.
@@ -227,7 +225,7 @@ package GNAT.CGI is
    --  (i.e. Position > Argument_Count)
 
    function Key_Exists (Key : String) return Boolean;
-   --  Returns True if the parameter named Key existx and False otherwise.
+   --  Returns True if the parameter named Key exists and False otherwise
 
    function Key (Position : Positive) return String;
    --  Returns the parameter key associated with the CGI parameter number

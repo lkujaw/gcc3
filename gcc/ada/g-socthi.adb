@@ -6,7 +6,7 @@
 --                                                                          --
 --                                 B o d y                                  --
 --                                                                          --
---              Copyright (C) 2001-2004 Ada Core Technologies, Inc.         --
+--                     Copyright (C) 2001-2005, AdaCore                     --
 --                                                                          --
 -- GNAT is free software;  you can  redistribute it  and/or modify it under --
 -- terms of the  GNU General Public License as published  by the Free Soft- --
@@ -16,16 +16,16 @@
 -- or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License --
 -- for  more details.  You should have  received  a copy of the GNU General --
 -- Public License  distributed with GNAT;  see file COPYING.  If not, write --
--- to  the Free Software Foundation,  59 Temple Place - Suite 330,  Boston, --
--- MA 02111-1307, USA.                                                      --
+-- to  the  Free Software Foundation,  51  Franklin  Street,  Fifth  Floor, --
+-- Boston, MA 02110-1301, USA.                                              --
 --                                                                          --
--- As a special exception,  if other files  instantiate  generics from this --
--- unit, or you link  this unit with other files  to produce an executable, --
--- this  unit  does not  by itself cause  the resulting  executable  to  be --
--- covered  by the  GNU  General  Public  License.  This exception does not --
--- however invalidate  any other reasons why  the executable file  might be --
--- covered by the  GNU Public License.                                      --
---                                                                          --
+--
+--
+--
+--
+--
+--
+--
 -- GNAT was originally developed  by the GNAT team at  New York University. --
 -- Extensive contributions were provided by Ada Core Technologies Inc.      --
 --                                                                          --
@@ -61,9 +61,12 @@ package body GNAT.Sockets.Thin is
    --  two attempts on a blocking operation.
 
    Thread_Blocking_IO : Boolean := True;
+   --  Comment required for this ???
 
    Unknown_System_Error : constant C.Strings.chars_ptr :=
                             C.Strings.New_String ("Unknown system error");
+
+   --  Comments required for following functions ???
 
    function Syscall_Accept
      (S       : C.int;
@@ -121,7 +124,10 @@ package body GNAT.Sockets.Thin is
       Protocol : C.int) return C.int;
    pragma Import (C, Syscall_Socket, "socket");
 
-   function  Non_Blocking_Socket (S : C.int) return Boolean;
+   procedure Disable_SIGPIPE (S : C.int);
+   pragma Import (C, Disable_SIGPIPE, "__gnat_disable_sigpipe");
+
+   function Non_Blocking_Socket (S : C.int) return Boolean;
    procedure Set_Non_Blocking_Socket (S : C.int; V : Boolean);
 
    --------------
@@ -160,6 +166,7 @@ package body GNAT.Sockets.Thin is
          Discard := Syscall_Ioctl (R, Constants.FIONBIO, Val'Unchecked_Access);
       end if;
 
+      Disable_SIGPIPE (R);
       return R;
    end C_Accept;
 
@@ -377,7 +384,7 @@ package body GNAT.Sockets.Thin is
          Discard := Syscall_Ioctl (R, Constants.FIONBIO, Val'Unchecked_Access);
          Set_Non_Blocking_Socket (R, False);
       end if;
-
+      Disable_SIGPIPE (R);
       return R;
    end C_Socket;
 
@@ -407,7 +414,7 @@ package body GNAT.Sockets.Thin is
       R : Boolean;
    begin
       Task_Lock.Lock;
-      R := Is_Socket_In_Set (Non_Blocking_Sockets, S);
+      R := (Is_Socket_In_Set (Non_Blocking_Sockets, S) /= 0);
       Task_Lock.Unlock;
       return R;
    end Non_Blocking_Socket;
@@ -496,7 +503,6 @@ package body GNAT.Sockets.Thin is
 
       if C_Msg = C.Strings.Null_Ptr then
          return Unknown_System_Error;
-
       else
          return C_Msg;
       end if;

@@ -6,7 +6,7 @@
 --                                                                          --
 --                                 S p e c                                  --
 --                                                                          --
---          Copyright (C) 1992-1998 Free Software Foundation, Inc.          --
+--          Copyright (C) 1992-2006, Free Software Foundation, Inc.         --
 --                                                                          --
 -- GNAT is free software;  you can  redistribute it  and/or modify it under --
 -- terms of the  GNU General Public License as published  by the Free Soft- --
@@ -16,16 +16,16 @@
 -- or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License --
 -- for  more details.  You should have  received  a copy of the GNU General --
 -- Public License  distributed with GNAT;  see file COPYING.  If not, write --
--- to  the Free Software Foundation,  59 Temple Place - Suite 330,  Boston, --
--- MA 02111-1307, USA.                                                      --
+-- to  the  Free Software Foundation,  51  Franklin  Street,  Fifth  Floor, --
+-- Boston, MA 02110-1301, USA.                                              --
 --                                                                          --
--- As a special exception,  if other files  instantiate  generics from this --
--- unit, or you link  this unit with other files  to produce an executable, --
--- this  unit  does not  by itself cause  the resulting  executable  to  be --
--- covered  by the  GNU  General  Public  License.  This exception does not --
--- however invalidate  any other reasons why  the executable file  might be --
--- covered by the  GNU Public License.                                      --
---                                                                          --
+--
+--
+--
+--
+--
+--
+--
 -- GNAT was originally developed  by the GNAT team at  New York University. --
 -- Extensive contributions were provided by Ada Core Technologies Inc.      --
 --                                                                          --
@@ -63,12 +63,13 @@ package Elists is
    --  Lock tables used for element lists before calling backend
 
    procedure Tree_Read;
-   --  Initializes internal tables from current tree file using Tree_Read.
-   --  Note that Initialize should not be called if Tree_Read is used.
-   --  Tree_Read includes all necessary initialization.
+   --  Initializes internal tables from current tree file using the relevant
+   --  Table.Tree_Read routines. Note that Initialize should not be called if
+   --  Tree_Read is used. Tree_Read includes all necessary initialization.
 
    procedure Tree_Write;
-   --  Writes out internal tables to current tree file using Tree_Write
+   --  Writes out internal tables to current tree file using the relevant
+   --  Table.Tree_Write routines.
 
    function Last_Elist_Id return Elist_Id;
    --  Returns Id of last allocated element list header
@@ -85,7 +86,7 @@ package Elists is
    function Elmts_Address return System.Address;
    --  Return address of Elmts table (used in Back_End for Gigi call)
 
-   function Node (Elmt : Elmt_Id) return Node_Id;
+   function Node (Elmt : Elmt_Id) return Node_Or_Entity_Id;
    pragma Inline (Node);
    --  Returns the value of a given list element. Returns Empty if Elmt
    --  is set to No_Elmt.
@@ -97,13 +98,13 @@ package Elists is
 
    function First_Elmt (List : Elist_Id) return Elmt_Id;
    pragma Inline (First_Elmt);
-   --  Obtains the first element of the given element list or, if the
-   --  list has no items, then No_Elmt is returned.
+   --  Obtains the first element of the given element list or, if the list has
+   --  no items, then No_Elmt is returned.
 
    function Last_Elmt (List : Elist_Id) return Elmt_Id;
    pragma Inline (Last_Elmt);
-   --  Obtains the last element of the given element list or, if the
-   --  list has no items, then No_Elmt is returned.
+   --  Obtains the last element of the given element list or, if the list has
+   --  no items, then No_Elmt is returned.
 
    function Next_Elmt (Elmt : Elmt_Id) return Elmt_Id;
    pragma Inline (Next_Elmt);
@@ -121,10 +122,10 @@ package Elists is
    --  that contains no items.
 
    procedure Append_Elmt (Node : Node_Id; To : Elist_Id);
-   --  Appends Node at the end of To, allocating a new element.
+   --  Appends Node at the end of To, allocating a new element
 
    procedure Prepend_Elmt (Node : Node_Id; To : Elist_Id);
-   --  Appends Node at the beginning of To, allocating a new element.
+   --  Appends Node at the beginning of To, allocating a new element
 
    procedure Insert_Elmt_After (Node : Node_Id; Elmt : Elmt_Id);
    --  Add a new element (Node) right after the pre-existing element Elmt

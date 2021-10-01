@@ -6,7 +6,7 @@
 --                                                                          --
 --                                 S p e c                                  --
 --                                                                          --
---            Copyright (C) 1998-2003 Ada Core Technologies, Inc.           --
+--                     Copyright (C) 1998-2005, AdaCore                     --
 --                                                                          --
 -- GNAT is free software;  you can  redistribute it  and/or modify it under --
 -- terms of the  GNU General Public License as published  by the Free Soft- --
@@ -16,16 +16,16 @@
 -- or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License --
 -- for  more details.  You should have  received  a copy of the GNU General --
 -- Public License  distributed with GNAT;  see file COPYING.  If not, write --
--- to  the Free Software Foundation,  59 Temple Place - Suite 330,  Boston, --
--- MA 02111-1307, USA.                                                      --
+-- to  the  Free Software Foundation,  51  Franklin  Street,  Fifth  Floor, --
+-- Boston, MA 02110-1301, USA.                                              --
 --                                                                          --
--- As a special exception,  if other files  instantiate  generics from this --
--- unit, or you link  this unit with other files  to produce an executable, --
--- this  unit  does not  by itself cause  the resulting  executable  to  be --
--- covered  by the  GNU  General  Public  License.  This exception does not --
--- however invalidate  any other reasons why  the executable file  might be --
--- covered by the  GNU Public License.                                      --
---                                                                          --
+--
+--
+--
+--
+--
+--
+--
 -- GNAT was originally developed  by the GNAT team at  New York University. --
 -- Extensive contributions were provided by Ada Core Technologies Inc.      --
 --                                                                          --
@@ -94,7 +94,7 @@ package GNAT.Directory_Operations is
    --  Dir_Name. Raises Directory_Error if Dir_Name cannot be removed.
 
    function Get_Current_Dir return Dir_Name_Str;
-   --  Returns the current working directory for the execution environment.
+   --  Returns the current working directory for the execution environment
 
    procedure Get_Current_Dir (Dir : out Dir_Name_Str; Last : out Natural);
    --  Returns the current working directory for the execution environment
@@ -123,15 +123,24 @@ package GNAT.Directory_Operations is
    function Base_Name
      (Path   : Path_Name;
       Suffix : String := "") return String;
-   --  Any directory prefix is removed. If Suffix is non-empty and is a
-   --  suffix of Path, it is removed. This is equivalent to the UNIX basename
-   --  command. The following rule is always true:
+   --  Any directory prefix is removed. A directory prefix is defined as
+   --  text up to and including the last directory separator character in
+   --  the input string. In addition if Path ends with the string given for
+   --  Suffix, then it is also removed. Note that Suffix here can be an
+   --  arbitrary string (it is not required to be a file extension). This
+   --  is equivalent to the UNIX basename command. The following rule is
+   --  always true:
    --
    --    'Path' and 'Dir_Name (Path) & Directory_Separator & Base_Name (Path)'
    --    represent the same file.
    --
-   --  This function is not case-sensitive on systems that have a non
-   --  case-sensitive file system like Windows and OpenVMS.
+   --  The comparison of Suffix is case-insensitive on systems such as Windows
+   --  and VMS where the file search is case-insensitive (e.g. on such systems,
+   --  Base_Name ("/Users/AdaCore/BB12.patch", ".Patch") returns "BB12").
+   --
+   --  Note that the index bounds of the result match the corresponding indexes
+   --  in the Path string (you cannot assume that the lower bound of the
+   --  returned string is one).
 
    function File_Extension (Path : Path_Name) return String;
    --  Return the file extension. This is defined as the string after the
@@ -145,16 +154,7 @@ package GNAT.Directory_Operations is
    --  path information. This is equivalent to Base_Name with default Extension
    --  value.
 
-   type Path_Style is
-     (UNIX,
-      --  Use '/' as the directory separator. The default on Unix systems
-      --  and on OpenVMS.
-
-      DOS,
-      --  Use '\' as the directory separator. The default on Windows.
-
-      System_Default);
-
+   type Path_Style is (UNIX, DOS, System_Default);
    function Format_Pathname
      (Path  : Path_Name;
       Style : Path_Style := System_Default) return Path_Name;
@@ -163,26 +163,20 @@ package GNAT.Directory_Operations is
    --  function will help to provide a consistent naming scheme running for
    --  different environments. If style is set to System_Default the routine
    --  will use the default directory separator on the running environment.
+   --
+   --  The Style argument indicates the syntax to be used for path names:
+   --
+   --    UNIX
+   --      Use '/' as the directory separator. The default on Unix systems
+   --      and on OpenVMS.
+   --
+   --    DOS
+   --      Use '\' as the directory separator. The default on Windows.
+   --
+   --    System_Default
+   --      Use the default style for the current system
 
-   type Environment_Style is
-     (UNIX,
-      --  Environment variables and OpenVMS logical names use $ as prefix and
-      --  can use curly brackets as in ${HOME}/mydir. If there is no closing
-      --  curly bracket for an opening one then translation is done, so for
-      --  example ${VAR/toto is returned as ${VAR/toto.
-
-      DOS,
-      --  Environment variables uses % as prefix and suffix
-      --  (e.g. %HOME%/mydir). The name DOS refer to "DOS-like" environment.
-      --  This includes al Windows systems.
-
-      Both,
-      --  Recognize both forms described above.
-
-      System_Default);
-      --  Uses either UNIX on Unix and OpenVMS systems, or DOS on Windows and
-      --  OS/2 depending on the running environment.
-
+   type Environment_Style is (UNIX, DOS, Both, System_Default);
    function Expand_Path
      (Path : Path_Name;
       Mode : Environment_Style := System_Default) return Path_Name;
@@ -193,6 +187,29 @@ package GNAT.Directory_Operations is
    --  variable does not exists the variable will be replaced by the empty
    --  string. Two dollar or percent signs are replaced by a single
    --  dollar/percent sign. Note that a variable must start with a letter.
+   --
+   --  The Mode argument indicates the recognized syntax for environment
+   --  variables as follows:
+   --
+   --    UNIX
+   --      Environment variables and OpenVMS logical names use $ as prefix and
+   --      can use curly brackets as in ${HOME}/mydir. If there is no closing
+   --      curly bracket for an opening one then no translation is done, so for
+   --      example ${VAR/toto is returned as ${VAR/toto. The use of {} brackets
+   --      is required if the environment variable name contains other than
+   --      alphanumeric characters.
+   --
+   --    DOS
+   --      Environment variables uses % as prefix and suffix (e.g. %HOME%/dir).
+   --      The name DOS refer to "DOS-like" environment. This includes all
+   --      Windows systems.
+   --
+   --    Both
+   --      Recognize both forms described above.
+   --
+   --    System_Default
+   --      Uses either UNIX on Unix and OpenVMS systems, or DOS on Windows and
+   --      OS/2 depending on the running environment.
 
    ---------------
    -- Iterators --
@@ -210,7 +227,7 @@ package GNAT.Directory_Operations is
    --  Raises Directory_Error if Dir has not be opened (Dir = Null_Dir).
 
    function Is_Open (Dir : Dir_Type) return Boolean;
-   --  Returns True if Dir is open, or False otherwise.
+   --  Returns True if Dir is open, or False otherwise
 
    procedure Read
      (Dir  : in out Dir_Type;
@@ -246,6 +263,6 @@ private
 
    Dir_Seps : constant Ada.Strings.Maps.Character_Set :=
                 Ada.Strings.Maps.To_Set ("/\");
-   --  UNIX and DOS style directory separators.
+   --  UNIX and DOS style directory separators
 
 end GNAT.Directory_Operations;

@@ -6,7 +6,7 @@
 --                                                                          --
 --                                 B o d y                                  --
 --                                                                          --
---          Copyright (C) 1992-2003, Free Software Foundation, Inc.         --
+--          Copyright (C) 1992-2006, Free Software Foundation, Inc.         --
 --                                                                          --
 -- GNAT is free software;  you can  redistribute it  and/or modify it under --
 -- terms of the  GNU General Public License as published  by the Free Soft- --
@@ -16,8 +16,8 @@
 -- or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License --
 -- for  more details.  You should have  received  a copy of the GNU General --
 -- Public License  distributed with GNAT;  see file COPYING.  If not, write --
--- to  the Free Software Foundation,  59 Temple Place - Suite 330,  Boston, --
--- MA 02111-1307, USA.                                                      --
+-- to  the  Free Software Foundation,  51  Franklin  Street,  Fifth  Floor, --
+-- Boston, MA 02110-1301, USA.                                              --
 --                                                                          --
 -- GNAT was originally developed  by the GNAT team at  New York University. --
 -- Extensive contributions were provided by Ada Core Technologies Inc.      --
@@ -30,11 +30,12 @@ with Einfo;    use Einfo;
 with Errout;   use Errout;
 with Exp_Tss;  use Exp_Tss;
 with Exp_Util; use Exp_Util;
-with Hostparm; use Hostparm;
 with Lib;      use Lib;
 with Nlists;   use Nlists;
 with Nmake;    use Nmake;
 with Opt;      use Opt;
+with Restrict; use Restrict;
+with Rident;   use Rident;
 with Rtsfind;  use Rtsfind;
 with Sem;      use Sem;
 with Sem_Ch8;  use Sem_Ch8;
@@ -42,10 +43,12 @@ with Sem_Eval; use Sem_Eval;
 with Sem_Res;  use Sem_Res;
 with Sem_Type; use Sem_Type;
 with Sem_Util; use Sem_Util;
+with Sem_Warn; use Sem_Warn;
 with Snames;   use Snames;
 with Stand;    use Stand;
 with Sinfo;    use Sinfo;
 with Table;
+with Targparm; use Targparm;
 with Ttypes;   use Ttypes;
 with Tbuild;   use Tbuild;
 with Urealp;   use Urealp;
@@ -83,44 +86,32 @@ package body Sem_Ch13 is
    --  operational attributes.
 
    function Address_Aliased_Entity (N : Node_Id) return Entity_Id;
-   --  If expression N is of the form E'Address, return E.
+   --  If expression N is of the form E'Address, return E
 
    procedure Mark_Aliased_Address_As_Volatile (N : Node_Id);
    --  This is used for processing of an address representation clause. If
    --  the expression N is of the form of K'Address, then the entity that
    --  is associated with K is marked as volatile.
 
-   procedure New_Stream_Function
+   procedure New_Stream_Subprogram
      (N    : Node_Id;
       Ent  : Entity_Id;
       Subp : Entity_Id;
       Nam  : TSS_Name_Type);
-   --  Create a function renaming of a given stream attribute to the
-   --  designated subprogram and then in the tagged case, provide this as
-   --  a primitive operation, or in the non-tagged case make an appropriate
-   --  TSS entry. Used for Input. This is more properly an expansion activity
-   --  than just semantics, but the presence of user-defined stream functions
-   --  for limited types is a legality check, which is why this takes place
-   --  here rather than in exp_ch13, where it was previously. Nam indicates
-   --  the name of the TSS function to be generated.
+   --  Create a subprogram renaming of a given stream attribute to the
+   --  designated subprogram and then in the tagged case, provide this as a
+   --  primitive operation, or in the non-tagged case make an appropriate TSS
+   --  entry. This is more properly an expansion activity than just semantics,
+   --  but the presence of user-defined stream functions for limited types is a
+   --  legality check, which is why this takes place here rather than in
+   --  exp_ch13, where it was previously. Nam indicates the name of the TSS
+   --  function to be generated.
    --
    --  To avoid elaboration anomalies with freeze nodes, for untagged types
    --  we generate both a subprogram declaration and a subprogram renaming
    --  declaration, so that the attribute specification is handled as a
    --  renaming_as_body. For tagged types, the specification is one of the
    --  primitive specs.
-
-   procedure New_Stream_Procedure
-     (N     : Node_Id;
-      Ent   : Entity_Id;
-      Subp  : Entity_Id;
-      Nam   : TSS_Name_Type;
-      Out_P : Boolean := False);
-   --  Create a procedure renaming of a given stream attribute to the
-   --  designated subprogram and then in the tagged case, provide this as
-   --  a primitive operation, or in the non-tagged case make an appropriate
-   --  TSS entry. Used for Read, Output, Write. Nam indicates the name of
-   --  the TSS procedure to be generated.
 
    ----------------------------------------------
    -- Table for Validate_Unchecked_Conversions --
@@ -203,11 +194,13 @@ package body Sem_Ch13 is
 
    procedure Analyze_At_Clause (N : Node_Id) is
    begin
+      Check_Restriction (No_Obsolescent_Features, N);
+
       if Warn_On_Obsolescent_Feature then
          Error_Msg_N
            ("at clause is an obsolescent feature ('R'M 'J.7(2))?", N);
          Error_Msg_N
-           ("|use address attribute definition clause instead?", N);
+           ("\use address attribute definition clause instead?", N);
       end if;
 
       Rewrite (N,
@@ -240,6 +233,146 @@ package body Sem_Ch13 is
       --  disallow Storage_Size for derived task types, but that is also
       --  clearly unintentional.
 
+      procedure Analyze_Stream_TSS_Definition (TSS_Nam : TSS_Name_Type);
+      --  Common processing for 'Read, 'Write, 'Input and 'Output attribute
+      --  definition clauses.
+
+      procedure Analyze_Stream_TSS_Definition (TSS_Nam : TSS_Name_Type) is
+         Subp : Entity_Id := Empty;
+         I    : Interp_Index;
+         It   : Interp;
+         Pnam : Entity_Id;
+
+         Is_Read : constant Boolean := (TSS_Nam = TSS_Stream_Read);
+
+         function Has_Good_Profile (Subp : Entity_Id) return Boolean;
+         --  Return true if the entity is a subprogram with an appropriate
+         --  profile for the attribute being defined.
+
+         ----------------------
+         -- Has_Good_Profile --
+         ----------------------
+
+         function Has_Good_Profile (Subp : Entity_Id) return Boolean is
+            F              : Entity_Id;
+            Is_Function    : constant Boolean := (TSS_Nam = TSS_Stream_Input);
+            Expected_Ekind : constant array (Boolean) of Entity_Kind :=
+                               (False => E_Procedure, True => E_Function);
+            Typ            : Entity_Id;
+
+         begin
+            if Ekind (Subp) /= Expected_Ekind (Is_Function) then
+               return False;
+            end if;
+
+            F := First_Formal (Subp);
+
+            if No (F)
+              or else Ekind (Etype (F)) /= E_Anonymous_Access_Type
+              or else Designated_Type (Etype (F)) /=
+                               Class_Wide_Type (RTE (RE_Root_Stream_Type))
+            then
+               return False;
+            end if;
+
+            if not Is_Function then
+               Next_Formal (F);
+
+               declare
+                  Expected_Mode : constant array (Boolean) of Entity_Kind :=
+                                    (False => E_In_Parameter,
+                                     True  => E_Out_Parameter);
+               begin
+                  if Parameter_Mode (F) /= Expected_Mode (Is_Read) then
+                     return False;
+                  end if;
+               end;
+
+               Typ := Etype (F);
+
+            else
+               Typ := Etype (Subp);
+            end if;
+
+            return Base_Type (Typ) = Base_Type (Ent)
+              and then No (Next_Formal (F));
+
+         end Has_Good_Profile;
+
+      --  Start of processing for Analyze_Stream_TSS_Definition
+
+      begin
+         FOnly := True;
+
+         if not Is_Type (U_Ent) then
+            Error_Msg_N ("local name must be a subtype", Nam);
+            return;
+         end if;
+
+         Pnam := TSS (Base_Type (U_Ent), TSS_Nam);
+
+         --  If Pnam is present, it can be either inherited from an ancestor
+         --  type (in which case it is legal to redefine it for this type), or
+         --  be a previous definition of the attribute for the same type (in
+         --  which case it is illegal).
+
+         --  In the first case, it will have been analyzed already, and we
+         --  can check that its profile does not match the expected profile
+         --  for a stream attribute of U_Ent. In the second case, either Pnam
+         --  has been analyzed (and has the expected profile), or it has not
+         --  been analyzed yet (case of a type that has not been frozen yet
+         --  and for which the stream attribute has been set using Set_TSS).
+
+         if Present (Pnam)
+           and then (No (First_Entity (Pnam)) or else Has_Good_Profile (Pnam))
+         then
+            Error_Msg_Sloc := Sloc (Pnam);
+            Error_Msg_Name_1 := Attr;
+            Error_Msg_N ("% attribute already defined #", Nam);
+            return;
+         end if;
+
+         Analyze (Expr);
+
+         if Is_Entity_Name (Expr) then
+            if not Is_Overloaded (Expr) then
+               if Has_Good_Profile (Entity (Expr)) then
+                  Subp := Entity (Expr);
+               end if;
+
+            else
+               Get_First_Interp (Expr, I, It);
+
+               while Present (It.Nam) loop
+                  if Has_Good_Profile (It.Nam) then
+                     Subp := It.Nam;
+                     exit;
+                  end if;
+
+                  Get_Next_Interp (I, It);
+               end loop;
+            end if;
+         end if;
+
+         if Present (Subp) then
+            if Is_Abstract (Subp) then
+               Error_Msg_N ("stream subprogram must not be abstract", Expr);
+               return;
+            end if;
+
+            Set_Entity (Expr, Subp);
+            Set_Etype (Expr, Etype (Subp));
+
+            New_Stream_Subprogram (N, U_Ent, Subp, TSS_Nam);
+
+         else
+            Error_Msg_Name_1 := Attr;
+            Error_Msg_N ("incorrect expression for% attribute", Expr);
+         end if;
+      end Analyze_Stream_TSS_Definition;
+
+   --  Start of processing for Analyze_Attribute_Definition_Clause
+
    begin
       Analyze (Nam);
       Ent := Entity (Nam);
@@ -248,25 +381,31 @@ package body Sem_Ch13 is
          return;
       end if;
 
-      --  Rep clause applies to full view of incomplete type or private type
-      --  if we have one (if not, this is a premature use of the type).
-      --  However, certain semantic checks need to be done on the specified
-      --  entity (i.e. the private view), so we save it in Ent.
+      --  Rep clause applies to full view of incomplete type or private type if
+      --  we have one (if not, this is a premature use of the type). However,
+      --  certain semantic checks need to be done on the specified entity (i.e.
+      --  the private view), so we save it in Ent.
 
       if Is_Private_Type (Ent)
         and then Is_Derived_Type (Ent)
         and then not Is_Tagged_Type (Ent)
         and then No (Full_View (Ent))
       then
-         --  If this is a private type whose completion is a derivation
-         --  from another private type, there is no full view, and the
-         --  attribute belongs to the type itself, not its underlying parent.
+         --  If this is a private type whose completion is a derivation from
+         --  another private type, there is no full view, and the attribute
+         --  belongs to the type itself, not its underlying parent.
 
          U_Ent := Ent;
 
       elsif Ekind (Ent) = E_Incomplete_Type then
+
+         --  The attribute applies to the full view, set the entity of the
+         --  attribute definition accordingly.
+
          Ent := Underlying_Type (Ent);
          U_Ent := Ent;
+         Set_Entity (Nam, Ent);
+
       else
          U_Ent := Underlying_Type (Ent);
       end if;
@@ -291,7 +430,6 @@ package body Sem_Ch13 is
       then
          Error_Msg_N ("cannot specify attribute for subtype", Nam);
          return;
-
       end if;
 
       --  Switch on particular attribute
@@ -349,12 +487,14 @@ package body Sem_Ch13 is
                     ("\?only one task can be declared of this type", N);
                end if;
 
+               Check_Restriction (No_Obsolescent_Features, N);
+
                if Warn_On_Obsolescent_Feature then
                   Error_Msg_N
                     ("attaching interrupt to task entry is an " &
                      "obsolescent feature ('R'M 'J.7.1)?", N);
                   Error_Msg_N
-                    ("|use interrupt procedure instead?", N);
+                    ("\use interrupt procedure instead?", N);
                end if;
 
             --  Case of an address clause for a controlled object:
@@ -481,11 +621,14 @@ package body Sem_Ch13 is
                         Nam);
                   end if;
 
-                  --  Entity has delayed freeze, so we will generate
-                  --  an alignment check at the freeze point.
+                  --  Entity has delayed freeze, so we will generate an
+                  --  alignment check at the freeze point unless suppressed.
 
-                  Set_Check_Address_Alignment
-                    (N, not Range_Checks_Suppressed (U_Ent));
+                  if not Range_Checks_Suppressed (U_Ent)
+                    and then not Alignment_Checks_Suppressed (U_Ent)
+                  then
+                     Set_Check_Address_Alignment (N);
+                  end if;
 
                   --  Kill the size check code, since we are not allocating
                   --  the variable, it is somewhere else.
@@ -657,94 +800,9 @@ package body Sem_Ch13 is
          -- Input --
          -----------
 
-         when Attribute_Input => Input : declare
-            Subp : Entity_Id := Empty;
-            I    : Interp_Index;
-            It   : Interp;
-            Pnam : Entity_Id;
-
-            function Has_Good_Profile (Subp : Entity_Id) return Boolean;
-            --  Return true if the entity is a function with an appropriate
-            --  profile for the Input attribute.
-
-            ----------------------
-            -- Has_Good_Profile --
-            ----------------------
-
-            function Has_Good_Profile (Subp : Entity_Id) return Boolean is
-               F  : Entity_Id;
-               Ok : Boolean := False;
-
-            begin
-               if Ekind (Subp) = E_Function then
-                  F := First_Formal (Subp);
-
-                  if Present (F) and then No (Next_Formal (F)) then
-                     if Ekind (Etype (F)) = E_Anonymous_Access_Type
-                       and then
-                         Designated_Type (Etype (F)) =
-                           Class_Wide_Type (RTE (RE_Root_Stream_Type))
-                     then
-                        Ok := Base_Type (Etype (Subp)) = Base_Type (Ent);
-                     end if;
-                  end if;
-               end if;
-
-               return Ok;
-            end Has_Good_Profile;
-
-         --  Start of processing for Input attribute definition
-
-         begin
-            FOnly := True;
-
-            if not Is_Type (U_Ent) then
-               Error_Msg_N ("local name must be a subtype", Nam);
-               return;
-
-            else
-               Pnam := TSS (Base_Type (U_Ent), TSS_Stream_Input);
-
-               if Present (Pnam)
-                 and then Base_Type (Etype (Pnam)) = Base_Type (U_Ent)
-               then
-                  Error_Msg_Sloc := Sloc (Pnam);
-                  Error_Msg_N ("input attribute already defined #", Nam);
-                  return;
-               end if;
-            end if;
-
-            Analyze (Expr);
-
-            if Is_Entity_Name (Expr) then
-               if not Is_Overloaded (Expr) then
-                  if Has_Good_Profile (Entity (Expr)) then
-                     Subp := Entity (Expr);
-                  end if;
-
-               else
-                  Get_First_Interp (Expr, I, It);
-
-                  while Present (It.Nam) loop
-                     if Has_Good_Profile (It.Nam) then
-                        Subp := It.Nam;
-                        exit;
-                     end if;
-
-                     Get_Next_Interp (I, It);
-                  end loop;
-               end if;
-            end if;
-
-            if Present (Subp) then
-               Set_Entity (Expr, Subp);
-               Set_Etype (Expr, Etype (Subp));
-               New_Stream_Function (N, U_Ent, Subp,  TSS_Stream_Input);
-            else
-               Error_Msg_N ("incorrect expression for input attribute", Expr);
-               return;
-            end if;
-         end Input;
+         when Attribute_Input =>
+            Analyze_Stream_TSS_Definition (TSS_Stream_Input);
+            Set_Has_Specified_Stream_Input (Ent);
 
          -------------------
          -- Machine_Radix --
@@ -820,198 +878,17 @@ package body Sem_Ch13 is
          -- Output --
          ------------
 
-         when Attribute_Output => Output : declare
-            Subp : Entity_Id := Empty;
-            I    : Interp_Index;
-            It   : Interp;
-            Pnam : Entity_Id;
-
-            function Has_Good_Profile (Subp : Entity_Id) return Boolean;
-            --  Return true if the entity is a procedure with an
-            --  appropriate profile for the output attribute.
-
-            ----------------------
-            -- Has_Good_Profile --
-            ----------------------
-
-            function Has_Good_Profile (Subp : Entity_Id) return Boolean is
-               F  : Entity_Id;
-               Ok : Boolean := False;
-
-            begin
-               if Ekind (Subp) = E_Procedure then
-                  F := First_Formal (Subp);
-
-                  if Present (F) then
-                     if Ekind (Etype (F)) = E_Anonymous_Access_Type
-                       and then
-                         Designated_Type (Etype (F)) =
-                           Class_Wide_Type (RTE (RE_Root_Stream_Type))
-                     then
-                        Next_Formal (F);
-                        Ok :=  Present (F)
-                          and then Parameter_Mode (F) = E_In_Parameter
-                          and then Base_Type (Etype (F)) = Base_Type (Ent)
-                          and then No (Next_Formal (F));
-                     end if;
-                  end if;
-               end if;
-
-               return Ok;
-            end Has_Good_Profile;
-
-         --  Start of processing for Output attribute definition
-
-         begin
-            FOnly := True;
-
-            if not Is_Type (U_Ent) then
-               Error_Msg_N ("local name must be a subtype", Nam);
-               return;
-
-            else
-               Pnam := TSS (Base_Type (U_Ent), TSS_Stream_Output);
-
-               if Present (Pnam)
-                 and then
-                   Base_Type (Etype (Next_Formal (First_Formal (Pnam))))
-                                                        = Base_Type (U_Ent)
-               then
-                  Error_Msg_Sloc := Sloc (Pnam);
-                  Error_Msg_N ("output attribute already defined #", Nam);
-                  return;
-               end if;
-            end if;
-
-            Analyze (Expr);
-
-            if Is_Entity_Name (Expr) then
-               if not Is_Overloaded (Expr) then
-                  if Has_Good_Profile (Entity (Expr)) then
-                     Subp := Entity (Expr);
-                  end if;
-
-               else
-                  Get_First_Interp (Expr, I, It);
-
-                  while Present (It.Nam) loop
-                     if Has_Good_Profile (It.Nam) then
-                        Subp := It.Nam;
-                        exit;
-                     end if;
-
-                     Get_Next_Interp (I, It);
-                  end loop;
-               end if;
-            end if;
-
-            if Present (Subp) then
-               Set_Entity (Expr, Subp);
-               Set_Etype (Expr, Etype (Subp));
-               New_Stream_Procedure (N, U_Ent, Subp, TSS_Stream_Output);
-            else
-               Error_Msg_N ("incorrect expression for output attribute", Expr);
-               return;
-            end if;
-         end Output;
+         when Attribute_Output =>
+            Analyze_Stream_TSS_Definition (TSS_Stream_Output);
+            Set_Has_Specified_Stream_Output (Ent);
 
          ----------
          -- Read --
          ----------
 
-         when Attribute_Read => Read : declare
-            Subp : Entity_Id := Empty;
-            I    : Interp_Index;
-            It   : Interp;
-            Pnam : Entity_Id;
-
-            function Has_Good_Profile (Subp : Entity_Id) return Boolean;
-            --  Return true if the entity is a procedure with an appropriate
-            --  profile for the Read attribute.
-
-            ----------------------
-            -- Has_Good_Profile --
-            ----------------------
-
-            function Has_Good_Profile (Subp : Entity_Id) return Boolean is
-               F     : Entity_Id;
-               Ok    : Boolean := False;
-
-            begin
-               if Ekind (Subp) = E_Procedure then
-                  F := First_Formal (Subp);
-
-                  if Present (F) then
-                     if Ekind (Etype (F)) = E_Anonymous_Access_Type
-                       and then
-                         Designated_Type (Etype (F)) =
-                           Class_Wide_Type (RTE (RE_Root_Stream_Type))
-                     then
-                        Next_Formal (F);
-                        Ok :=  Present (F)
-                          and then Parameter_Mode (F) = E_Out_Parameter
-                          and then Base_Type (Etype (F)) = Base_Type (Ent)
-                          and then No (Next_Formal (F));
-                     end if;
-                  end if;
-               end if;
-
-               return Ok;
-            end Has_Good_Profile;
-
-         --  Start of processing for Read attribute definition
-
-         begin
-            FOnly := True;
-
-            if not Is_Type (U_Ent) then
-               Error_Msg_N ("local name must be a subtype", Nam);
-               return;
-
-            else
-               Pnam := TSS (Base_Type (U_Ent), TSS_Stream_Read);
-
-               if Present (Pnam)
-                 and then Base_Type (Etype (Next_Formal (First_Formal (Pnam))))
-                   = Base_Type (U_Ent)
-               then
-                  Error_Msg_Sloc := Sloc (Pnam);
-                  Error_Msg_N ("read attribute already defined #", Nam);
-                  return;
-               end if;
-            end if;
-
-            Analyze (Expr);
-
-            if Is_Entity_Name (Expr) then
-               if not Is_Overloaded (Expr) then
-                  if Has_Good_Profile (Entity (Expr)) then
-                     Subp := Entity (Expr);
-                  end if;
-
-               else
-                  Get_First_Interp (Expr, I, It);
-
-                  while Present (It.Nam) loop
-                     if Has_Good_Profile (It.Nam) then
-                        Subp := It.Nam;
-                        exit;
-                     end if;
-
-                     Get_Next_Interp (I, It);
-                  end loop;
-               end if;
-            end if;
-
-            if Present (Subp) then
-               Set_Entity (Expr, Subp);
-               Set_Etype (Expr, Etype (Subp));
-               New_Stream_Procedure (N, U_Ent, Subp, TSS_Stream_Read, True);
-            else
-               Error_Msg_N ("incorrect expression for read attribute", Expr);
-               return;
-            end if;
-         end Read;
+         when Attribute_Read =>
+            Analyze_Stream_TSS_Definition (TSS_Stream_Read);
+            Set_Has_Specified_Stream_Read (Ent);
 
          ----------
          -- Size --
@@ -1104,8 +981,11 @@ package body Sem_Ch13 is
                            and then
                         Size /= System_Storage_Unit * 8
                      then
+                        Error_Msg_Uint_1 := UI_From_Int (System_Storage_Unit);
+                        Error_Msg_Uint_2 := Error_Msg_Uint_1 * 8;
                         Error_Msg_N
-                          ("size for primitive object must be power of 2", N);
+                          ("size for primitive object must be a power of 2"
+                            & " in the range ^-^", N);
                      end if;
                   end if;
 
@@ -1168,73 +1048,6 @@ package body Sem_Ch13 is
          end Small;
 
          ------------------
-         -- Storage_Size --
-         ------------------
-
-         --  Storage_Size attribute definition clause
-
-         when Attribute_Storage_Size => Storage_Size : declare
-            Btype : constant Entity_Id := Base_Type (U_Ent);
-            Sprag : Node_Id;
-
-         begin
-            if Is_Task_Type (U_Ent) then
-               if Warn_On_Obsolescent_Feature then
-                  Error_Msg_N
-                    ("storage size clause for task is an " &
-                     "obsolescent feature ('R'M 'J.9)?", N);
-                  Error_Msg_N
-                    ("|use Storage_Size pragma instead?", N);
-               end if;
-
-               FOnly := True;
-            end if;
-
-            if not Is_Access_Type (U_Ent)
-              and then Ekind (U_Ent) /= E_Task_Type
-            then
-               Error_Msg_N ("storage size cannot be given for &", Nam);
-
-            elsif Is_Access_Type (U_Ent) and Is_Derived_Type (U_Ent) then
-               Error_Msg_N
-                 ("storage size cannot be given for a derived access type",
-                  Nam);
-
-            elsif Has_Storage_Size_Clause (Btype) then
-               Error_Msg_N ("storage size already given for &", Nam);
-
-            else
-               Analyze_And_Resolve (Expr, Any_Integer);
-
-               if Is_Access_Type (U_Ent) then
-
-                  if Present (Associated_Storage_Pool (U_Ent)) then
-                     Error_Msg_N ("storage pool already given for &", Nam);
-                     return;
-                  end if;
-
-                  if Compile_Time_Known_Value (Expr)
-                    and then Expr_Value (Expr) = 0
-                  then
-                     Set_No_Pool_Assigned (Btype);
-                  end if;
-
-               else -- Is_Task_Type (U_Ent)
-                  Sprag := Get_Rep_Pragma (Btype, Name_Storage_Size);
-
-                  if Present (Sprag) then
-                     Error_Msg_Sloc := Sloc (Sprag);
-                     Error_Msg_N
-                       ("Storage_Size already specified#", Nam);
-                     return;
-                  end if;
-               end if;
-
-               Set_Has_Storage_Size_Clause (Btype);
-            end if;
-         end Storage_Size;
-
-         ------------------
          -- Storage_Pool --
          ------------------
 
@@ -1242,13 +1055,20 @@ package body Sem_Ch13 is
 
          when Attribute_Storage_Pool => Storage_Pool : declare
             Pool : Entity_Id;
+            T    : Entity_Id;
 
          begin
-            if Ekind (U_Ent) /= E_Access_Type
+            if Ekind (U_Ent) = E_Access_Subprogram_Type then
+               Error_Msg_N
+                 ("storage pool cannot be given for access-to-subprogram type",
+                  Nam);
+               return;
+
+            elsif Ekind (U_Ent) /= E_Access_Type
               and then Ekind (U_Ent) /= E_General_Access_Type
             then
-               Error_Msg_N (
-                 "storage pool can only be given for access types", Nam);
+               Error_Msg_N
+                 ("storage pool can only be given for access types", Nam);
                return;
 
             elsif Is_Derived_Type (U_Ent) then
@@ -1267,6 +1087,26 @@ package body Sem_Ch13 is
 
             Analyze_And_Resolve
               (Expr, Class_Wide_Type (RTE (RE_Root_Storage_Pool)));
+
+            if Nkind (Expr) = N_Type_Conversion then
+               T := Etype (Expression (Expr));
+            else
+               T := Etype (Expr);
+            end if;
+
+            --  The Stack_Bounded_Pool is used internally for implementing
+            --  access types with a Storage_Size. Since it only work
+            --  properly when used on one specific type, we need to check
+            --  that it is not highjacked improperly:
+            --    type T is access Integer;
+            --    for T'Storage_Size use n;
+            --    type Q is access Float;
+            --    for Q'Storage_Size use T'Storage_Size; -- incorrect
+
+            if Base_Type (T) = RTE (RE_Stack_Bounded_Pool) then
+               Error_Msg_N ("non-sharable internal Pool", Expr);
+               return;
+            end if;
 
             --  If the argument is a name that is not an entity name, then
             --  we construct a renaming operation to define an entity of
@@ -1312,39 +1152,127 @@ package body Sem_Ch13 is
                   Pool := Entity (Expression (Renamed_Object (Pool)));
                end if;
 
-               if Present (Etype (Pool))
-                 and then Etype (Pool) /= RTE (RE_Stack_Bounded_Pool)
-                 and then Etype (Pool) /= RTE (RE_Unbounded_Reclaim_Pool)
-               then
-                  Set_Associated_Storage_Pool (U_Ent, Pool);
-               else
-                  Error_Msg_N ("Non sharable GNAT Pool", Expr);
-               end if;
-
-            --  The pool may be specified as the Storage_Pool of some other
-            --  type. It is rewritten as a class_wide conversion of the
-            --  corresponding pool entity.
+               Set_Associated_Storage_Pool (U_Ent, Pool);
 
             elsif Nkind (Expr) = N_Type_Conversion
               and then Is_Entity_Name (Expression (Expr))
               and then Nkind (Original_Node (Expr)) = N_Attribute_Reference
             then
                Pool := Entity (Expression (Expr));
-
-               if Present (Etype (Pool))
-                 and then Etype (Pool) /= RTE (RE_Stack_Bounded_Pool)
-                 and then Etype (Pool) /= RTE (RE_Unbounded_Reclaim_Pool)
-               then
-                  Set_Associated_Storage_Pool (U_Ent, Pool);
-               else
-                  Error_Msg_N ("Non sharable GNAT Pool", Expr);
-               end if;
+               Set_Associated_Storage_Pool (U_Ent, Pool);
 
             else
                Error_Msg_N ("incorrect reference to a Storage Pool", Expr);
                return;
             end if;
          end Storage_Pool;
+
+         ------------------
+         -- Storage_Size --
+         ------------------
+
+         --  Storage_Size attribute definition clause
+
+         when Attribute_Storage_Size => Storage_Size : declare
+            Btype : constant Entity_Id := Base_Type (U_Ent);
+            Sprag : Node_Id;
+
+         begin
+            if Is_Task_Type (U_Ent) then
+               Check_Restriction (No_Obsolescent_Features, N);
+
+               if Warn_On_Obsolescent_Feature then
+                  Error_Msg_N
+                    ("storage size clause for task is an " &
+                     "obsolescent feature ('R'M 'J.9)?", N);
+                  Error_Msg_N
+                    ("\use Storage_Size pragma instead?", N);
+               end if;
+
+               FOnly := True;
+            end if;
+
+            if not Is_Access_Type (U_Ent)
+              and then Ekind (U_Ent) /= E_Task_Type
+            then
+               Error_Msg_N ("storage size cannot be given for &", Nam);
+
+            elsif Is_Access_Type (U_Ent) and Is_Derived_Type (U_Ent) then
+               Error_Msg_N
+                 ("storage size cannot be given for a derived access type",
+                  Nam);
+
+            elsif Has_Storage_Size_Clause (Btype) then
+               Error_Msg_N ("storage size already given for &", Nam);
+
+            else
+               Analyze_And_Resolve (Expr, Any_Integer);
+
+               if Is_Access_Type (U_Ent) then
+                  if Present (Associated_Storage_Pool (U_Ent)) then
+                     Error_Msg_N ("storage pool already given for &", Nam);
+                     return;
+                  end if;
+
+                  if Compile_Time_Known_Value (Expr)
+                    and then Expr_Value (Expr) = 0
+                  then
+                     Set_No_Pool_Assigned (Btype);
+                  end if;
+
+               else -- Is_Task_Type (U_Ent)
+                  Sprag := Get_Rep_Pragma (Btype, Name_Storage_Size);
+
+                  if Present (Sprag) then
+                     Error_Msg_Sloc := Sloc (Sprag);
+                     Error_Msg_N
+                       ("Storage_Size already specified#", Nam);
+                     return;
+                  end if;
+               end if;
+
+               Set_Has_Storage_Size_Clause (Btype);
+            end if;
+         end Storage_Size;
+
+         -----------------
+         -- Stream_Size --
+         -----------------
+
+         when Attribute_Stream_Size => Stream_Size : declare
+            Size : constant Uint := Static_Integer (Expr);
+
+         begin
+            if Has_Stream_Size_Clause (U_Ent) then
+               Error_Msg_N ("Stream_Size already given for &", Nam);
+
+            elsif Is_Elementary_Type (U_Ent) then
+               if Size /= System_Storage_Unit
+                    and then
+                  Size /= System_Storage_Unit * 2
+                    and then
+                  Size /= System_Storage_Unit * 4
+                     and then
+                  Size /= System_Storage_Unit * 8
+               then
+                  Error_Msg_Uint_1 := UI_From_Int (System_Storage_Unit);
+                  Error_Msg_N
+                    ("stream size for elementary type must be a"
+                       & " power of 2 and at least ^", N);
+
+               elsif RM_Size (U_Ent) > Size then
+                  Error_Msg_Uint_1 := RM_Size (U_Ent);
+                  Error_Msg_N
+                    ("stream size for elementary type must be a"
+                       & " power of 2 and at least ^", N);
+               end if;
+
+               Set_Has_Stream_Size_Clause (U_Ent);
+
+            else
+               Error_Msg_N ("Stream_Size cannot be given for &", Nam);
+            end if;
+         end Stream_Size;
 
          ----------------
          -- Value_Size --
@@ -1380,104 +1308,15 @@ package body Sem_Ch13 is
          -- Write --
          -----------
 
-         --  Write attribute definition clause
-         --  check for class-wide case will be performed later
-
-         when Attribute_Write => Write : declare
-            Subp : Entity_Id := Empty;
-            I    : Interp_Index;
-            It   : Interp;
-            Pnam : Entity_Id;
-
-            function Has_Good_Profile (Subp : Entity_Id) return Boolean;
-            --  Return true if the entity is a procedure with an
-            --  appropriate profile for the write attribute.
-
-            function Has_Good_Profile (Subp : Entity_Id) return Boolean is
-               F     : Entity_Id;
-               Ok    : Boolean := False;
-
-            begin
-               if Ekind (Subp) = E_Procedure then
-                  F := First_Formal (Subp);
-
-                  if Present (F) then
-                     if Ekind (Etype (F)) = E_Anonymous_Access_Type
-                       and then
-                         Designated_Type (Etype (F)) =
-                           Class_Wide_Type (RTE (RE_Root_Stream_Type))
-                     then
-                        Next_Formal (F);
-                        Ok :=  Present (F)
-                          and then Parameter_Mode (F) = E_In_Parameter
-                          and then Base_Type (Etype (F)) = Base_Type (Ent)
-                          and then No (Next_Formal (F));
-                     end if;
-                  end if;
-               end if;
-
-               return Ok;
-            end Has_Good_Profile;
-
-         --  Start of processing for Write attribute definition
-
-         begin
-            FOnly := True;
-
-            if not Is_Type (U_Ent) then
-               Error_Msg_N ("local name must be a subtype", Nam);
-               return;
-            end if;
-
-            Pnam := TSS (Base_Type (U_Ent), TSS_Stream_Write);
-
-            if Present (Pnam)
-              and then Base_Type (Etype (Next_Formal (First_Formal (Pnam))))
-                = Base_Type (U_Ent)
-            then
-               Error_Msg_Sloc := Sloc (Pnam);
-               Error_Msg_N ("write attribute already defined #", Nam);
-               return;
-            end if;
-
-            Analyze (Expr);
-
-            if Is_Entity_Name (Expr) then
-               if not Is_Overloaded (Expr) then
-                  if Has_Good_Profile (Entity (Expr)) then
-                     Subp := Entity (Expr);
-                  end if;
-
-               else
-                  Get_First_Interp (Expr, I, It);
-
-                  while Present (It.Nam) loop
-                     if Has_Good_Profile (It.Nam) then
-                        Subp := It.Nam;
-                        exit;
-                     end if;
-
-                     Get_Next_Interp (I, It);
-                  end loop;
-               end if;
-            end if;
-
-            if Present (Subp) then
-               Set_Entity (Expr, Subp);
-               Set_Etype (Expr, Etype (Subp));
-               New_Stream_Procedure (N, U_Ent, Subp, TSS_Stream_Write);
-            else
-               Error_Msg_N ("incorrect expression for write attribute", Expr);
-               return;
-            end if;
-         end Write;
+         when Attribute_Write =>
+            Analyze_Stream_TSS_Definition (TSS_Stream_Write);
+            Set_Has_Specified_Stream_Write (Ent);
 
          --  All other attributes cannot be set
 
          when others =>
             Error_Msg_N
               ("attribute& cannot be set with definition clause", N);
-
       end case;
 
       --  The test for the type being frozen must be performed after
@@ -1515,6 +1354,8 @@ package body Sem_Ch13 is
          Error_Msg_N ("incorrect type for code statement", N);
          return;
       end if;
+
+      Check_Code_Statement (N);
 
       --  Make sure we appear in the handled statement sequence of a
       --  subprogram (RM 13.8(3)).
@@ -1647,12 +1488,21 @@ package body Sem_Ch13 is
          Error_Msg_N ("duplicate enumeration rep clause ignored", N);
          return;
 
-      --  Don't allow rep clause if root type is standard [wide_]character
+      --  Don't allow rep clause for standard [wide_[wide_]]character
 
       elsif Root_Type (Enumtype) = Standard_Character
         or else Root_Type (Enumtype) = Standard_Wide_Character
+        or else Root_Type (Enumtype) = Standard_Wide_Wide_Character
       then
          Error_Msg_N ("enumeration rep clause not allowed for this type", N);
+         return;
+
+      --  Check that the expression is a proper aggregate (no parentheses)
+
+      elsif Paren_Count (Aggr) /= 0 then
+         Error_Msg
+           ("extra parentheses surrounding aggregate not allowed",
+            First_Sloc (Aggr));
          return;
 
       --  All tests passed, so set rep clause in place
@@ -1666,10 +1516,6 @@ package body Sem_Ch13 is
       --  aggregate code for this purpose, because we don't want any of the
       --  normal expansion activities, and a number of special semantic
       --  rules apply (including the component type being any integer type)
-
-      --  Badent signals that we found some incorrect entries processing
-      --  the list. The final checks for completeness and ordering are
-      --  skipped in this case.
 
       Elit := First_Literal (Enumtype);
 
@@ -1685,9 +1531,12 @@ package body Sem_Ch13 is
 
             Val := Static_Integer (Expr);
 
+            --  Err signals that we found some incorrect entries processing
+            --  the list. The final checks for completeness and ordering are
+            --  skipped in this case.
+
             if Val = No_Uint then
                Err := True;
-
             elsif Val < Lo or else Hi < Val then
                Error_Msg_N ("value outside permitted range", Expr);
                Err := True;
@@ -1891,6 +1740,9 @@ package body Sem_Ch13 is
       Ccount : Natural := 0;
       --  Number of component clauses in record rep clause
 
+      CR_Pragma : Node_Id := Empty;
+      --  Points to N_Pragma node if Complete_Representation pragma present
+
    begin
       Find_Type (Ident);
       Rectype := Entity (Ident);
@@ -1941,11 +1793,13 @@ package body Sem_Ch13 is
             pragma Warnings (Off, Mod_Val);
 
          begin
+            Check_Restriction (No_Obsolescent_Features, Mod_Clause (N));
+
             if Warn_On_Obsolescent_Feature then
                Error_Msg_N
                  ("mod clause is an obsolescent feature ('R'M 'J.8)?", N);
                Error_Msg_N
-                 ("|use alignment attribute definition clause instead?", N);
+                 ("\use alignment attribute definition clause instead?", N);
             end if;
 
             if Present (P) then
@@ -2051,10 +1905,16 @@ package body Sem_Ch13 is
 
       while Present (CC) loop
 
-         --  If pragma, just analyze it
+         --  Pragma
 
          if Nkind (CC) = N_Pragma then
             Analyze (CC);
+
+            --  The only pragma of interest is Complete_Representation
+
+            if Chars (CC) = Name_Complete_Representation then
+               CR_Pragma := CC;
+            end if;
 
          --  Processing for real component clause
 
@@ -2082,7 +1942,6 @@ package body Sem_Ch13 is
                --  tag to get an explicit position.
 
                elsif Nkind (Component_Name (CC)) = N_Attribute_Reference then
-
                   if Attribute_Name (Component_Name (CC)) = Name_Tag then
                      Error_Msg_N ("position of tag cannot be specified", CC);
                   else
@@ -2118,7 +1977,7 @@ package body Sem_Ch13 is
                        ("component clause previously given#", CC);
 
                   else
-                     --  Update Fbit and Lbit to the actual bit number.
+                     --  Update Fbit and Lbit to the actual bit number
 
                      Fbit := Fbit + UI_From_Int (SSU) * Posit;
                      Lbit := Lbit + UI_From_Int (SSU) * Posit;
@@ -2430,9 +2289,7 @@ package body Sem_Ch13 is
             if Ekind (Comp) = E_Component
               or else Ekind (Comp) = E_Discriminant
             then
-               if No (Component_Clause (Comp)) then
-                  return;
-               end if;
+               exit when No (Component_Clause (Comp));
             end if;
 
             Next_Entity (Comp);
@@ -2441,7 +2298,28 @@ package body Sem_Ch13 is
          --  If we fall out of loop, all components have component clauses
          --  and so we can set the size to the maximum value.
 
-         Set_RM_Size (Rectype, Hbit + 1);
+         if No (Comp) then
+            Set_RM_Size (Rectype, Hbit + 1);
+         end if;
+      end if;
+
+      --  Check missing components if Complete_Representation pragma appeared
+
+      if Present (CR_Pragma) then
+         Comp := First_Entity (Rectype);
+         while Present (Comp) loop
+            if Ekind (Comp) = E_Component
+                 or else
+               Ekind (Comp) = E_Discriminant
+            then
+               if No (Component_Clause (Comp)) then
+                  Error_Msg_NE
+                    ("missing component clause for &", CR_Pragma, Comp);
+               end if;
+            end if;
+
+            Next_Entity (Comp);
+         end loop;
       end if;
    end Analyze_Record_Representation_Clause;
 
@@ -2634,7 +2512,7 @@ package body Sem_Ch13 is
                   return;
                end if;
 
-               --  Otherwise look at the identifier and see if it is OK.
+               --  Otherwise look at the identifier and see if it is OK
 
                if Ekind (Ent) = E_Named_Integer
                     or else
@@ -2694,8 +2572,19 @@ package body Sem_Ch13 is
                   end if;
                end if;
 
-            when N_Integer_Literal   |
-                 N_Real_Literal      |
+            when N_Integer_Literal   =>
+
+               --  If this is a rewritten unchecked conversion, in a system
+               --  where Address is an integer type, always use the base type
+               --  for a literal value. This is user-friendly and prevents
+               --  order-of-elaboration issues with instances of unchecked
+               --  conversion.
+
+               if Nkind (Original_Node (Nod)) = N_Function_Call then
+                  Set_Etype (Nod, Base_Type (Etype (Nod)));
+               end if;
+
+            when N_Real_Literal      |
                  N_String_Literal    |
                  N_Character_Literal =>
                return;
@@ -2719,7 +2608,6 @@ package body Sem_Ch13 is
                Check_Expr_Constants (Prefix (Nod));
 
             when N_Attribute_Reference =>
-
                if Attribute_Name (Nod) = Name_Address
                    or else
                   Attribute_Name (Nod) = Name_Access
@@ -3035,8 +2923,7 @@ package body Sem_Ch13 is
 
    function Minimum_Size
      (T      : Entity_Id;
-      Biased : Boolean := False)
-      return   Nat
+      Biased : Boolean := False) return Nat
    is
       Lo     : Uint    := No_Uint;
       Hi     : Uint    := No_Uint;
@@ -3064,10 +2951,19 @@ package body Sem_Ch13 is
       then
          return 0;
 
-      --  Access types
+         --  Access types. Normally an access type cannot have a size smaller
+         --  than the size of System.Address. The exception is on VMS, where
+         --  we have short and long addresses, and it is possible for an access
+         --  type to have a short address size (and thus be less than the size
+         --  of System.Address itself). We simply skip the check for VMS, and
+         --  leave the back end to do the check.
 
       elsif Is_Access_Type (T) then
-         return System_Address_Size;
+         if OpenVMS_On_Target then
+            return 0;
+         else
+            return System_Address_Size;
+         end if;
 
       --  Floating-point types
 
@@ -3174,7 +3070,7 @@ package body Sem_Ch13 is
          raise Program_Error;
       end if;
 
-      --  Fall through with Hi and Lo set. Deal with biased case.
+      --  Fall through with Hi and Lo set. Deal with biased case
 
       if (Biased and then not Is_Fixed_Point_Type (T))
         or else Has_Biased_Representation (T)
@@ -3228,89 +3124,15 @@ package body Sem_Ch13 is
       return S;
    end Minimum_Size;
 
-   -------------------------
-   -- New_Stream_Function --
-   -------------------------
+   ---------------------------
+   -- New_Stream_Subprogram --
+   ---------------------------
 
-   procedure New_Stream_Function
-     (N    : Node_Id;
-      Ent  : Entity_Id;
-      Subp : Entity_Id;
-      Nam  : TSS_Name_Type)
-   is
-      Loc       : constant Source_Ptr := Sloc (N);
-      Sname     : constant Name_Id    := Make_TSS_Name (Base_Type (Ent), Nam);
-      Subp_Id   : Entity_Id;
-      Subp_Decl : Node_Id;
-      F         : Entity_Id;
-      Etyp      : Entity_Id;
-
-      function Build_Spec return Node_Id;
-      --  Used for declaration and renaming declaration, so that this is
-      --  treated as a renaming_as_body.
-
-      ----------------
-      -- Build_Spec --
-      ----------------
-
-      function  Build_Spec return Node_Id is
-      begin
-         Subp_Id := Make_Defining_Identifier (Loc, Sname);
-
-         return
-           Make_Function_Specification (Loc,
-             Defining_Unit_Name => Subp_Id,
-             Parameter_Specifications =>
-               New_List (
-                 Make_Parameter_Specification (Loc,
-                   Defining_Identifier =>
-                     Make_Defining_Identifier (Loc, Name_S),
-                   Parameter_Type =>
-                     Make_Access_Definition (Loc,
-                       Subtype_Mark =>
-                         New_Reference_To (
-                           Designated_Type (Etype (F)), Loc)))),
-
-             Subtype_Mark =>
-               New_Reference_To (Etyp, Loc));
-      end Build_Spec;
-
-   --  Start of processing for New_Stream_Function
-
-   begin
-      F    := First_Formal (Subp);
-      Etyp := Etype (Subp);
-
-      if not Is_Tagged_Type (Ent) then
-         Subp_Decl :=
-           Make_Subprogram_Declaration (Loc,
-             Specification => Build_Spec);
-         Insert_Action (N, Subp_Decl);
-      end if;
-
-      Subp_Decl :=
-        Make_Subprogram_Renaming_Declaration (Loc,
-          Specification => Build_Spec,
-          Name => New_Reference_To (Subp, Loc));
-
-      if Is_Tagged_Type (Ent) and then not Is_Limited_Type (Ent) then
-         Set_TSS (Base_Type (Ent), Subp_Id);
-      else
-         Insert_Action (N, Subp_Decl);
-         Copy_TSS (Subp_Id, Base_Type (Ent));
-      end if;
-   end New_Stream_Function;
-
-   --------------------------
-   -- New_Stream_Procedure --
-   --------------------------
-
-   procedure New_Stream_Procedure
+   procedure New_Stream_Subprogram
      (N     : Node_Id;
       Ent   : Entity_Id;
       Subp  : Entity_Id;
-      Nam   : TSS_Name_Type;
-      Out_P : Boolean := False)
+      Nam   : TSS_Name_Type)
    is
       Loc       : constant Source_Ptr := Sloc (N);
       Sname     : constant Name_Id    := Make_TSS_Name (Base_Type (Ent), Nam);
@@ -3318,6 +3140,14 @@ package body Sem_Ch13 is
       Subp_Decl : Node_Id;
       F         : Entity_Id;
       Etyp      : Entity_Id;
+
+      Defer_Declaration : constant Boolean :=
+                            Is_Tagged_Type (Ent) or else Is_Private_Type (Ent);
+      --  For a tagged type, there is a declaration for each stream attribute
+      --  at the freeze point, and we must generate only a completion of this
+      --  declaration. We do the same for private types, because the full view
+      --  might be tagged. Otherwise we generate a declaration at the point of
+      --  the attribute definition clause.
 
       function Build_Spec return Node_Id;
       --  Used for declaration and renaming declaration, so that this is
@@ -3327,80 +3157,110 @@ package body Sem_Ch13 is
       -- Build_Spec --
       ----------------
 
-      function  Build_Spec return Node_Id is
+      function Build_Spec return Node_Id is
+         Out_P   : constant Boolean := (Nam = TSS_Stream_Read);
+         Formals : List_Id;
+         Spec    : Node_Id;
+         T_Ref   : constant Node_Id := New_Reference_To (Etyp, Loc);
+
       begin
          Subp_Id := Make_Defining_Identifier (Loc, Sname);
 
-         return
-           Make_Procedure_Specification (Loc,
-             Defining_Unit_Name => Subp_Id,
-             Parameter_Specifications =>
-               New_List (
-                 Make_Parameter_Specification (Loc,
-                   Defining_Identifier =>
-                     Make_Defining_Identifier (Loc, Name_S),
-                   Parameter_Type =>
-                     Make_Access_Definition (Loc,
-                       Subtype_Mark =>
-                         New_Reference_To (
-                           Designated_Type (Etype (F)), Loc))),
+         --  S : access Root_Stream_Type'Class
 
-                 Make_Parameter_Specification (Loc,
-                   Defining_Identifier =>
-                     Make_Defining_Identifier (Loc, Name_V),
-                   Out_Present => Out_P,
-                   Parameter_Type =>
-                     New_Reference_To (Etyp, Loc))));
+         Formals := New_List (
+                      Make_Parameter_Specification (Loc,
+                        Defining_Identifier =>
+                          Make_Defining_Identifier (Loc, Name_S),
+                        Parameter_Type =>
+                          Make_Access_Definition (Loc,
+                            Subtype_Mark =>
+                              New_Reference_To (
+                                Designated_Type (Etype (F)), Loc))));
+
+         if Nam = TSS_Stream_Input then
+            Spec := Make_Function_Specification (Loc,
+                      Defining_Unit_Name       => Subp_Id,
+                      Parameter_Specifications => Formals,
+                      Result_Definition        => T_Ref);
+         else
+            --  V : [out] T
+
+            Append_To (Formals,
+              Make_Parameter_Specification (Loc,
+                Defining_Identifier => Make_Defining_Identifier (Loc, Name_V),
+                Out_Present         => Out_P,
+                Parameter_Type      => T_Ref));
+
+            Spec := Make_Procedure_Specification (Loc,
+                      Defining_Unit_Name       => Subp_Id,
+                      Parameter_Specifications => Formals);
+         end if;
+
+         return Spec;
       end Build_Spec;
 
-      --  Start of processing for New_Stream_Procedure
+   --  Start of processing for New_Stream_Subprogram
 
    begin
-      F        := First_Formal (Subp);
-      Etyp     := Etype (Next_Formal (F));
+      F := First_Formal (Subp);
 
-      if not Is_Tagged_Type (Ent) then
+      if Ekind (Subp) = E_Procedure then
+         Etyp := Etype (Next_Formal (F));
+      else
+         Etyp := Etype (Subp);
+      end if;
+
+      --  Prepare subprogram declaration and insert it as an action on the
+      --  clause node. The visibility for this entity is used to test for
+      --  visibility of the attribute definition clause (in the sense of
+      --  8.3(23) as amended by AI-195).
+
+      if not Defer_Declaration then
          Subp_Decl :=
            Make_Subprogram_Declaration (Loc,
              Specification => Build_Spec);
-         Insert_Action (N, Subp_Decl);
+
+      --  For a tagged type, there is always a visible declaration for each
+      --  stream TSS (it is a predefined primitive operation), and the for the
+      --  completion of this declaration occurs at the freeze point, which is
+      --  not always visible at places where the attribute definition clause is
+      --  visible. So, we create a dummy entity here for the purpose of
+      --  tracking the visibility of the attribute definition clause itself.
+
+      else
+         Subp_Id :=
+           Make_Defining_Identifier (Loc,
+             Chars => New_External_Name (Sname, 'V'));
+         Subp_Decl :=
+           Make_Object_Declaration (Loc,
+             Defining_Identifier => Subp_Id,
+             Object_Definition   => New_Occurrence_Of (Standard_Boolean, Loc));
       end if;
+
+      Insert_Action (N, Subp_Decl);
+      Set_Entity (N, Subp_Id);
 
       Subp_Decl :=
         Make_Subprogram_Renaming_Declaration (Loc,
           Specification => Build_Spec,
           Name => New_Reference_To (Subp, Loc));
 
-      if Is_Tagged_Type (Ent) and then not Is_Limited_Type (Ent) then
+      if Defer_Declaration then
          Set_TSS (Base_Type (Ent), Subp_Id);
       else
          Insert_Action (N, Subp_Decl);
          Copy_TSS (Subp_Id, Base_Type (Ent));
       end if;
-   end New_Stream_Procedure;
-
-   ---------------------
-   -- Record_Rep_Item --
-   ---------------------
-
-   procedure Record_Rep_Item (T : Entity_Id; N : Node_Id) is
-   begin
-      Set_Next_Rep_Item (N, First_Rep_Item (T));
-      Set_First_Rep_Item (T, N);
-   end Record_Rep_Item;
+   end New_Stream_Subprogram;
 
    ------------------------
    -- Rep_Item_Too_Early --
    ------------------------
 
-   function Rep_Item_Too_Early
-     (T     : Entity_Id;
-      N     : Node_Id)
-      return  Boolean
-   is
+   function Rep_Item_Too_Early (T : Entity_Id; N : Node_Id) return Boolean is
    begin
-      --  Cannot apply rep items that are not operational items
-      --  to generic types
+      --  Cannot apply non-operational rep items to generic types
 
       if Is_Operational_Item (N) then
          return False;
@@ -3446,18 +3306,23 @@ package body Sem_Ch13 is
    function Rep_Item_Too_Late
      (T     : Entity_Id;
       N     : Node_Id;
-      FOnly : Boolean := False)
-      return  Boolean
+      FOnly : Boolean := False) return Boolean
    is
       S           : Entity_Id;
       Parent_Type : Entity_Id;
 
       procedure Too_Late;
-      --  Output the too late message
+      --  Output the too late message. Note that this is not considered a
+      --  serious error, since the effect is simply that we ignore the
+      --  representation clause in this case.
+
+      --------------
+      -- Too_Late --
+      --------------
 
       procedure Too_Late is
       begin
-         Error_Msg_N ("representation item appears too late!", N);
+         Error_Msg_N ("|representation item appears too late!", N);
       end Too_Late;
 
    --  Start of processing for Rep_Item_Too_Late
@@ -3475,7 +3340,7 @@ package body Sem_Ch13 is
 
          if Present (Freeze_Node (S)) then
             Error_Msg_NE
-              ("?no more representation items for }!", Freeze_Node (S), S);
+              ("?no more representation items for }", Freeze_Node (S), S);
          end if;
 
          return True;
@@ -3618,6 +3483,10 @@ package body Sem_Ch13 is
                function Same_Rep return Boolean;
                --  CD1 and CD2 are either components or discriminants. This
                --  function tests whether the two have the same representation
+
+               --------------
+               -- Same_Rep --
+               --------------
 
                function Same_Rep return Boolean is
                begin
@@ -3850,15 +3719,32 @@ package body Sem_Ch13 is
          end if;
       end if;
 
-      --  Generate N_Validate_Unchecked_Conversion node for back end if
-      --  the back end needs to perform special validation checks. At the
-      --  current time, only the JVM version requires such checks.
+      --  If unchecked conversion to access type, and access type is
+      --  declared in the same unit as the unchecked conversion, then
+      --  set the No_Strict_Aliasing flag (no strict aliasing is
+      --  implicit in this situation).
 
-      if Java_VM then
-         Vnode :=
-           Make_Validate_Unchecked_Conversion (Sloc (N));
-         Set_Source_Type (Vnode, Source);
-         Set_Target_Type (Vnode, Target);
+      if Is_Access_Type (Target) and then
+        In_Same_Source_Unit (Target, N)
+      then
+         Set_No_Strict_Aliasing (Implementation_Base_Type (Target));
+      end if;
+
+      --  Generate N_Validate_Unchecked_Conversion node for back end in
+      --  case the back end needs to perform special validation checks.
+
+      --  Shouldn't this be in exp_ch13, since the check only gets done
+      --  if we have full expansion and the back end is called ???
+
+      Vnode :=
+        Make_Validate_Unchecked_Conversion (Sloc (N));
+      Set_Source_Type (Vnode, Source);
+      Set_Target_Type (Vnode, Target);
+
+      --  If the unchecked conversion node is in a list, just insert before
+      --  it. If not we have some strange case, not worth bothering about.
+
+      if Is_List_Member (N) then
          Insert_After (N, Vnode);
       end if;
    end Validate_Unchecked_Conversion;

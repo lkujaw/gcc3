@@ -6,7 +6,7 @@
  *                                                                          *
  *                           C Implementation File                          *
  *                                                                          *
- *          Copyright (C) 1992-2004 Free Software Foundation, Inc.          *
+ *          Copyright (C) 1992-2005, Free Software Foundation, Inc.         *
  *                                                                          *
  * GNAT is free software;  you can  redistribute it  and/or modify it under *
  * terms of the  GNU General Public License as published  by the Free Soft- *
@@ -19,12 +19,12 @@
  * to  the Free Software Foundation,  59 Temple Place - Suite 330,  Boston, *
  * MA 02111-1307, USA.                                                      *
  *                                                                          *
- * As a  special  exception,  if you  link  this file  with other  files to *
- * produce an executable,  this file does not by itself cause the resulting *
- * executable to be covered by the GNU General Public License. This except- *
- * ion does not  however invalidate  any other reasons  why the  executable *
- * file might be covered by the  GNU Public License.                        *
- *                                                                          *
+--
+--
+--
+--
+--
+--
  * GNAT was originally developed  by the GNAT team at  New York University. *
  * Extensive contributions were provided by Ada Core Technologies Inc.      *
  *                                                                          *
@@ -93,13 +93,15 @@ static HOST_WIDE_INT gnat_get_alias_set	(tree);
 static void gnat_print_decl		(FILE *, tree, int);
 static void gnat_print_type		(FILE *, tree, int);
 static const char *gnat_printable_name	(tree, int);
+static void gnat_print_decl_source_location (FILE *, tree, int);
 static tree gnat_eh_runtime_type	(tree);
 static int gnat_eh_type_covers		(tree, tree);
 static void gnat_parse_file		(int);
 static rtx gnat_expand_expr		(tree, rtx, enum machine_mode, int,
 					 rtx *);
 static void internal_error_function	(const char *, va_list *);
-static void gnat_adjust_rli		(record_layout_info);
+static tree gnat_type_max_size		(tree);
+static bool gnat_can_promote_packed_bit_field_p (tree, unsigned);
 
 /* Structure giving our language-specific hooks.  */
 
@@ -133,8 +135,12 @@ static void gnat_adjust_rli		(record_layout_info);
 #define LANG_HOOKS_PRINT_DECL		gnat_print_decl
 #undef LANG_HOOKS_PRINT_TYPE
 #define LANG_HOOKS_PRINT_TYPE		gnat_print_type
+#undef LANG_HOOKS_TYPE_MAX_SIZE
+#define LANG_HOOKS_TYPE_MAX_SIZE	gnat_type_max_size
 #undef LANG_HOOKS_DECL_PRINTABLE_NAME
 #define LANG_HOOKS_DECL_PRINTABLE_NAME	gnat_printable_name
+#undef LANG_HOOKS_PRINT_DECL_SOURCE_LOCATION
+#define LANG_HOOKS_PRINT_DECL_SOURCE_LOCATION gnat_print_decl_source_location
 #undef LANG_HOOKS_TYPE_FOR_MODE
 #define LANG_HOOKS_TYPE_FOR_MODE	gnat_type_for_mode
 #undef LANG_HOOKS_TYPE_FOR_SIZE
@@ -145,6 +151,9 @@ static void gnat_adjust_rli		(record_layout_info);
 #define LANG_HOOKS_UNSIGNED_TYPE	gnat_unsigned_type
 #undef LANG_HOOKS_SIGNED_OR_UNSIGNED_TYPE
 #define LANG_HOOKS_SIGNED_OR_UNSIGNED_TYPE gnat_signed_or_unsigned_type
+#undef LANG_HOOKS_CAN_PROMOTE_PACKED_BIT_FIELD_P
+#define LANG_HOOKS_CAN_PROMOTE_PACKED_BIT_FIELD_P \
+  gnat_can_promote_packed_bit_field_p
 
 const struct lang_hooks lang_hooks = LANG_HOOKS_INITIALIZER;
 
@@ -201,17 +210,26 @@ extern char **gnat_argv;
 
 
 /* Declare functions we use as part of startup.  */
-extern void __gnat_initialize	(void);
-extern void adainit		(void);
-extern void _ada_gnat1drv	(void);
+extern void __gnat_initialize          (void *);
+extern void __gnat_install_SEH_handler (void *);
+extern void adainit                    (void);
+extern void _ada_gnat1drv              (void);
 
 /* The parser for the language.  For us, we process the GNAT tree.  */
 
 static void
 gnat_parse_file (int set_yydebug ATTRIBUTE_UNUSED)
 {
+  int seh[2];
+
   /* call the target specific initializations */
-  __gnat_initialize();
+  __gnat_initialize (NULL);
+
+  /* ??? call the SEH initialization routine, this is to workaround a
+  bootstrap path problem. The call below should be removed at some point and
+  the seh pointer passed to __gnat_initialize() above.  */
+
+  __gnat_install_SEH_handler((void *)seh);
 
   /* Call the front-end elaboration procedures */
   adainit ();
@@ -233,7 +251,6 @@ gnat_handle_option (size_t scode, const char *arg, int value ATTRIBUTE_UNUSED)
   const struct cl_option *option = &cl_options[scode];
   enum opt_code code = (enum opt_code) scode;
   char *q;
-  unsigned int i;
 
   if (arg == NULL && (option->flags & (CL_JOINED | CL_SEPARATE)))
     {
@@ -272,7 +289,7 @@ gnat_handle_option (size_t scode, const char *arg, int value ATTRIBUTE_UNUSED)
       gnat_argc++;
       break;
 
-    case OPT_fRTS:
+    case OPT_fRTS_:
       gnat_argv[gnat_argc] = xstrdup ("-fRTS");
       gnat_argc++;
       break;
@@ -288,17 +305,13 @@ gnat_handle_option (size_t scode, const char *arg, int value ATTRIBUTE_UNUSED)
       gnat_argv[gnat_argc][0] = '-';
       strcpy (gnat_argv[gnat_argc] + 1, arg);
       gnat_argc++;
+      break;
 
-      if (arg[0] == 'O')
-	for (i = 1; i < save_argc - 1; i++)
-	  if (!strncmp (save_argv[i], "-gnatO", 6))
-	    if (save_argv[++i][0] != '-')
-	      {
-		/* Preserve output filename as GCC doesn't save it for GNAT. */
-		gnat_argv[gnat_argc] = xstrdup (save_argv[i]);
-		gnat_argc++;
-		break;
-	      }
+    case OPT_gnatO:
+      gnat_argv[gnat_argc] = xstrdup ("-O");
+      gnat_argc++;
+      gnat_argv[gnat_argc] = xstrdup (arg);
+      gnat_argc++;
       break;
     }
 
@@ -317,6 +330,9 @@ gnat_init_options (unsigned int argc, const char **argv)
 
   save_argc = argc;
   save_argv = argv;
+
+  /* Uninitialized really means uninitialized in Ada.  */
+  flag_zero_initialized_in_bss = 0;
 
   return CL_Ada;
 }
@@ -382,7 +398,10 @@ gnat_init (void)
   /* Show that REFERENCE_TYPEs are internal and should be Pmode.  */
   internal_reference_types ();
 
-  set_lang_adjust_rli (gnat_adjust_rli);
+  /* Disable the flag to eliminate debug info for unused types, which does
+     not yet work for Ada.  */
+
+  flag_eliminate_unused_debug_types = 0;
 
   return true;
 }
@@ -472,13 +491,58 @@ gnat_print_decl (FILE *file, tree node, int indent)
       break;
 
     case FIELD_DECL:
-      print_node (file, "original field", DECL_ORIGINAL_FIELD (node),
+      print_node (file, "original_field", DECL_ORIGINAL_FIELD (node),
+		  indent + 4);
+      break;
+
+    case VAR_DECL:
+      print_node (file, "renamed_object", DECL_RENAMED_OBJECT (node),
 		  indent + 4);
       break;
 
     default:
       break;
     }
+}
+
+/* Write an Ada source location.  See sinput.adb:Write_Location.  */
+
+static void
+write_location (FILE *file, Source_Ptr P)
+{
+  if (P == No_Location)
+    fputs ("<no location>", file);
+  else if (P <= Standard_Location)
+    fputs ("<standard location>", file);
+  else
+    {
+      const Source_File_Index SI = Get_Source_File_Index (P);
+      fputs (Get_Name_String (Debug_Source_Name (SI)), file);
+      fputc (':', file);
+      fprintf (file, "%d", Get_Logical_Line_Number (P));
+      fputc (':', file);
+      fprintf (file, "%d", Get_Column_Number (P));
+
+      if (Instantiation (SI) != No_Location)
+	{
+	  fputc (',', file);
+	  write_location (file, Instantiation (SI));
+	}
+    }
+}
+
+static void
+gnat_print_decl_source_location (FILE *file, tree decl, int indent)
+{
+  /* We can only handle non-builtin function DECLs.  See tree.h
+     and ada-tree.h for the explanation.  */
+  if (TREE_CODE (decl) != FUNCTION_DECL || DECL_BUILT_IN (decl))
+    {
+      lhd_print_decl_source_location (file, decl, indent);
+      return;
+    }
+
+  write_location (file, (Source_Ptr) DECL_ADA_SOURCE_LOCATION (decl));
 }
 
 static void
@@ -590,7 +654,7 @@ gnat_expand_expr (tree exp, rtx target, enum machine_mode tmode,
 	allocate_dynamic_stack_space
 	  (expand_expr (TREE_OPERAND (exp, 0), NULL_RTX, TYPE_MODE (sizetype),
 			EXPAND_NORMAL),
-	   NULL_RTX, tree_low_cst (TREE_OPERAND (exp, 1), 1));
+	   NULL_RTX, tree_low_cst (TREE_OPERAND (exp, 1), 1), FALSE);
 
     case USE_EXPR:
       if (target != const0_rtx)
@@ -626,35 +690,6 @@ gnat_expand_expr (tree exp, rtx target, enum machine_mode tmode,
     }
 
   return expand_expr_real (new, target, tmode, modifier, alt_rtl);
-}
-
-/* Adjusts the RLI used to layout a record after all the fields have been
-   added.  We only handle the packed case and cause it to use the alignment
-   that will pad the record at the end.  */
-
-static void
-gnat_adjust_rli (record_layout_info rli ATTRIBUTE_UNUSED)
-{
-#if 0
-  /* ??? This code seems to have no actual effect; record_align should already
-     reflect the largest alignment desired by a field.  jason 2003-04-01  */
-  unsigned int record_align = rli->unpadded_align;
-  tree field;
-
-  /* If an alignment has been specified, don't use anything larger unless we
-     have to.  */
-  if (TYPE_ALIGN (rli->t) != 0 && TYPE_ALIGN (rli->t) < record_align)
-    record_align = MAX (rli->record_align, TYPE_ALIGN (rli->t));
-
-  /* If any fields have variable size, we need to force the record to be at
-     least as aligned as the alignment of that type.  */
-  for (field = TYPE_FIELDS (rli->t); field; field = TREE_CHAIN (field))
-    if (TREE_CODE (DECL_SIZE_UNIT (field)) != INTEGER_CST)
-      record_align = MAX (record_align, DECL_ALIGN (field));
-
-  if (TYPE_PACKED (rli->t))
-    rli->record_align = record_align;
-#endif
 }
 
 /* Make a TRANSFORM_EXPR to later expand GNAT_NODE into code.  */
@@ -796,7 +831,7 @@ record_code_position (Node_Id gnat_node)
     {
       /* Make a dummy entry so multiple things at the same location don't
 	 end up in the same place.  */
-      add_pending_elaborations (NULL_TREE, NULL_TREE);
+      add_pending_elaborations (NULL_TREE, NULL_TREE, gnat_node);
       save_gnu_tree (gnat_node, get_elaboration_location (), 1);
     }
   else
@@ -804,7 +839,7 @@ record_code_position (Node_Id gnat_node)
        addressable needs some fixups and also for above reason.  */
     save_gnu_tree (gnat_node,
 		   build (RTL_EXPR, void_type_node, NULL_TREE,
-			  (tree) emit_note (NOTE_INSN_DELETED)),
+			  (tree) emit_note (NOTE_INSN_DELETED), NULL_TREE),
 		   1);
 }
 
@@ -836,6 +871,16 @@ insert_code_for (Node_Id gnat_node)
     }
 }
 
+
+/* GNU_TYPE is a type.  Return its maxium size in bytes, if known.  */
+
+static tree
+gnat_type_max_size (gnu_type)
+     tree gnu_type;
+{
+  return max_size (TYPE_SIZE_UNIT (gnu_type), 1);
+}
+
 /* Get the alias set corresponding to a type or expression.  */
 
 static HOST_WIDE_INT
@@ -854,6 +899,23 @@ gnat_get_alias_set (tree type)
 
 
   return -1;
+}
+
+/* Return whether a packed bit-field can be promoted to a greater alignment
+   than the minimal one.  */
+
+static bool
+gnat_can_promote_packed_bit_field_p (tree field, unsigned align)
+{
+  /* In Ada we try to promote fields in packed records to their
+     natural alignment as much as possible, bearing in mind that
+     this will increase the alignment of the whole record.  */
+  tree record_type = DECL_CONTEXT (field);
+
+  if (TYPE_ALIGN (record_type) == 0)
+    return true;
+  else
+    return (align <= TYPE_ALIGN (record_type) ? true : false);
 }
 
 /* GNU_TYPE is a type. Determine if it should be passed by reference by
@@ -1004,4 +1066,3 @@ fp_size_to_prec (int size)
 
   abort ();
 }
-

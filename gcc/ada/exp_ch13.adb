@@ -6,7 +6,7 @@
 --                                                                          --
 --                                 B o d y                                  --
 --                                                                          --
---          Copyright (C) 1992-2003, Free Software Foundation, Inc.         --
+--          Copyright (C) 1992-2006, Free Software Foundation, Inc.         --
 --                                                                          --
 -- GNAT is free software;  you can  redistribute it  and/or modify it under --
 -- terms of the  GNU General Public License as published  by the Free Soft- --
@@ -16,8 +16,8 @@
 -- or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License --
 -- for  more details.  You should have  received  a copy of the GNU General --
 -- Public License  distributed with GNAT;  see file COPYING.  If not, write --
--- to  the Free Software Foundation,  59 Temple Place - Suite 330,  Boston, --
--- MA 02111-1307, USA.                                                      --
+-- to  the  Free Software Foundation,  51  Franklin  Street,  Fifth  Floor, --
+-- Boston, MA 02110-1301, USA.                                              --
 --                                                                          --
 -- GNAT was originally developed  by the GNAT team at  New York University. --
 -- Extensive contributions were provided by Ada Core Technologies Inc.      --
@@ -81,19 +81,17 @@ package body Exp_Ch13 is
 
          when Attribute_Address =>
 
-            --  If there is an initialization which did not come from
-            --  the source program, then it is an artifact of our
-            --  expansion, and we suppress it. The case we are most
-            --  concerned about here is the initialization of a packed
-            --  array to all false, which seems inappropriate for a
-            --  variable to which an address clause is applied. The
-            --  expression may itself have been rewritten if the type is a
-            --  packed array, so we need to examine whether the original
-            --  node is in the source.
+            --  If there is an initialization which did not come from the
+            --  source program, then it is an artifact of our expansion, and we
+            --  suppress it. The case we are most concerned about here is the
+            --  initialization of a packed array to all false, which seems
+            --  inappropriate for variable to which an address clause is
+            --  applied. The expression may itself have been rewritten if the
+            --  type is packed array, so we need to examine whether the
+            --  original node is in the source.
 
             declare
                Decl : constant Node_Id := Declaration_Node (Ent);
-
             begin
                if Nkind (Decl) = N_Object_Declaration
                   and then Present (Expression (Decl))
@@ -140,7 +138,6 @@ package body Exp_Ch13 is
             --  assignment statement to initialze this value.
 
             elsif Is_Access_Type (Ent) then
-
                V := Make_Defining_Identifier (Loc,
                       New_External_Name (Chars (Ent), 'V'));
 
@@ -244,15 +241,17 @@ package body Exp_Ch13 is
       In_Other_Scope : Boolean;
       In_Outer_Scope : Boolean;
       Decl           : Node_Id;
+      Delete         : Boolean := False;
 
    begin
-      --  For object, with address clause, check alignment is OK
+      --  Processing for objects with address clauses
 
-      if Is_Object (E) then
-         Apply_Alignment_Check (E, N);
+      if Is_Object (E) and then Present (Address_Clause (E)) then
+         Apply_Address_Clause_Check (E, N);
+         return;
 
-      --  Only other items requiring any front end action are
-      --  types and subprograms.
+      --  Only other items requiring any front end action are types and
+      --  subprograms.
 
       elsif not Is_Type (E) and then not Is_Subprogram (E) then
          return;
@@ -268,12 +267,12 @@ package body Exp_Ch13 is
          return;
       end if;
 
-      --  If we are freezing entities defined in protected types, they
-      --  belong in the enclosing scope, given that the original type
-      --  has been expanded away. The same is true for entities in task types,
-      --  in particular the parameter records of entries (Entities in bodies
-      --  are all frozen within the body). If we are in the task body, this
-      --  is a proper scope.
+      --  If we are freezing entities defined in protected types, they belong
+      --  in the enclosing scope, given that the original type has been
+      --  expanded away. The same is true for entities in task types, in
+      --  particular the parameter records of entries (Entities in bodies are
+      --  all frozen within the body). If we are in the task body, this is a
+      --  proper scope.
 
       if Ekind (E_Scope) = E_Protected_Type
         or else (Ekind (E_Scope) = E_Task_Type
@@ -318,7 +317,7 @@ package body Exp_Ch13 is
       --  If type, freeze the type
 
       if Is_Type (E) then
-         Freeze_Type (N);
+         Delete := Freeze_Type (N);
 
          --  And for enumeration type, build the enumeration tables
 
@@ -351,17 +350,15 @@ package body Exp_Ch13 is
          Freeze_Subprogram (N);
       end if;
 
-      --  Analyze actions generated by freezing. The init_proc contains
-      --  source expressions that may raise constraint_error, and the
-      --  assignment procedure for complex types needs checks on individual
-      --  component assignments, but all other freezing actions should be
-      --  compiled with all checks off.
+      --  Analyze actions generated by freezing. The init_proc contains source
+      --  expressions that may raise Constraint_Error, and the assignment
+      --  procedure for complex types needs checks on individual component
+      --  assignments, but all other freezing actions should be compiled with
+      --  all checks off.
 
       if Present (Actions (N)) then
          Decl := First (Actions (N));
-
          while Present (Decl) loop
-
             if Nkind (Decl) = N_Subprogram_Body
               and then (Is_Init_Proc (Defining_Entity (Decl))
                           or else
@@ -387,6 +384,13 @@ package body Exp_Ch13 is
 
             Next (Decl);
          end loop;
+      end if;
+
+      --  If we are to delete this N_Freeze_Entity, do so by rewriting so that
+      --  a loop on all nodes being inserted will work propertly.
+
+      if Delete then
+         Rewrite (N, Make_Null_Statement (Sloc (N)));
       end if;
 
       if In_Other_Scope then

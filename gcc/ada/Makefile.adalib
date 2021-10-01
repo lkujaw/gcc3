@@ -1,5 +1,5 @@
 # This is the Unix/NT makefile used to build an alternate GNAT run-time.
-# Note that no files in the original GNAT library dirctory will be
+# Note that no files in the original GNAT library directory will be
 # modified by this procedure
 #
 # This Makefile requires Gnu make.
@@ -53,9 +53,9 @@ endif
 
 target = $(shell $(CC) -dumpmachine)
 version = $(shell $(CC) -dumpversion)
-ADA_INCLUDE_PATH = $(GNAT_ROOT)lib/gcc-lib/$(target)/$(version)/adainclude/
-GCC_INCLUDE_PATH = $(GNAT_ROOT)lib/gcc-lib/$(target)/$(version)/gcc-include/
-ADA_OBJECTS_PATH = $(GNAT_ROOT)lib/gcc-lib/$(target)/$(version)/adalib/
+ADA_INCLUDE_PATH = $(GNAT_ROOT)lib/gcc/$(target)/$(version)/adainclude/
+GCC_INCLUDE_PATH = $(GNAT_ROOT)lib/gcc/$(target)/$(version)/gcc-include/
+ADA_OBJECTS_PATH = $(GNAT_ROOT)lib/gcc/$(target)/$(version)/adalib/
 
 vpath %.adb $(ADA_INCLUDE_PATH)
 vpath %.ads $(ADA_INCLUDE_PATH)
@@ -67,9 +67,9 @@ GNATLIBCFLAGS = -DIN_RTS=1 -DIN_GCC=1 -fexceptions
 ADAFLAGS = -gnatpgn
 ALL_ADAFLAGS = $(CFLAGS) $(ADAFLAGS) -I. 
 FORCE_DEBUG_ADAFLAGS = -g
-INCLUDES = -I$(ADA_INCLUDE_PATH) -I$(GCC_INCLUDE_PATH)/include   \
--I$(GCC_INCLUDE_PATH)/gcc/config -I$(GCC_INCLUDE_PATH)/gcc       \
--I$(GCC_INCLUDE_PATH)/gcc/ada    -I$(GCC_INCLUDE_PATH)
+INCLUDES = -I. -I$(ADA_INCLUDE_PATH) -I$(GCC_INCLUDE_PATH)/include \
+  -I$(GCC_INCLUDE_PATH)/gcc/config -I$(GCC_INCLUDE_PATH)/gcc       \
+  -I$(GCC_INCLUDE_PATH)/gcc/ada    -I$(GCC_INCLUDE_PATH)
 
 # Say how to compile Ada programs.
 .SUFFIXES: .ada .adb .ads
@@ -98,25 +98,30 @@ libgnarl.a: $(GNARL_OBJS)
 	$(AR) r libgnarl.a $(GNARL_OBJS)
 
 a-except.o: a-except.adb a-except.ads
-	$(CC) -c $(FORCE_DEBUG_ADAFLAGS) $(ALL_ADAFLAGS) -O0 -fno-inline $<
+	$(CC) -c $(FORCE_DEBUG_ADAFLAGS) $(ALL_ADAFLAGS) -O1 -fno-inline $<
 
 s-assert.o: s-assert.adb s-assert.ads a-except.ads
 	$(CC) -c $(FORCE_DEBUG_ADAFLAGS) $(ALL_ADAFLAGS) $<
 
 s-tasdeb.o: s-tasdeb.adb
-	$(CC) -c $(FORCE_DEBUG_ADAFLAGS) $(ALL_ADAFLAGS) $<
+	$(CC) -c $(FORCE_DEBUG_ADAFLAGS) $(ALL_ADAFLAGS) -O0 $<
 
 s-vaflop.o: s-vaflop.adb
 	$(CC) -c $(FORCE_DEBUG_ADAFLAGS) -O $(ALL_ADAFLAGS) $<
 
 s-memory.o: s-memory.adb s-memory.ads
-	$(CC) -c $(ALL_ADAFLAGS) $(FORCE_DEBUG_ADAFLAGS) -O0 $(ADA_INCLUDES) $<
+	$(CC) -c $(ALL_ADAFLAGS) $(FORCE_DEBUG_ADAFLAGS) -O0 $<
 
 s-traceb.o: s-traceb.adb
-	$(CC) -c $(ALL_ADAFLAGS) $(FORCE_DEBUG_ADAFLAGS) -fno-optimize-sibling-calls $(ADA_INCLUDES) $<
+	$(CC) -c $(ALL_ADAFLAGS) $(FORCE_DEBUG_ADAFLAGS) -fno-optimize-sibling-calls $<
 
 tracebak.o: tracebak.c
 	$(CC) -c $(CFLAGS) $(GNATLIBCFLAGS) \
 		$(ALL_CPPFLAGS) $(INCLUDES) -fno-omit-frame-pointer $<
+
+# No optimization to compile this file as optimizations (-O1 or above) breaks
+# the SEH handling on Windows. The reasons are not clear.
+seh_init.o : seh_init.c raise.h
+	$(CC) -c -O0 $(CFLAGS) $(GNATLIBCFLAGS) $(INCLUDES) $<
 
 .PHONY: delete_objects

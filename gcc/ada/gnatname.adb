@@ -6,7 +6,7 @@
 --                                                                          --
 --                                 B o d y                                  --
 --                                                                          --
---           Copyright (C) 2001-2004 Free Software Foundation, Inc.         --
+--          Copyright (C) 2001-2006, Free Software Foundation, Inc.         --
 --                                                                          --
 -- GNAT is free software;  you can  redistribute it  and/or modify it under --
 -- terms of the  GNU General Public License as published  by the Free Soft- --
@@ -16,21 +16,23 @@
 -- or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License --
 -- for  more details.  You should have  received  a copy of the GNU General --
 -- Public License  distributed with GNAT;  see file COPYING.  If not, write --
--- to  the Free Software Foundation,  59 Temple Place - Suite 330,  Boston, --
--- MA 02111-1307, USA.                                                      --
+-- to  the  Free Software Foundation,  51  Franklin  Street,  Fifth  Floor, --
+-- Boston, MA 02110-1301, USA.                                              --
 --                                                                          --
 -- GNAT was originally developed  by the GNAT team at  New York University. --
 -- Extensive contributions were provided by Ada Core Technologies Inc.      --
 --                                                                          --
 ------------------------------------------------------------------------------
 
-with Gnatvsn;
+with Gnatvsn;  use Gnatvsn;
+with Hostparm;
 with Opt;
 with Osint;    use Osint;
 with Output;   use Output;
 with Prj.Makr;
 with Table;
 
+with Ada.Command_Line;  use Ada.Command_Line;
 with Ada.Text_IO;       use Ada.Text_IO;
 with GNAT.Command_Line; use GNAT.Command_Line;
 with GNAT.OS_Lib;       use GNAT.OS_Lib;
@@ -168,9 +170,11 @@ procedure Gnatname is
          Version_Output := True;
          Output.Write_Eol;
          Output.Write_Str ("GNATNAME ");
-         Output.Write_Str (Gnatvsn.Gnat_Version_String);
+         Output.Write_Line (Gnatvsn.Gnat_Version_String);
          Output.Write_Line
-           (" Copyright 2001-2004 Free Software Foundation, Inc.");
+           ("Copyright 2001-" &
+            Current_Year &
+            ", Free Software Foundation, Inc.");
       end if;
    end Output_Version;
 
@@ -229,7 +233,6 @@ procedure Gnatname is
             when 'v' =>
                if Opt.Verbose_Mode then
                   Very_Verbose := True;
-
                else
                   Opt.Verbose_Mode := True;
                end if;
@@ -296,6 +299,38 @@ procedure Gnatname is
 --  Start of processing for Gnatname
 
 begin
+   --  Add the directory where gnatname is invoked in front of the
+   --  path, if gnatname is invoked with directory information.
+   --  Only do this if the platform is not VMS, where the notion of path
+   --  does not really exist.
+
+   if not Hostparm.OpenVMS then
+      declare
+         Command : constant String := Command_Name;
+
+      begin
+         for Index in reverse Command'Range loop
+            if Command (Index) = Directory_Separator then
+               declare
+                  Absolute_Dir : constant String :=
+                                   Normalize_Pathname
+                                     (Command (Command'First .. Index));
+
+                  PATH         : constant String :=
+                                   Absolute_Dir &
+                  Path_Separator &
+                  Getenv ("PATH").all;
+
+               begin
+                  Setenv ("PATH", PATH);
+               end;
+
+               exit;
+            end if;
+         end loop;
+      end;
+   end if;
+
    --  Initialize tables
 
    Excluded_Patterns.Set_Last (0);

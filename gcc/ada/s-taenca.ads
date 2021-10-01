@@ -1,12 +1,12 @@
 ------------------------------------------------------------------------------
 --                                                                          --
---                GNU ADA RUN-TIME LIBRARY (GNARL) COMPONENTS               --
+--                 GNAT RUN-TIME LIBRARY (GNARL) COMPONENTS                 --
 --                                                                          --
 --             S Y S T E M . T A S K I N G . E N T R Y _ C A L L S          --
 --                                                                          --
 --                                  S p e c                                 --
 --                                                                          --
---         Copyright (C) 1992-2001, Free Software Foundation, Inc.          --
+--         Copyright (C) 1992-2005, Free Software Foundation, Inc.          --
 --                                                                          --
 -- GNARL is free software; you can  redistribute it  and/or modify it under --
 -- terms of the  GNU General Public License as published  by the Free Soft- --
@@ -16,16 +16,16 @@
 -- or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License --
 -- for  more details.  You should have  received  a copy of the GNU General --
 -- Public License  distributed with GNARL; see file COPYING.  If not, write --
--- to  the Free Software Foundation,  59 Temple Place - Suite 330,  Boston, --
--- MA 02111-1307, USA.                                                      --
+-- to  the  Free Software Foundation,  51  Franklin  Street,  Fifth  Floor, --
+-- Boston, MA 02110-1301, USA.                                              --
 --                                                                          --
--- As a special exception,  if other files  instantiate  generics from this --
--- unit, or you link  this unit with other files  to produce an executable, --
--- this  unit  does not  by itself cause  the resulting  executable  to  be --
--- covered  by the  GNU  General  Public  License.  This exception does not --
--- however invalidate  any other reasons why  the executable file  might be --
--- covered by the  GNU Public License.                                      --
---                                                                          --
+--
+--
+--
+--
+--
+--
+--
 -- GNARL was developed by the GNARL team at Florida State University.       --
 -- Extensive contributions were provided by Ada Core Technologies, Inc.     --
 --                                                                          --
@@ -59,7 +59,7 @@ package System.Tasking.Entry_Calls is
    --  Check_Exception must be called after calling this procedure.
 
    procedure Wait_Until_Abortable
-     (Self_ID : Task_ID;
+     (Self_ID : Task_Id;
       Call    : Entry_Call_Link);
    --  This procedure suspends the calling task until the specified entry
    --  call is queued abortably or completes.
@@ -75,7 +75,7 @@ package System.Tasking.Entry_Calls is
    --  On return, the call is off-queue and the ATC level is reduced by one.
 
    procedure Reset_Priority
-     (Acceptor               : Task_ID;
+     (Acceptor               : Task_Id;
       Acceptor_Prev_Priority : Rendezvous_Priority);
    pragma Inline (Reset_Priority);
    --  Reset the priority of a task completing an accept statement to
@@ -83,7 +83,7 @@ package System.Tasking.Entry_Calls is
    --  Acceptor should always be equal to Self.
 
    procedure Check_Exception
-     (Self_ID    : Task_ID;
+     (Self_ID    : Task_Id;
       Entry_Call : Entry_Call_Link);
    pragma Inline (Check_Exception);
    --  Raise any pending exception from the Entry_Call.

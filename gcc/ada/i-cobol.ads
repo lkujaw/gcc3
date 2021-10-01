@@ -7,7 +7,7 @@
 --                                 S p e c                                  --
 --                             (ASCII Version)                              --
 --                                                                          --
---          Copyright (C) 1993-2000 Free Software Foundation, Inc.          --
+--          Copyright (C) 1993-2005, Free Software Foundation, Inc.         --
 --                                                                          --
 -- This specification is derived from the Ada Reference Manual for use with --
 -- GNAT. The copyright notice above, and the license provisions that follow --
@@ -21,16 +21,16 @@
 -- or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License --
 -- for  more details.  You should have  received  a copy of the GNU General --
 -- Public License  distributed with GNAT;  see file COPYING.  If not, write --
--- to  the Free Software Foundation,  59 Temple Place - Suite 330,  Boston, --
--- MA 02111-1307, USA.                                                      --
+-- to  the  Free Software Foundation,  51  Franklin  Street,  Fifth  Floor, --
+-- Boston, MA 02110-1301, USA.                                              --
 --                                                                          --
--- As a special exception,  if other files  instantiate  generics from this --
--- unit, or you link  this unit with other files  to produce an executable, --
--- this  unit  does not  by itself cause  the resulting  executable  to  be --
--- covered  by the  GNU  General  Public  License.  This exception does not --
--- however invalidate  any other reasons why  the executable file  might be --
--- covered by the  GNU Public License.                                      --
---                                                                          --
+--
+--
+--
+--
+--
+--
+--
 -- GNAT was originally developed  by the GNAT team at  New York University. --
 -- Extensive contributions were provided by Ada Core Technologies Inc.      --
 --                                                                          --
@@ -386,12 +386,10 @@ package Interfaces.COBOL is
 
       function Valid
         (Item   : Numeric;
-         Format : Display_Format)
-         return   Boolean;
+         Format : Display_Format) return Boolean;
 
       function Length
-        (Format : Display_Format)
-         return   Natural;
+        (Format : Display_Format) return Natural;
 
       function To_Decimal
         (Item   : Numeric;
@@ -400,36 +398,30 @@ package Interfaces.COBOL is
 
       function To_Display
         (Item   : Num;
-         Format : Display_Format)
-         return   Numeric;
+         Format : Display_Format) return Numeric;
 
       --  Packed Formats: data values are represented as Packed_Decimal
 
       function Valid
         (Item   : Packed_Decimal;
-         Format : Packed_Format)
-         return   Boolean;
+         Format : Packed_Format) return Boolean;
 
       function Length
-        (Format : Packed_Format)
-         return   Natural;
+        (Format : Packed_Format) return Natural;
 
       function To_Decimal
         (Item   : Packed_Decimal;
-         Format : Packed_Format)
-         return   Num;
+         Format : Packed_Format) return Num;
 
       function To_Packed
         (Item   : Num;
-         Format : Packed_Format)
-         return   Packed_Decimal;
+         Format : Packed_Format) return Packed_Decimal;
 
       --  Binary Formats: external data values are represented as Byte_Array
 
       function Valid
         (Item   : Byte_Array;
-         Format : Binary_Format)
-         return   Boolean;
+         Format : Binary_Format) return Boolean;
 
       function Length
         (Format : Binary_Format)
@@ -441,8 +433,7 @@ package Interfaces.COBOL is
 
       function To_Binary
         (Item   : Num;
-         Format : Binary_Format)
-         return   Byte_Array;
+         Format : Binary_Format) return Byte_Array;
 
       --  Internal Binary formats: data values are of type Binary/Long_Binary
 
@@ -457,7 +448,6 @@ package Interfaces.COBOL is
       pragma Inline (To_Binary);
       pragma Inline (To_Decimal);
       pragma Inline (To_Display);
-      pragma Inline (To_Decimal);
       pragma Inline (To_Long_Binary);
       pragma Inline (Valid);
 
@@ -518,14 +508,14 @@ private
 
    type Packed_Format is (U, S);
 
-   Packed_Unsigned   : constant Packed_Format := U;
-   Packed_Signed     : constant Packed_Format := S;
+   Packed_Unsigned : constant Packed_Format := U;
+   Packed_Signed   : constant Packed_Format := S;
 
    type Packed_Representation_Type is (IBM);
    --  Indicator for format used for packed decimal
 
    Packed_Representation : constant Packed_Representation_Type := IBM;
-   --  This version of the spec uses IBM internal format, as described above.
+   --  This version of the spec uses IBM internal format, as described above
 
    -----------------------------
    -- Display Decimal Formats --

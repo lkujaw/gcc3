@@ -6,7 +6,7 @@
 --                                                                          --
 --                                 S p e c                                  --
 --                                                                          --
---          Copyright (C) 1992-2003 Free Software Foundation, Inc.          --
+--          Copyright (C) 1992-2006, Free Software Foundation, Inc.         --
 --                                                                          --
 -- GNAT is free software;  you can  redistribute it  and/or modify it under --
 -- terms of the  GNU General Public License as published  by the Free Soft- --
@@ -16,8 +16,8 @@
 -- or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License --
 -- for  more details.  You should have  received  a copy of the GNU General --
 -- Public License  distributed with GNAT;  see file COPYING.  If not, write --
--- to  the Free Software Foundation,  59 Temple Place - Suite 330,  Boston, --
--- MA 02111-1307, USA.                                                      --
+-- to  the  Free Software Foundation,  51  Franklin  Street,  Fifth  Floor, --
+-- Boston, MA 02110-1301, USA.                                              --
 --                                                                          --
 -- GNAT was originally developed  by the GNAT team at  New York University. --
 -- Extensive contributions were provided by Ada Core Technologies Inc.      --
@@ -28,17 +28,24 @@ with Nlists; use Nlists;
 with Types;  use Types;
 
 package Sem_Ch3  is
-   procedure Analyze_Component_Declaration              (N : Node_Id);
-   procedure Analyze_Incomplete_Type_Decl               (N : Node_Id);
-   procedure Analyze_Itype_Reference                    (N : Node_Id);
-   procedure Analyze_Number_Declaration                 (N : Node_Id);
-   procedure Analyze_Object_Declaration                 (N : Node_Id);
-   procedure Analyze_Others_Choice                      (N : Node_Id);
-   procedure Analyze_Private_Extension_Declaration      (N : Node_Id);
-   procedure Analyze_Subtype_Declaration                (N : Node_Id);
-   procedure Analyze_Subtype_Indication                 (N : Node_Id);
-   procedure Analyze_Type_Declaration                   (N : Node_Id);
-   procedure Analyze_Variant_Part                       (N : Node_Id);
+   procedure Analyze_Component_Declaration         (N : Node_Id);
+   procedure Analyze_Incomplete_Type_Decl          (N : Node_Id);
+   procedure Analyze_Itype_Reference               (N : Node_Id);
+   procedure Analyze_Number_Declaration            (N : Node_Id);
+   procedure Analyze_Object_Declaration            (N : Node_Id);
+   procedure Analyze_Others_Choice                 (N : Node_Id);
+   procedure Analyze_Private_Extension_Declaration (N : Node_Id);
+   procedure Analyze_Subtype_Indication            (N : Node_Id);
+   procedure Analyze_Type_Declaration              (N : Node_Id);
+   procedure Analyze_Variant_Part                  (N : Node_Id);
+
+   procedure Analyze_Subtype_Declaration
+     (N    : Node_Id;
+      Skip : Boolean := False);
+   --  Called to analyze a subtype declaration. The parameter Skip is used for
+   --  Ada 2005 (AI-412). We set to True in order to avoid reentering the
+   --  defining identifier of N when analyzing a rewritten incomplete subtype
+   --  declaration.
 
    function Access_Definition
      (Related_Nod : Node_Id;
@@ -61,6 +68,9 @@ package Sem_Ch3  is
    procedure Analyze_Declarations (L : List_Id);
    --  Called to analyze a list of declarations (in what context ???). Also
    --  performs necessary freezing actions (more description needed ???)
+
+   procedure Analyze_Interface_Declaration (T : Entity_Id; Def : Node_Id);
+   --  Analyze an interface declaration or a formal interface declaration
 
    procedure Analyze_Per_Use_Expression (N : Node_Id; T : Entity_Id);
    --  Default and per object expressions do not freeze their components,
@@ -97,12 +107,21 @@ package Sem_Ch3  is
    --  rather than on the declarations that require completion in the package
    --  declaration.
 
+   procedure Collect_Interfaces
+     (N            : Node_Id;
+      Derived_Type : Entity_Id);
+   --  Ada 2005 (AI-251): Subsidiary procedure to Build_Derived_Record_Type
+   --  and Analyze_Formal_Interface_Type.
+   --  Collect the list of interfaces that are not already implemented by the
+   --  ancestors. This is the list of interfaces for which we must provide
+   --  additional tag components.
+
    procedure Derive_Subprogram
-     (New_Subp       : in out Entity_Id;
-      Parent_Subp    : Entity_Id;
-      Derived_Type   : Entity_Id;
-      Parent_Type    : Entity_Id;
-      Actual_Subp    : Entity_Id := Empty);
+     (New_Subp     : in out Entity_Id;
+      Parent_Subp  : Entity_Id;
+      Derived_Type : Entity_Id;
+      Parent_Type  : Entity_Id;
+      Actual_Subp  : Entity_Id := Empty);
    --  Derive the subprogram Parent_Subp from Parent_Type, and replace the
    --  subsidiary subtypes with the derived type to build the specification
    --  of the inherited subprogram (returned in New_Subp). For tagged types,
@@ -111,16 +130,26 @@ package Sem_Ch3  is
    --  subprogram of the parent type.
 
    procedure Derive_Subprograms
-     (Parent_Type    : Entity_Id;
-      Derived_Type   : Entity_Id;
-      Generic_Actual : Entity_Id := Empty);
-   --  To complete type derivation, collect or retrieve the primitive
-   --  operations of the parent type, and replace the subsidiary subtypes
-   --  with the derived type, to build the specs of the inherited ops.
-   --  For generic actuals, the mapping of the primitive operations to those
-   --  of the parent type is also done by rederiving the operations within
-   --  the instance. For tagged types, the derived subprograms are aliased to
-   --  those of the actual, not those of the ancestor.
+     (Parent_Type           : Entity_Id;
+      Derived_Type          : Entity_Id;
+      Generic_Actual        : Entity_Id := Empty;
+      No_Predefined_Prims   : Boolean   := False);
+   --  To complete type derivation, collect/retrieve the primitive operations
+   --  of the parent type, and replace the subsidiary subtypes with the derived
+   --  type, to build the specs of the inherited ops. For generic actuals, the
+   --  mapping of the primitive operations to those of the parent type is also
+   --  done by rederiving the operations within the instance. For tagged types,
+   --  the derived subprograms are aliased to those of the actual, not those of
+   --  the ancestor. The last two params are used in case of derivation from
+   --  abstract interface types: No_Predefined_Prims is used to avoid the
+   --  derivation of predefined primitives from an abstract interface.
+   --
+   --  Note: one might expect this to be private to the package body, but
+   --  there is one rather unusual usage in package Exp_Dist.
+
+   function Find_Type_Of_Subtype_Indic (S : Node_Id) return Entity_Id;
+   --  Given a subtype indication S (which is really an N_Subtype_Indication
+   --  node or a plain N_Identifier), find the type of the subtype mark.
 
    function Find_Type_Name (N : Node_Id) return Entity_Id;
    --  Enter the identifier in a type definition, or find the entity already
@@ -134,6 +163,11 @@ package Sem_Ch3  is
    --  ??? MORE DOCUMENTATION
    --  Given a discriminant somewhere in the Typ_For_Constraint tree
    --  and a Constraint, return the value of that discriminant.
+
+   function Is_Null_Extension (T : Entity_Id) return Boolean;
+   --  Returns True if the tagged type T has an N_Full_Type_Declaration that
+   --  is a null extension, meaning that it has an extension part without any
+   --  components and does not have a known discriminant part.
 
    function Is_Visible_Component (C : Entity_Id) return Boolean;
    --  Determines if a record component C is visible in the present context.
@@ -156,10 +190,23 @@ package Sem_Ch3  is
 
    procedure Make_Class_Wide_Type (T : Entity_Id);
    --  A Class_Wide_Type is created for each tagged type definition. The
-   --  attributes of a class wide type are inherited from those of the type
-   --  T. If T is introduced by a private declaration, the corresponding
-   --  class wide type is created at the same time, and therefore there is
-   --  a private and a full declaration for the class wide type type as well.
+   --  attributes of a class wide type are inherited from those of the type T.
+   --  If T is introduced by a private declaration, the corresponding class
+   --  wide type is created at the same time, and therefore there is a private
+   --  and a full declaration for the class wide type type as well.
+
+   function OK_For_Limited_Init_In_05 (Exp : Node_Id) return Boolean;
+   --  Presuming Exp is an expression of an inherently limited type, returns
+   --  True if the expression is allowed in an initialization context by the
+   --  rules of Ada 2005. We use the rule in RM-7.5(2.1/2), "...it is an
+   --  aggregate, a function_call, or a parenthesized expression or
+   --  qualified_expression whose operand is permitted...". Note that in Ada
+   --  95 mode, we sometimes wish to give warnings based on whether the
+   --  program _would_ be legal in Ada 2005.
+
+   function OK_For_Limited_Init (Exp : Node_Id) return Boolean;
+   --  Always False in Ada 95 mode. Equivalent to OK_For_Limited_Init_In_05 in
+   --  Ada 2005 mode.
 
    procedure Process_Full_View (N : Node_Id; Full_T, Priv_T : Entity_Id);
    --  Process some semantic actions when the full view of a private type is
@@ -186,8 +233,8 @@ package Sem_Ch3  is
    --  pointer of R so that the types get properly frozen. The Check_List
    --  parameter is used when the subprogram is called from
    --  Build_Record_Init_Proc and is used to return a set of constraint
-   --  checking statements generated by the Checks package. R_Check_Off is
-   --  set to True when the call to Range_Check is to be skipped.
+   --  checking statements generated by the Checks package. R_Check_Off is set
+   --  to True when the call to Range_Check is to be skipped.
 
    function Process_Subtype
      (S           : Node_Id;
@@ -205,6 +252,16 @@ package Sem_Ch3  is
    --  Process the discriminants contained in an N_Full_Type_Declaration or
    --  N_Incomplete_Type_Decl node N. If the declaration is a completion,
    --  Prev is entity on the partial view, on which references are posted.
+
+   function Replace_Anonymous_Access_To_Protected_Subprogram
+     (N      : Node_Id;
+      Prev_E : Entity_Id) return Entity_Id;
+   --  Ada 2005 (AI-254): Create and decorate an internal full type declaration
+   --  in the enclosing scope corresponding to an anonymous access to protected
+   --  subprogram. In addition, replace the anonymous access by an occurrence
+   --  of this internal type. Prev_Etype is used to link the new internal
+   --  entity with the anonymous entity. Return the entity of this type
+   --  declaration.
 
    procedure Set_Completion_Referenced (E : Entity_Id);
    --  If E is the completion of a private or incomplete  type declaration,

@@ -6,7 +6,7 @@
 --                                                                          --
 --                                 S p e c                                  --
 --                                                                          --
---           Copyright (C) 2003 Free Software Foundation, Inc.              --
+--          Copyright (C) 2003-2006, Free Software Foundation, Inc.         --
 --                                                                          --
 -- GNAT is free software;  you can  redistribute it  and/or modify it under --
 -- terms of the  GNU General Public License as published  by the Free Soft- --
@@ -16,16 +16,16 @@
 -- or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License --
 -- for  more details.  You should have  received  a copy of the GNU General --
 -- Public License  distributed with GNAT;  see file COPYING.  If not, write --
--- to  the Free Software Foundation,  59 Temple Place - Suite 330,  Boston, --
--- MA 02111-1307, USA.                                                      --
+-- to  the  Free Software Foundation,  51  Franklin  Street,  Fifth  Floor, --
+-- Boston, MA 02110-1301, USA.                                              --
 --                                                                          --
--- As a special exception,  if other files  instantiate  generics from this --
--- unit, or you link  this unit with other files  to produce an executable, --
--- this  unit  does not  by itself cause  the resulting  executable  to  be --
--- covered  by the  GNU  General  Public  License.  This exception does not --
--- however invalidate  any other reasons why  the executable file  might be --
--- covered by the  GNU Public License.                                      --
---                                                                          --
+--
+--
+--
+--
+--
+--
+--
 -- GNAT was originally developed  by the GNAT team at  New York University. --
 -- Extensive contributions were provided by Ada Core Technologies Inc.      --
 --                                                                          --
@@ -35,11 +35,15 @@
 --  on non-VMS systems.
 
 with System.Parameters;
+
 package System.CRTL is
-pragma Preelaborate (CRTL);
+   pragma Preelaborate;
 
    subtype chars is System.Address;
    --  Pointer to null-terminated array of characters
+
+   subtype DIRs is System.Address;
+   --  Corresponds to the C type DIR*
 
    subtype FILEs is System.Address;
    --  Corresponds to the C type FILE*
@@ -59,6 +63,12 @@ pragma Preelaborate (CRTL);
    procedure clearerr (stream : FILEs);
    pragma Import (C, clearerr, "clearerr");
 
+   function dup  (handle : int) return int;
+   pragma Import (C, dup, "dup");
+
+   function dup2 (from, to : int) return int;
+   pragma Import (C, dup2, "dup2");
+
    function fclose (stream : FILEs) return int;
    pragma Import (C, fclose, "fclose");
 
@@ -75,7 +85,7 @@ pragma Preelaborate (CRTL);
    pragma Import (C, fgets, "fgets");
 
    function fopen (filename : chars; Mode : chars) return FILEs;
-   pragma Import (C, fopen, "fopen");
+   pragma Import (C, fopen, "__gnat_fopen");
 
    function fputc (C : int; stream : FILEs) return int;
    pragma Import (C, fputc, "fputc");
@@ -91,7 +101,7 @@ pragma Preelaborate (CRTL);
       mode     : chars;
       stream   : FILEs)
       return     FILEs;
-   pragma Import (C, freopen, "freopen");
+   pragma Import (C, freopen, "__gnat_freopen");
 
    function fseek
      (stream : FILEs;
@@ -124,6 +134,12 @@ pragma Preelaborate (CRTL);
    procedure mktemp (template : chars);
    pragma Import (C, mktemp, "mktemp");
 
+   function pclose (stream : System.Address) return int;
+   pragma Import (C, pclose, "pclose");
+
+   function popen (command, mode : System.Address) return System.Address;
+   pragma Import (C, popen, "popen");
+
    function read (fd : int; buffer : chars; nbytes : int) return int;
    pragma Import (C, read, "read");
 
@@ -133,6 +149,9 @@ pragma Preelaborate (CRTL);
 
    procedure rewind (stream : FILEs);
    pragma Import (C, rewind, "rewind");
+
+   procedure rmdir (dir_name : String);
+   pragma Import (C, rmdir, "rmdir");
 
    function setvbuf
      (stream : FILEs;

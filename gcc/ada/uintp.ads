@@ -6,7 +6,7 @@
 --                                                                          --
 --                                 S p e c                                  --
 --                                                                          --
---          Copyright (C) 1992-2003, Free Software Foundation, Inc.         --
+--          Copyright (C) 1992-2005, Free Software Foundation, Inc.         --
 --                                                                          --
 -- GNAT is free software;  you can  redistribute it  and/or modify it under --
 -- terms of the  GNU General Public License as published  by the Free Soft- --
@@ -16,16 +16,16 @@
 -- or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License --
 -- for  more details.  You should have  received  a copy of the GNU General --
 -- Public License  distributed with GNAT;  see file COPYING.  If not, write --
--- to  the Free Software Foundation,  59 Temple Place - Suite 330,  Boston, --
--- MA 02111-1307, USA.                                                      --
+-- to  the  Free Software Foundation,  51  Franklin  Street,  Fifth  Floor, --
+-- Boston, MA 02110-1301, USA.                                              --
 --                                                                          --
--- As a special exception,  if other files  instantiate  generics from this --
--- unit, or you link  this unit with other files  to produce an executable, --
--- this  unit  does not  by itself cause  the resulting  executable  to  be --
--- covered  by the  GNU  General  Public  License.  This exception does not --
--- however invalidate  any other reasons why  the executable file  might be --
--- covered by the  GNU Public License.                                      --
---                                                                          --
+--
+--
+--
+--
+--
+--
+--
 -- GNAT was originally developed  by the GNAT team at  New York University. --
 -- Extensive contributions were provided by Ada Core Technologies Inc.      --
 --                                                                          --
@@ -64,7 +64,10 @@ package Uintp is
    Uint_8   : constant Uint;
    Uint_9   : constant Uint;
    Uint_10  : constant Uint;
+   Uint_11  : constant Uint;
    Uint_12  : constant Uint;
+   Uint_13  : constant Uint;
+   Uint_14  : constant Uint;
    Uint_15  : constant Uint;
    Uint_16  : constant Uint;
    Uint_24  : constant Uint;
@@ -100,21 +103,22 @@ package Uintp is
    --  gigi processing.
 
    procedure Tree_Read;
-   --  Initializes internal tables from current tree file using Tree_Read.
-   --  Note that Initialize should not be called if Tree_Read is used.
-   --  Tree_Read includes all necessary initialization.
+   --  Initializes internal tables from current tree file using the relevant
+   --  Table.Tree_Read routines. Note that Initialize should not be called if
+   --  Tree_Read is used. Tree_Read includes all necessary initialization.
 
    procedure Tree_Write;
-   --  Writes out internal tables to current tree file using Tree_Write.
+   --  Writes out internal tables to current tree file using the relevant
+   --  Table.Tree_Write routines.
 
    function UI_Abs (Right : Uint) return Uint;
    pragma Inline (UI_Abs);
-   --  Returns abs function of universal integer.
+   --  Returns abs function of universal integer
 
    function UI_Add (Left : Uint; Right : Uint) return Uint;
    function UI_Add (Left : Int;  Right : Uint) return Uint;
    function UI_Add (Left : Uint; Right : Int)  return Uint;
-   --  Returns sum of two integer values.
+   --  Returns sum of two integer values
 
    function UI_Decimal_Digits_Hi (U : Uint) return Nat;
    --  Returns an estimate of the number of decimal digits required to
@@ -139,44 +143,44 @@ package Uintp is
    function UI_Eq (Left : Int;  Right : Uint) return Boolean;
    function UI_Eq (Left : Uint; Right : Int)  return Boolean;
    pragma Inline (UI_Eq);
-   --  Compares integer values for equality.
+   --  Compares integer values for equality
 
    function UI_Expon (Left : Uint; Right : Uint) return Uint;
    function UI_Expon (Left : Int;  Right : Uint) return Uint;
    function UI_Expon (Left : Uint; Right : Int)  return Uint;
    function UI_Expon (Left : Int;  Right : Int)  return Uint;
-   --  Returns result of exponentiating two integer values
+   --  Returns result of exponentiating two integer values.
    --  Fatal error if Right is negative.
 
    function UI_GCD (Uin, Vin : Uint) return Uint;
-   --  Computes GCD of input values. Assumes Uin >= Vin >= 0.
+   --  Computes GCD of input values. Assumes Uin >= Vin >= 0
 
    function UI_Ge (Left : Uint; Right : Uint) return Boolean;
    function UI_Ge (Left : Int;  Right : Uint) return Boolean;
    function UI_Ge (Left : Uint; Right : Int)  return Boolean;
    pragma Inline (UI_Ge);
-   --  Compares integer values for greater than or equal.
+   --  Compares integer values for greater than or equal
 
    function UI_Gt (Left : Uint; Right : Uint) return Boolean;
    function UI_Gt (Left : Int;  Right : Uint) return Boolean;
    function UI_Gt (Left : Uint; Right : Int)  return Boolean;
    pragma Inline (UI_Gt);
-   --  Compares integer values for greater than.
+   --  Compares integer values for greater than
 
    function UI_Is_In_Int_Range (Input : Uint) return Boolean;
    pragma Inline (UI_Is_In_Int_Range);
-   --  Determines if universal integer is in Int range.
+   --  Determines if universal integer is in Int range
 
    function UI_Le (Left : Uint; Right : Uint) return Boolean;
    function UI_Le (Left : Int;  Right : Uint) return Boolean;
    function UI_Le (Left : Uint; Right : Int)  return Boolean;
    pragma Inline (UI_Le);
-   --  Compares integer values for less than or equal.
+   --  Compares integer values for less than or equal
 
    function UI_Lt (Left : Uint; Right : Uint) return Boolean;
    function UI_Lt (Left : Int;  Right : Uint) return Boolean;
    function UI_Lt (Left : Uint; Right : Int)  return Boolean;
-   --  Compares integer values for less than.
+   --  Compares integer values for less than
 
    function UI_Max (Left : Uint; Right : Uint) return Uint;
    function UI_Max (Left : Int;  Right : Uint) return Uint;
@@ -186,13 +190,13 @@ package Uintp is
    function UI_Min (Left : Uint; Right : Uint) return Uint;
    function UI_Min (Left : Int;  Right : Uint) return Uint;
    function UI_Min (Left : Uint; Right : Int)  return Uint;
-   --  Returns minimum of two integer values.
+   --  Returns minimum of two integer values
 
    function UI_Mod (Left : Uint; Right : Uint) return Uint;
    function UI_Mod (Left : Int;  Right : Uint) return Uint;
    function UI_Mod (Left : Uint; Right : Int)  return Uint;
    pragma Inline (UI_Mod);
-   --  Returns mod function of two integer values.
+   --  Returns mod function of two integer values
 
    function UI_Mul (Left : Uint; Right : Uint) return Uint;
    function UI_Mul (Left : Int;  Right : Uint) return Uint;
@@ -203,16 +207,16 @@ package Uintp is
    function UI_Ne (Left : Int;  Right : Uint) return Boolean;
    function UI_Ne (Left : Uint; Right : Int)  return Boolean;
    pragma Inline (UI_Ne);
-   --  Compares integer values for inequality.
+   --  Compares integer values for inequality
 
    function UI_Negate (Right : Uint) return Uint;
    pragma Inline (UI_Negate);
-   --  Returns negative of universal integer.
+   --  Returns negative of universal integer
 
    function UI_Rem (Left : Uint; Right : Uint) return Uint;
    function UI_Rem (Left : Int;  Right : Uint) return Uint;
    function UI_Rem (Left : Uint; Right : Int)  return Uint;
-   --  Returns rem of two integer values.
+   --  Returns rem of two integer values
 
    function UI_Sub (Left : Uint; Right : Uint) return Uint;
    function UI_Sub (Left : Int;  Right : Uint) return Uint;
@@ -221,14 +225,21 @@ package Uintp is
    --  Returns difference of two integer values
 
    function UI_From_Dint (Input : Dint) return Uint;
-   --  Converts Dint value to universal integer form.
+   --  Converts Dint value to universal integer form
 
    function UI_From_Int (Input : Int) return Uint;
-   --  Converts Int value to universal integer form.
+   --  Converts Int value to universal integer form
+
+   function UI_From_CC (Input : Char_Code) return Uint;
+   --  Converts Char_Code value to universal integer form
 
    function UI_To_Int (Input : Uint) return Int;
-   --  Converts universal integer value to Int. Fatal error
-   --  if value is not in appropriate range.
+   --  Converts universal integer value to Int. Fatal error if value is not in
+   --  appropriate range.
+
+   function UI_To_CC (Input : Uint) return Char_Code;
+   --  Converts universal integer value to Char_Code. Fatal error if value is
+   --  not in Char_Code range.
 
    function Num_Bits (Input : Uint) return Nat;
    --  Approximate number of binary bits in given universal integer.
@@ -422,7 +433,10 @@ private
    Uint_8   : constant Uint := Uint (Uint_Direct_Bias + 8);
    Uint_9   : constant Uint := Uint (Uint_Direct_Bias + 9);
    Uint_10  : constant Uint := Uint (Uint_Direct_Bias + 10);
+   Uint_11  : constant Uint := Uint (Uint_Direct_Bias + 11);
    Uint_12  : constant Uint := Uint (Uint_Direct_Bias + 12);
+   Uint_13  : constant Uint := Uint (Uint_Direct_Bias + 13);
+   Uint_14  : constant Uint := Uint (Uint_Direct_Bias + 14);
    Uint_15  : constant Uint := Uint (Uint_Direct_Bias + 15);
    Uint_16  : constant Uint := Uint (Uint_Direct_Bias + 16);
    Uint_24  : constant Uint := Uint (Uint_Direct_Bias + 24);

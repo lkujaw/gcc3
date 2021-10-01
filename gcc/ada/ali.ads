@@ -6,7 +6,7 @@
 --                                                                          --
 --                                 S p e c                                  --
 --                                                                          --
---          Copyright (C) 1992-2003 Free Software Foundation, Inc.          --
+--          Copyright (C) 1992-2006, Free Software Foundation, Inc.         --
 --                                                                          --
 -- GNAT is free software;  you can  redistribute it  and/or modify it under --
 -- terms of the  GNU General Public License as published  by the Free Soft- --
@@ -16,8 +16,8 @@
 -- or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License --
 -- for  more details.  You should have  received  a copy of the GNU General --
 -- Public License  distributed with GNAT;  see file COPYING.  If not, write --
--- to  the Free Software Foundation,  59 Temple Place - Suite 330,  Boston, --
--- MA 02111-1307, USA.                                                      --
+-- to  the  Free Software Foundation,  51  Franklin  Street,  Fifth  Floor, --
+-- Boston, MA 02110-1301, USA.                                              --
 --                                                                          --
 -- GNAT was originally developed  by the GNAT team at  New York University. --
 -- Extensive contributions were provided by Ada Core Technologies Inc.      --
@@ -67,6 +67,9 @@ package ALI is
    type Interrupt_State_Id is range 6_000_000 .. 6_999_999;
    --  Id values used for Interrupt_State table entries
 
+   type Priority_Specific_Dispatching_Id is range 7_000_000 .. 7_999_999;
+   --  Id values used for Priority_Specific_Dispatching table entries
+
    --------------------
    -- ALI File Table --
    --------------------
@@ -81,9 +84,6 @@ package ALI is
 
    type Main_Program_Type is (None, Proc, Func);
    --  Indicator of whether unit can be used as main program
-
-   type Restrictions_String is array (All_Restrictions) of Character;
-   --  Type used to hold string from R line
 
    type ALIs_Record is record
 
@@ -106,7 +106,7 @@ package ALI is
       --  Length of characters stored in Ver. Not set if V lines are
       --  ignored as a result of the Ignore_Lines parameter.
 
-      Interface : Boolean;
+      SAL_Interface : Boolean;
       --  Set True when this is an interface to a standalone library
 
       First_Unit : Unit_Id;
@@ -187,9 +187,8 @@ package ALI is
       --  Set to True if file was compiled with zero cost exceptions.
       --  Not set if 'P' appears in Ignore_Lines.
 
-      Restrictions : Restrictions_String;
-      --  Copy of restrictions letters from R line.
-      --  Not set if 'R' appears in Ignore_Lines.
+      Restrictions : Restrictions_Info;
+      --  Restrictions information reconstructed from R lines
 
       First_Interrupt_State : Interrupt_State_Id;
       Last_Interrupt_State  : Interrupt_State_Id'Base;
@@ -199,6 +198,14 @@ package ALI is
       --  why the 'Base reference is there, it can be one less than
       --  the lower bound of the subtype).
       --  Not set if 'I' appears in Ignore_Lines
+
+      First_Specific_Dispatching : Priority_Specific_Dispatching_Id;
+      Last_Specific_Dispatching  : Priority_Specific_Dispatching_Id'Base;
+      --  These point to the first and last entries in the priority specific
+      --  dispatching table for this unit. If there are no entries, then
+      --  Last_Specific_Dispatching = First_Specific_Dispatching - 1. That
+      --  is why the 'Base reference is there, it can be one less than the
+      --  lower bound of the subtype. Not set if 'S' appears in Ignore_Lines.
 
    end record;
 
@@ -257,7 +264,7 @@ package ALI is
 
       Dynamic_Elab : Boolean;
       --  Set to True if the unit was compiled with dynamic elaboration
-      --  checks (i.e. either -gnatE or pragma Elaboration_Checks (Static)
+      --  checks (i.e. either -gnatE or pragma Elaboration_Checks (RM)
       --  was used to compile the unit).
 
       Elaborate_Body : Boolean;
@@ -336,12 +343,20 @@ package ALI is
       --  Set True if IS qualifier appears in ALI file, indicating that
       --  an Initialize_Scalars pragma applies to the unit.
 
-      Interface : Boolean;
+      SAL_Interface : Boolean;
       --  Set True when this is an interface to a standalone library
 
       Body_Needed_For_SAL : Boolean;
       --  Indicates that the source for the body of the unit (subprogram,
       --  package, or generic unit) must be included in a standalone library.
+
+      Elaborate_Body_Desirable : Boolean;
+      --  Indicates that the front end elaboration circuitry decided that it
+      --  would be a good idea if this package had Elaborate_Body. The binder
+      --  will attempt, but does not promise, to place the elaboration call
+      --  for the body right after the call for the spec, or at least as close
+      --  together as possible.
+
    end record;
 
    package Units is new Table.Table (
@@ -379,6 +394,40 @@ package ALI is
      Table_Initial        => 100,
      Table_Increment      => 200,
      Table_Name           => "Interrupt_States");
+
+   -----------------------------------------
+   -- Priority Specific Dispatching Table --
+   -----------------------------------------
+
+   --  An entry is made in this table for each S (priority specific
+   --  dispatching) line encountered in the input ALI file. The
+   --  First/Last_Specific_Dispatching_Id fields of the ALI file
+   --  entry show the range of entries defined within a particular
+   --  ALI file.
+
+   type Specific_Dispatching_Record is record
+      Dispatching_Policy : Character;
+      --  First character (upper case) of the corresponding policy name
+
+      First_Priority     : Nat;
+      --  Lower bound of the priority range to which the specified dispatching
+      --  policy applies.
+
+      Last_Priority      : Nat;
+      --  Upper bound of the priority range to which the specified dispatching
+      --  policy applies.
+
+      PSD_Pragma_Line : Nat;
+      --  Line number of Priority_Specific_Dispatching pragma
+   end record;
+
+   package Specific_Dispatching is new Table.Table (
+     Table_Component_Type => Specific_Dispatching_Record,
+     Table_Index_Type     => Priority_Specific_Dispatching_Id'Base,
+     Table_Low_Bound      => Priority_Specific_Dispatching_Id'First,
+     Table_Initial        => 100,
+     Table_Increment      => 200,
+     Table_Name           => "Priority_Specific_Dispatching");
 
    --------------
    -- Switches --
@@ -422,11 +471,10 @@ package ALI is
    --  Set to blank by Initialize_ALI. Set to the appropriate queuing policy
    --  character if an ali file contains a P line setting the queuing policy.
 
-   Restrictions : Restrictions_String := (others => 'n');
-   --  This array records the cumulative contributions of R lines in all
-   --  ali files. An entry is changed will be set to v if any ali file
-   --  indicates that the restriction is violated, and otherwise will be
-   --  set to r if the restriction is specified by some unit.
+   Cumulative_Restrictions : Restrictions_Info := No_Restrictions;
+   --  This variable records the cumulative contributions of R lines in all
+   --  ali files, showing whether a restriction pragma exists anywhere, and
+   --  accumulating the aggregate knowledge of violations.
 
    Static_Elaboration_Model_Used : Boolean := False;
    --  Set to False by Initialize_ALI. Set to True if any ALI file for a
@@ -478,10 +526,13 @@ package ALI is
       --  Indicates presence of EA parameter
 
       Elab_All_Desirable : Boolean;
+      --  Indicates presence of AD parameter
+
+      Elab_Desirable     : Boolean;
       --  Indicates presence of ED parameter
 
-      Interface : Boolean := False;
-      --  True if the Unit is an Interface of a Stand-Alole Library
+      SAL_Interface : Boolean := False;
+      --  True if the Unit is an Interface of a Stand-Alone Library
 
    end record;
 
@@ -586,6 +637,29 @@ package ALI is
      Hash       => SHash,
      Equal      => SEq);
 
+   -------------------------
+   -- No_Dependency Table --
+   -------------------------
+
+   --  Each R line for a No_Dependency Restriction generates an entry in
+   --  this No_Dependency table.
+
+   type No_Dep_Record is record
+      ALI_File : ALI_Id;
+      --  ALI File containing the entry
+
+      No_Dep_Unit : Name_Id;
+      --  Id for names table entry including entire name, including periods
+   end record;
+
+   package No_Deps is new Table.Table (
+     Table_Component_Type => No_Dep_Record,
+     Table_Index_Type     => Integer,
+     Table_Low_Bound      => 0,
+     Table_Initial        => 200,
+     Table_Increment      => 400,
+     Table_Name           => "No_Deps");
+
    ------------------------------------
    -- Sdep (Source Dependency) Table --
    ------------------------------------
@@ -598,8 +672,10 @@ package ALI is
    No_Sdep_Id : constant Sdep_Id := Sdep_Id'First;
    --  Special value indicating no Sdep table entry
 
-   First_Sdep_Entry : constant Sdep_Id := No_Sdep_Id + 1;
-   --  Id of first actual entry in table
+   First_Sdep_Entry : Sdep_Id := No_Sdep_Id + 1;
+   --  Id of first Sdep entry for current ali file. This is initialized to
+   --  the first Sdep entry in the table, and then incremented appropriately
+   --  as successive ALI files are scanned.
 
    type Sdep_Record is record
 
@@ -711,6 +787,16 @@ package ALI is
       Entity : Name_Id;
       --  Name of entity
 
+      Iref_File_Num : Sdep_Id;
+      --  This field is set to the dependency reference for the file containing
+      --  the generic entity that this one instantiates, or to No_Sdep_Id if
+      --  the current entity is not an instantiation
+
+      Iref_Line : Nat;
+      --  This field is set to the line number in Iref_File_Num of the generic
+      --  entity that this one instantiates, or to zero if the current entity
+      --  is not an instantiation.
+
       Rref_Line : Nat;
       --  This field is set to the line number of a renaming reference if
       --  one is present, or to zero if no renaming reference is present
@@ -751,6 +837,16 @@ package ALI is
       --  package Standard. If there is a typeref that references an
       --  entity in package Standard, then this field is a Name_Id
       --  reference for the entity name.
+
+      Oref_File_Num : Sdep_Id;
+      --  This field is set to No_Sdep_Id is the entity doesn't override any
+      --  other entity, or to the dependency reference for the overriden
+      --  entity.
+
+      Oref_Line : Nat;
+      Oref_Col  : Nat;
+      --  These two fields are set to the line and column of the overriden
+      --  entity.
 
       First_Xref : Nat;
       --  Index into Xref table of first cross-reference
@@ -795,6 +891,11 @@ package ALI is
 
       --  Note: for instantiation references, Rtype is set to ' ', and Col is
       --  set to zero. One or more such entries can follow any other reference.
+      --  When there is more than one such entry, this is to be read as:
+      --     e.g. ref1  ref2  ref3
+      --     ref1 is a reference to an entity that was instantied at ref2.
+      --     ref2 itself is also the result of an instantiation, that took
+      --     place at ref3
    end record;
 
    package Xref is new Table.Table (
@@ -810,25 +911,26 @@ package ALI is
    --------------------------------------
 
    procedure Initialize_ALI;
-   --  Initialize the ALI tables. Also resets all switch values to defaults.
+   --  Initialize the ALI tables. Also resets all switch values to defaults
 
    function Scan_ALI
-     (F            : File_Name_Type;
-      T            : Text_Buffer_Ptr;
-      Ignore_ED    : Boolean;
-      Err          : Boolean;
-      Read_Xref    : Boolean := False;
-      Read_Lines   : String := "";
-      Ignore_Lines : String := "X")
-      return         ALI_Id;
+     (F             : File_Name_Type;
+      T             : Text_Buffer_Ptr;
+      Ignore_ED     : Boolean;
+      Err           : Boolean;
+      Read_Xref     : Boolean := False;
+      Read_Lines    : String  := "";
+      Ignore_Lines  : String  := "X";
+      Ignore_Errors : Boolean := False) return ALI_Id;
    --  Given the text, T, of an ALI file, F, scan and store the information
    --  from the file, and return the Id of the resulting entry in the ALI
    --  table. Switch settings may be modified as described above in the
    --  switch description settings.
    --
    --    Ignore_ED is normally False. If set to True, it indicates that
-   --    all ED (elaboration desirable) indications in the ALI file are
-   --    to be ignored.
+   --    all AD/ED (elaboration desirable) indications in the ALI file are
+   --    to be ignored. This parameter is obsolete now that the -f switch
+   --    is removed from gnatbind, and should be removed ???
    --
    --    Err determines the action taken on an incorrectly formatted file.
    --    If Err is False, then an error message is output, and the program
@@ -860,5 +962,12 @@ package ALI is
    --    Ignore_Lines and Read_Lines parameters are ignored (i.e. the
    --    use of True for Read_XREF is equivalent to specifying an
    --    argument of "UWDX" for Read_Lines.
+   --
+   --    Ignore_Errors is normally False. If it is set True, then Scan_ALI
+   --    will do its best to scan through a file and extract all information
+   --    it can, even if there are errors. In this case Err is only set if
+   --    Scan_ALI was completely unable to process the file (e.g. it did not
+   --    look like an ALI file at all). Ignore_Errors is intended to improve
+   --    the downward compatibility of new compilers with old tools.
 
 end ALI;

@@ -6,7 +6,7 @@
 --                                                                          --
 --                                 B o d y                                  --
 --                                                                          --
---          Copyright (C) 1992-2003 Free Software Foundation, Inc.          --
+--          Copyright (C) 1992-2006, Free Software Foundation, Inc.         --
 --                                                                          --
 -- GNAT is free software;  you can  redistribute it  and/or modify it under --
 -- terms of the  GNU General Public License as published  by the Free Soft- --
@@ -16,8 +16,8 @@
 -- or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License --
 -- for  more details.  You should have  received  a copy of the GNU General --
 -- Public License  distributed with GNAT;  see file COPYING.  If not, write --
--- to  the Free Software Foundation,  59 Temple Place - Suite 330,  Boston, --
--- MA 02111-1307, USA.                                                      --
+-- to  the  Free Software Foundation,  51  Franklin  Street,  Fifth  Floor, --
+-- Boston, MA 02110-1301, USA.                                              --
 --                                                                          --
 -- GNAT was originally developed  by the GNAT team at  New York University. --
 -- Extensive contributions were provided by Ada Core Technologies Inc.      --
@@ -41,6 +41,8 @@ with Widechar; use Widechar;
 with System.CRC32;
 with System.WCh_Con; use System.WCh_Con;
 
+with GNAT.UTF_32; use GNAT.UTF_32;
+
 package body Scng is
 
    use ASCII;
@@ -58,6 +60,9 @@ package body Scng is
    -----------------------
    -- Local Subprograms --
    -----------------------
+
+   procedure Accumulate_Token_Checksum;
+   pragma Inline (Accumulate_Token_Checksum);
 
    procedure Accumulate_Checksum (C : Character);
    pragma Inline (Accumulate_Checksum);
@@ -92,9 +97,27 @@ package body Scng is
 
    procedure Accumulate_Checksum (C : Char_Code) is
    begin
-      Accumulate_Checksum (Character'Val (C / 256));
+      if C > 16#FFFF# then
+         Accumulate_Checksum (Character'Val (C / 2 ** 24));
+         Accumulate_Checksum (Character'Val ((C / 2 ** 16) mod 256));
+         Accumulate_Checksum (Character'Val ((C / 256) mod 256));
+      else
+         Accumulate_Checksum (Character'Val (C / 256));
+      end if;
+
       Accumulate_Checksum (Character'Val (C mod 256));
    end Accumulate_Checksum;
+
+   -------------------------------
+   -- Accumulate_Token_Checksum --
+   -------------------------------
+
+   procedure Accumulate_Token_Checksum is
+   begin
+      System.CRC32.Update
+        (System.CRC32.CRC32 (Checksum),
+         Character'Val (Token_Type'Pos (Token)));
+   end Accumulate_Token_Checksum;
 
    ----------------------------
    -- Determine_Token_Casing --
@@ -118,90 +141,16 @@ package body Scng is
    -- Initialize_Scanner --
    ------------------------
 
-   procedure Initialize_Scanner
-     (Unit  : Unit_Number_Type;
-      Index : Source_File_Index)
-   is
+   procedure Initialize_Scanner (Index : Source_File_Index) is
    begin
-      --  Set up Token_Type values in Names Table entries for reserved keywords
-      --  We use the Pos value of the Token_Type value. Note we are relying on
-      --  the fact that Token_Type'Val (0) is not a reserved word!
+      --  Establish reserved words
 
-      Set_Name_Table_Byte (Name_Abort,      Token_Type'Pos (Tok_Abort));
-      Set_Name_Table_Byte (Name_Abs,        Token_Type'Pos (Tok_Abs));
-      Set_Name_Table_Byte (Name_Abstract,   Token_Type'Pos (Tok_Abstract));
-      Set_Name_Table_Byte (Name_Accept,     Token_Type'Pos (Tok_Accept));
-      Set_Name_Table_Byte (Name_Access,     Token_Type'Pos (Tok_Access));
-      Set_Name_Table_Byte (Name_And,        Token_Type'Pos (Tok_And));
-      Set_Name_Table_Byte (Name_Aliased,    Token_Type'Pos (Tok_Aliased));
-      Set_Name_Table_Byte (Name_All,        Token_Type'Pos (Tok_All));
-      Set_Name_Table_Byte (Name_Array,      Token_Type'Pos (Tok_Array));
-      Set_Name_Table_Byte (Name_At,         Token_Type'Pos (Tok_At));
-      Set_Name_Table_Byte (Name_Begin,      Token_Type'Pos (Tok_Begin));
-      Set_Name_Table_Byte (Name_Body,       Token_Type'Pos (Tok_Body));
-      Set_Name_Table_Byte (Name_Case,       Token_Type'Pos (Tok_Case));
-      Set_Name_Table_Byte (Name_Constant,   Token_Type'Pos (Tok_Constant));
-      Set_Name_Table_Byte (Name_Declare,    Token_Type'Pos (Tok_Declare));
-      Set_Name_Table_Byte (Name_Delay,      Token_Type'Pos (Tok_Delay));
-      Set_Name_Table_Byte (Name_Delta,      Token_Type'Pos (Tok_Delta));
-      Set_Name_Table_Byte (Name_Digits,     Token_Type'Pos (Tok_Digits));
-      Set_Name_Table_Byte (Name_Do,         Token_Type'Pos (Tok_Do));
-      Set_Name_Table_Byte (Name_Else,       Token_Type'Pos (Tok_Else));
-      Set_Name_Table_Byte (Name_Elsif,      Token_Type'Pos (Tok_Elsif));
-      Set_Name_Table_Byte (Name_End,        Token_Type'Pos (Tok_End));
-      Set_Name_Table_Byte (Name_Entry,      Token_Type'Pos (Tok_Entry));
-      Set_Name_Table_Byte (Name_Exception,  Token_Type'Pos (Tok_Exception));
-      Set_Name_Table_Byte (Name_Exit,       Token_Type'Pos (Tok_Exit));
-      Set_Name_Table_Byte (Name_For,        Token_Type'Pos (Tok_For));
-      Set_Name_Table_Byte (Name_Function,   Token_Type'Pos (Tok_Function));
-      Set_Name_Table_Byte (Name_Generic,    Token_Type'Pos (Tok_Generic));
-      Set_Name_Table_Byte (Name_Goto,       Token_Type'Pos (Tok_Goto));
-      Set_Name_Table_Byte (Name_If,         Token_Type'Pos (Tok_If));
-      Set_Name_Table_Byte (Name_In,         Token_Type'Pos (Tok_In));
-      Set_Name_Table_Byte (Name_Is,         Token_Type'Pos (Tok_Is));
-      Set_Name_Table_Byte (Name_Limited,    Token_Type'Pos (Tok_Limited));
-      Set_Name_Table_Byte (Name_Loop,       Token_Type'Pos (Tok_Loop));
-      Set_Name_Table_Byte (Name_Mod,        Token_Type'Pos (Tok_Mod));
-      Set_Name_Table_Byte (Name_New,        Token_Type'Pos (Tok_New));
-      Set_Name_Table_Byte (Name_Not,        Token_Type'Pos (Tok_Not));
-      Set_Name_Table_Byte (Name_Null,       Token_Type'Pos (Tok_Null));
-      Set_Name_Table_Byte (Name_Of,         Token_Type'Pos (Tok_Of));
-      Set_Name_Table_Byte (Name_Or,         Token_Type'Pos (Tok_Or));
-      Set_Name_Table_Byte (Name_Others,     Token_Type'Pos (Tok_Others));
-      Set_Name_Table_Byte (Name_Out,        Token_Type'Pos (Tok_Out));
-      Set_Name_Table_Byte (Name_Package,    Token_Type'Pos (Tok_Package));
-      Set_Name_Table_Byte (Name_Pragma,     Token_Type'Pos (Tok_Pragma));
-      Set_Name_Table_Byte (Name_Private,    Token_Type'Pos (Tok_Private));
-      Set_Name_Table_Byte (Name_Procedure,  Token_Type'Pos (Tok_Procedure));
-      Set_Name_Table_Byte (Name_Protected,  Token_Type'Pos (Tok_Protected));
-      Set_Name_Table_Byte (Name_Raise,      Token_Type'Pos (Tok_Raise));
-      Set_Name_Table_Byte (Name_Range,      Token_Type'Pos (Tok_Range));
-      Set_Name_Table_Byte (Name_Record,     Token_Type'Pos (Tok_Record));
-      Set_Name_Table_Byte (Name_Rem,        Token_Type'Pos (Tok_Rem));
-      Set_Name_Table_Byte (Name_Renames,    Token_Type'Pos (Tok_Renames));
-      Set_Name_Table_Byte (Name_Requeue,    Token_Type'Pos (Tok_Requeue));
-      Set_Name_Table_Byte (Name_Return,     Token_Type'Pos (Tok_Return));
-      Set_Name_Table_Byte (Name_Reverse,    Token_Type'Pos (Tok_Reverse));
-      Set_Name_Table_Byte (Name_Select,     Token_Type'Pos (Tok_Select));
-      Set_Name_Table_Byte (Name_Separate,   Token_Type'Pos (Tok_Separate));
-      Set_Name_Table_Byte (Name_Subtype,    Token_Type'Pos (Tok_Subtype));
-      Set_Name_Table_Byte (Name_Tagged,     Token_Type'Pos (Tok_Tagged));
-      Set_Name_Table_Byte (Name_Task,       Token_Type'Pos (Tok_Task));
-      Set_Name_Table_Byte (Name_Terminate,  Token_Type'Pos (Tok_Terminate));
-      Set_Name_Table_Byte (Name_Then,       Token_Type'Pos (Tok_Then));
-      Set_Name_Table_Byte (Name_Type,       Token_Type'Pos (Tok_Type));
-      Set_Name_Table_Byte (Name_Until,      Token_Type'Pos (Tok_Until));
-      Set_Name_Table_Byte (Name_Use,        Token_Type'Pos (Tok_Use));
-      Set_Name_Table_Byte (Name_When,       Token_Type'Pos (Tok_When));
-      Set_Name_Table_Byte (Name_While,      Token_Type'Pos (Tok_While));
-      Set_Name_Table_Byte (Name_With,       Token_Type'Pos (Tok_With));
-      Set_Name_Table_Byte (Name_Xor,        Token_Type'Pos (Tok_Xor));
+      Scans.Initialize_Ada_Keywords;
 
       --  Initialize scan control variables
 
       Current_Source_File       := Index;
       Source                    := Source_Text (Current_Source_File);
-      Current_Source_Unit       := Unit;
       Scan_Ptr                  := Source_First (Current_Source_File);
       Token                     := No_Token;
       Token_Ptr                 := Scan_Ptr;
@@ -212,8 +161,9 @@ package body Scng is
       First_Non_Blank_Location  := Scan_Ptr;
 
       Initialize_Checksum;
+      Wide_Char_Byte_Count := 0;
 
-      --  Do not call Scan, otherwise the License stuff does not work in Scn.
+      --  Do not call Scan, otherwise the License stuff does not work in Scn
 
    end Initialize_Scanner;
 
@@ -233,10 +183,22 @@ package body Scng is
    procedure Scan is
 
       Start_Of_Comment : Source_Ptr;
+      --  Record start of comment position
+
+      Underline_Found : Boolean;
+      --  During scanning of an identifier, set to True if last character
+      --  scanned was an underline or other punctuation character. This
+      --  is used to flag the error of two underlines/punctuations in a
+      --  row or ending an identifier with a underline/punctuation. Here
+      --  punctuation means any UTF_32 character in the Unicode category
+      --  Punctuation,Connector.
+
+      Wptr : Source_Ptr;
+      --  Used to remember start of last wide character scanned
 
       procedure Check_End_Of_Line;
-      --  Called when end of line encountered. Checks that line is not
-      --  too long, and that other style checks for the end of line are met.
+      --  Called when end of line encountered. Checks that line is not too
+      --  long, and that other style checks for the end of line are met.
 
       function Double_Char_Token (C : Character) return Boolean;
       --  This function is used for double character tokens like := or <>. It
@@ -249,8 +211,8 @@ package body Scng is
       --  since we do not want a junk message for a case like &-space-&).
 
       procedure Error_Illegal_Character;
-      --  Give illegal character error, Scan_Ptr points to character.
-      --  On return, Scan_Ptr is bumped past the illegal character.
+      --  Give illegal character error, Scan_Ptr points to character. On
+      --  return, Scan_Ptr is bumped past the illegal character.
 
       procedure Error_Illegal_Wide_Character;
       --  Give illegal wide character message. On return, Scan_Ptr is bumped
@@ -261,7 +223,8 @@ package body Scng is
       --  Signal error of excessively long line
 
       procedure Error_No_Double_Underline;
-      --  Signal error of double underline character
+      --  Signal error of two underline or punctuation characters in a row.
+      --  Called with Scan_Ptr pointing to second underline/punctuation char.
 
       procedure Nlit;
       --  This is the procedure for scanning out numeric literals. On entry,
@@ -282,15 +245,31 @@ package body Scng is
       -----------------------
 
       procedure Check_End_Of_Line is
-         Len : constant Int := Int (Scan_Ptr) - Int (Current_Line_Start);
+         Len : constant Int :=
+                 Int (Scan_Ptr) -
+                 Int (Current_Line_Start) -
+                 Wide_Char_Byte_Count;
 
       begin
-         if Style_Check and Style_Check_Max_Line_Length then
+         if Style_Check then
             Style.Check_Line_Terminator (Len);
+         end if;
 
-         elsif Len > Hostparm.Max_Line_Length then
+         --  Deal with checking maximum line length
+
+         if Style_Check and Style_Check_Max_Line_Length then
+            Style.Check_Line_Max_Length (Len);
+
+         --  If style checking is inactive, check maximum line length against
+         --  standard value.
+
+         elsif Len > Max_Line_Length then
             Error_Long_Line;
          end if;
+
+         --  Reset wide character byte count for next line
+
+         Wide_Char_Byte_Count := 0;
       end Check_End_Of_Line;
 
       -----------------------
@@ -333,16 +312,7 @@ package body Scng is
 
       procedure Error_Illegal_Wide_Character is
       begin
-         if OpenVMS then
-            Error_Msg_S
-              ("illegal wide character, check " &
-                 "'/'W'I'D'E'_'C'H'A'R'A'C'T'E'R'_'E'N'C'O'D'I'N'G qualifier");
-         else
-            Error_Msg_S
-              ("illegal wide character, check -gnatW switch");
-         end if;
-
-         Scan_Ptr := Scan_Ptr + 1;
+         Error_Msg ("illegal wide character", Wptr);
       end Error_Illegal_Wide_Character;
 
       ---------------------
@@ -353,7 +323,7 @@ package body Scng is
       begin
          Error_Msg
            ("this line is too long",
-            Current_Line_Start + Hostparm.Max_Line_Length);
+            Current_Line_Start + Source_Ptr (Max_Line_Length));
       end Error_Long_Line;
 
       -------------------------------
@@ -362,7 +332,28 @@ package body Scng is
 
       procedure Error_No_Double_Underline is
       begin
-         Error_Msg_S ("two consecutive underlines not permitted");
+         Underline_Found := False;
+
+         --  There are four cases, and we special case the messages
+
+         if Source (Scan_Ptr) = '_' then
+            if Source (Scan_Ptr - 1) = '_' then
+               Error_Msg_S
+                 ("two consecutive underlines not permitted");
+            else
+               Error_Msg_S
+                 ("underline cannot follow punctuation character");
+            end if;
+
+         else
+            if Source (Scan_Ptr - 1) = '_' then
+               Error_Msg_S
+                 ("punctuation character cannot follow underline");
+            else
+               Error_Msg_S
+                 ("two consecutive punctuation characters not permitted");
+            end if;
+         end if;
       end Error_No_Double_Underline;
 
       ----------
@@ -413,12 +404,13 @@ package body Scng is
          --  which the digit was expected on input, and is unchanged on return.
 
          procedure Scan_Integer;
-         --  Procedure to scan integer literal. On entry, Scan_Ptr points to
-         --  a digit, on exit Scan_Ptr points past the last character of
-         --  the integer.
-         --  For each digit encountered, UI_Int_Value is multiplied by 10,
-         --  and the value of the digit added to the result. In addition,
-         --  the value in Scale is decremented by one for each actual digit
+         --  Procedure to scan integer literal. On entry, Scan_Ptr points to a
+         --  digit, on exit Scan_Ptr points past the last character of the
+         --  integer.
+         --
+         --  For each digit encountered, UI_Int_Value is multiplied by 10, and
+         --  the value of the digit added to the result. In addition, the
+         --  value in Scale is decremented by one for each actual digit
          --  scanned.
 
          --------------------------
@@ -430,9 +422,9 @@ package body Scng is
             Error_Msg_S ("digit expected");
          end Error_Digit_Expected;
 
-         -------------------
-         --  Scan_Integer --
-         -------------------
+         ------------------
+         -- Scan_Integer --
+         ------------------
 
          procedure Scan_Integer is
             C : Character;
@@ -451,8 +443,13 @@ package body Scng is
                Scale := Scale - 1;
                C := Source (Scan_Ptr);
 
+               --  Case of underline encountered
+
                if C = '_' then
-                  Accumulate_Checksum ('_');
+
+                  --  We do not accumulate the '_' in the checksum, so that
+                  --  1_234 is equivalent to 1234, and does not trigger
+                  --  compilation for "minimal recompilation" (gnatmake -m).
 
                   loop
                      Scan_Ptr := Scan_Ptr + 1;
@@ -470,12 +467,9 @@ package body Scng is
                   exit when C not in '0' .. '9';
                end if;
             end loop;
-
          end Scan_Integer;
 
-         ----------------------------------
-         -- Start of Processing for Nlit --
-         ----------------------------------
+      --  Start of Processing for Nlit
 
       begin
          Base := 10;
@@ -487,8 +481,8 @@ package body Scng is
          Point_Scanned := False;
          UI_Num_Value := UI_Int_Value;
 
-         --  Various possibilities now for continuing the literal are
-         --  period, E/e (for exponent), or :/# (for based literal).
+         --  Various possibilities now for continuing the literal are period,
+         --  E/e (for exponent), or :/# (for based literal).
 
          Scale := 0;
          C := Source (Scan_Ptr);
@@ -518,11 +512,11 @@ package body Scng is
                end if;
             end loop;
 
-            --  Based literal case. The base is the value we already scanned.
-            --  In the case of colon, we insist that the following character
-            --  is indeed an extended digit or a period. This catches a number
-            --  of common errors, as well as catching the well known tricky
-            --  bug otherwise arising from "x : integer range 1 .. 10:= 6;"
+         --  Based literal case. The base is the value we already scanned.
+         --  In the case of colon, we insist that the following character
+         --  is indeed an extended digit or a period. This catches a number
+         --  of common errors, as well as catching the well known tricky
+         --  bug otherwise arising from "x : integer range 1 .. 10:= 6;"
 
          elsif C = '#'
            or else (C = ':' and then
@@ -534,11 +528,15 @@ package body Scng is
                          or else
                        Source (Scan_Ptr + 1) in 'a' .. 'z'))
          then
-            if C = ':' and then Warn_On_Obsolescent_Feature then
-               Error_Msg_S
-                 ("use of "":"" is an obsolescent feature ('R'M 'J.2(3))?");
-               Error_Msg_S
-                 ("\use ""'#"" instead?");
+            if C = ':' then
+               Obsolescent_Check (Scan_Ptr);
+
+               if Warn_On_Obsolescent_Feature then
+                  Error_Msg_S
+                    ("use of "":"" is an obsolescent feature ('R'M 'J.2(3))?");
+                  Error_Msg_S
+                    ("\use ""'#"" instead?");
+               end if;
             end if;
 
             Accumulate_Checksum (C);
@@ -691,7 +689,7 @@ package body Scng is
                                   Den   => -UI_Scale,
                                   Rbase => Base);
 
-            --  Case of integer literal to be returned
+         --  Case of integer literal to be returned
 
          else
             Token := Tok_Integer_Literal;
@@ -699,9 +697,9 @@ package body Scng is
             if UI_Scale = 0 then
                Int_Literal_Value := UI_Num_Value;
 
-               --  Avoid doing possibly expensive calculations in cases like
-               --  parsing 163E800_000# when semantics will not be done anyway.
-               --  This is especially useful when parsing garbled input.
+            --  Avoid doing possibly expensive calculations in cases like
+            --  parsing 163E800_000# when semantics will not be done anyway.
+            --  This is especially useful when parsing garbled input.
 
             elsif Operating_Mode /= Check_Syntax
               and then (Serious_Errors_Detected = 0 or else Try_Semantics)
@@ -710,13 +708,12 @@ package body Scng is
 
             else
                Int_Literal_Value := No_Uint;
-
             end if;
-
          end if;
 
-         return;
+         Accumulate_Token_Checksum;
 
+         return;
       end Nlit;
 
       ----------
@@ -739,8 +736,8 @@ package body Scng is
 
          procedure Error_Bad_String_Char;
          --  Signal bad character in string/character literal. On entry
-         --  Scan_Ptr points to the improper character encountered during
-         --  the scan. Scan_Ptr is not modified, so it still points to the bad
+         --  Scan_Ptr points to the improper character encountered during the
+         --  scan. Scan_Ptr is not modified, so it still points to the bad
          --  character on return.
 
          procedure Error_Unterminated_String;
@@ -750,11 +747,11 @@ package body Scng is
 
          procedure Set_String;
          --  Procedure used to distinguish between string and operator symbol.
-         --  On entry the string has been scanned out, and its characters start
-         --  at Token_Ptr and end one character before Scan_Ptr. On exit Token
-         --  is set to Tok_String_Literal or Tok_Operator_Symbol as
-         --  appropriate, and Token_Node is appropriately initialized.
-         --  In addition, in the operator symbol case, Token_Name is
+         --  On entry the string has been scanned out, and its characters
+         --  start at Token_Ptr and end one character before Scan_Ptr. On exit
+         --  Token is set to Tok_String_Literal or Tok_Operator_Symbol as
+         --  appropriate, and Token_Node is appropriately initialized. In
+         --  addition, in the operator symbol case, Token_Name is
          --  appropriately set.
 
          ---------------------------
@@ -958,9 +955,9 @@ package body Scng is
 
             end if;
 
-            --  If it is an operator symbol, then Token_Name is set.
-            --  If it is some other string value, then Token_Name still
-            --  contains Error_Name.
+            --  If it is an operator symbol, then Token_Name is set. If it is
+            --  some other string value, then Token_Name still contains
+            --  Error_Name.
 
             if Token_Name = Error_Name then
                Token := Tok_String_Literal;
@@ -968,18 +965,15 @@ package body Scng is
             else
                Token := Tok_Operator_Symbol;
             end if;
-
          end Set_String;
 
-         ----------
-         -- Slit --
-         ----------
+      --  Start of processing for Slit
 
       begin
          --  On entry, Scan_Ptr points to the opening character of the string
-         --  which is either a percent, double quote, or apostrophe
-         --  (single quote). The latter case is an error detected by
-         --  the character literal circuit.
+         --  which is either a percent, double quote, or apostrophe (single
+         --  quote). The latter case is an error detected by the character
+         --  literal circuit.
 
          Delimiter := Source (Scan_Ptr);
          Accumulate_Checksum (Delimiter);
@@ -1007,26 +1001,34 @@ package body Scng is
                   Scan_Ptr := Scan_Ptr + 1;
 
                elsif (C = ESC
-                        and then
-                        Wide_Character_Encoding_Method
-                                             in WC_ESC_Encoding_Method)
-                 or else
-                 (C in Upper_Half_Character
-                    and then
-                    Upper_Half_Encoding)
-                 or else
-                 (C = '['
-                    and then
-                    Source (Scan_Ptr + 1) = '"'
-                    and then
-                    Identifier_Char (Source (Scan_Ptr + 2)))
+                        and then Wide_Character_Encoding_Method
+                                   in WC_ESC_Encoding_Method)
+                 or else (C in Upper_Half_Character
+                            and then Upper_Half_Encoding)
+                 or else (C = '['
+                            and then Source (Scan_Ptr + 1) = '"'
+                            and then Identifier_Char (Source (Scan_Ptr + 2)))
                then
+                  Wptr := Scan_Ptr;
                   Scan_Wide (Source, Scan_Ptr, Code, Err);
-                  Accumulate_Checksum (Code);
 
                   if Err then
                      Error_Illegal_Wide_Character;
                      Code := Get_Char_Code (' ');
+                  end if;
+
+                  Accumulate_Checksum (Code);
+
+                  --  In Ada 95 mode we allow any wide characters in a string
+                  --  but in Ada 2005, the set of characters allowed has been
+                  --  restricted to graphic characters.
+
+                  if Ada_Version >= Ada_05
+                    and then Is_UTF_32_Non_Graphic (UTF_32 (Code))
+                  then
+                     Error_Msg
+                       ("(Ada 2005) non-graphic character not permitted " &
+                        "in string literal", Wptr);
                   end if;
 
                else
@@ -1038,7 +1040,7 @@ package body Scng is
                         exit;
 
                      elsif C in Upper_Half_Character then
-                        if Ada_83 then
+                        if Ada_Version = Ada_83 then
                            Error_Bad_String_Char;
                         end if;
 
@@ -1062,10 +1064,9 @@ package body Scng is
          String_Literal_Id := End_String;
          Set_String;
          return;
-
       end Slit;
 
-   --  Start of body of Scan
+   --  Start of processing for Scan
 
    begin
       Prev_Token := Token;
@@ -1077,11 +1078,12 @@ package body Scng is
       --  encountered and skipped, or some error situation, such as an
       --  illegal character, is encountered.
 
+      <<Scan_Next_Character>>
+
       loop
          --  Skip past blanks, loop is opened up for speed
 
          while Source (Scan_Ptr) = ' ' loop
-
             if Source (Scan_Ptr + 1) /= ' ' then
                Scan_Ptr := Scan_Ptr + 1;
                exit;
@@ -1125,50 +1127,15 @@ package body Scng is
 
          Token_Ptr := Scan_Ptr;
 
-         --  Here begins the main case statement which transfers control on
-         --  the basis of the non-blank character we have encountered.
+         --  Here begins the main case statement which transfers control on the
+         --  basis of the non-blank character we have encountered.
 
          case Source (Scan_Ptr) is
 
          --  Line terminator characters
 
-         when CR | LF | FF | VT => Line_Terminator_Case : begin
-
-            --  Check line too long
-
-            Check_End_Of_Line;
-
-            --  Set Token_Ptr, if End_Of_Line is a token, for the case when
-            --  it is a physical line.
-
-            if End_Of_Line_Is_Token then
-               Token_Ptr := Scan_Ptr;
-            end if;
-
-            declare
-               Physical : Boolean;
-
-            begin
-               Skip_Line_Terminators (Scan_Ptr, Physical);
-
-               --  If we are at start of physical line, update scan pointers
-               --  to reflect the start of the new line.
-
-               if Physical then
-                  Current_Line_Start       := Scan_Ptr;
-                  Start_Column             := Set_Start_Column;
-                  First_Non_Blank_Location := Scan_Ptr;
-
-                  --  If End_Of_Line is a token, we return it as it is
-                  --  a physical line.
-
-                  if End_Of_Line_Is_Token then
-                     Token := Tok_End_Of_Line;
-                     return;
-                  end if;
-               end if;
-            end;
-         end Line_Terminator_Case;
+         when CR | LF | FF | VT =>
+            goto Scan_Line_Terminator;
 
          --  Horizontal tab, just skip past it
 
@@ -1176,15 +1143,15 @@ package body Scng is
             if Style_Check then Style.Check_HT; end if;
             Scan_Ptr := Scan_Ptr + 1;
 
-         --  End of file character, treated as an end of file only if it
-         --  is the last character in the buffer, otherwise it is ignored.
+         --  End of file character, treated as an end of file only if it is
+         --  the last character in the buffer, otherwise it is ignored.
 
          when EOF =>
             if Scan_Ptr = Source_Last (Current_Source_File) then
                Check_End_Of_Line;
+               if Style_Check then Style.Check_EOF; end if;
                Token := Tok_EOF;
                return;
-
             else
                Scan_Ptr := Scan_Ptr + 1;
             end if;
@@ -1206,8 +1173,8 @@ package body Scng is
                return;
             end if;
 
-         --  Asterisk (can be multiplication operator or double asterisk
-         --  which is the exponentiation compound delimiter).
+         --  Asterisk (can be multiplication operator or double asterisk which
+         --  is the exponentiation compound delimiter).
 
          when '*' =>
             Accumulate_Checksum ('*');
@@ -1263,8 +1230,7 @@ package body Scng is
 
          when '[' =>
             if Source (Scan_Ptr + 1) = '"' then
-               Name_Len := 0;
-               goto Scan_Identifier;
+               goto Scan_Wide_Character;
 
             else
                Error_Msg_S ("illegal character, replaced by ""(""");
@@ -1290,9 +1256,9 @@ package body Scng is
             if Style_Check then Style.Check_Comma; end if;
             return;
 
-         --  Dot, which is either an isolated period, or part of a double
-         --  dot compound delimiter sequence. We also check for the case of
-         --  a digit following the period, to give a better error message.
+         --  Dot, which is either an isolated period, or part of a double dot
+         --  compound delimiter sequence. We also check for the case of a
+         --  digit following the period, to give a better error message.
 
          when '.' =>
             Accumulate_Checksum ('.');
@@ -1399,6 +1365,17 @@ package body Scng is
             else -- Source (Scan_Ptr + 1) = '-' then
                if Style_Check then Style.Check_Comment; end if;
                Scan_Ptr := Scan_Ptr + 2;
+
+               --  If we are in preprocessor mode with Replace_In_Comments set,
+               --  then we return the "--" as a token on its own.
+
+               if Replace_In_Comments then
+                  Token := Tok_Comment;
+                  return;
+               end if;
+
+               --  Otherwise scan out the comment
+
                Start_Of_Comment := Scan_Ptr;
 
                --  Loop to scan comment (this loop runs more than once only if
@@ -1406,6 +1383,15 @@ package body Scng is
 
                loop
                   --  Scan to non graphic character (opened up for speed)
+
+                  --  Note that we just eat left brackets, which means that
+                  --  bracket notation cannot be used for end of line
+                  --  characters in comments. This seems a reasonable choice,
+                  --  since no one would ever use brackets notation in a real
+                  --  program in this situation, and if we allow brackets
+                  --  notation, we forbid some valid comments which contain a
+                  --  brackets sequence that happens to match an end of line
+                  --  character.
 
                   loop
                      exit when Source (Scan_Ptr) not in Graphic_Character;
@@ -1437,13 +1423,44 @@ package body Scng is
                   elsif Source (Scan_Ptr) = EOF then
                      exit;
 
+                  --  If we have a wide character, we have to scan it out,
+                  --  because it might be a legitimate line terminator
+
+                  elsif (Source (Scan_Ptr) = ESC
+                           and then Identifier_Char (ESC))
+                    or else
+                         (Source (Scan_Ptr) in Upper_Half_Character
+                            and then Upper_Half_Encoding)
+                  then
+                     declare
+                        Wptr : constant Source_Ptr := Scan_Ptr;
+                        Code : Char_Code;
+                        Err  : Boolean;
+
+                     begin
+                        Scan_Wide (Source, Scan_Ptr, Code, Err);
+
+                        --  If not well formed wide character, then just skip
+                        --  past it and ignore it.
+
+                        if Err then
+                           Scan_Ptr := Wptr + 1;
+
+                        --  If UTF_32 terminator, terminate comment scan
+
+                        elsif Is_UTF_32_Line_Terminator (UTF_32 (Code)) then
+                           Scan_Ptr := Wptr;
+                           exit;
+                        end if;
+                     end;
+
                   --  Keep going if character in 80-FF range, or is ESC. These
                   --  characters are allowed in comments by RM-2.1(1), 2.7(2).
                   --  They are allowed even in Ada 83 mode according to the
                   --  approved AI. ESC was added to the AI in June 93.
 
                   elsif Source (Scan_Ptr) in Upper_Half_Character
-                    or else Source (Scan_Ptr) = ESC
+                     or else Source (Scan_Ptr) = ESC
                   then
                      Scan_Ptr := Scan_Ptr + 1;
 
@@ -1452,7 +1469,6 @@ package body Scng is
                   else
                      Error_Illegal_Character;
                   end if;
-
                end loop;
 
                --  Note that, except when comments are tokens, we do NOT
@@ -1480,6 +1496,8 @@ package body Scng is
          --  Percent starting a string literal
 
          when '%' =>
+            Obsolescent_Check (Token_Ptr);
+
             if Warn_On_Obsolescent_Feature then
                Error_Msg_S
                  ("use of ""'%"" is an obsolescent feature ('R'M 'J.2(4))?");
@@ -1513,10 +1531,10 @@ package body Scng is
             --  Here is where we make the test to distinguish the cases. Treat
             --  as apostrophe if previous token is an identifier, right paren
             --  or the reserved word "all" (latter case as in A.all'Address)
-            --  (or the reserved word "project" in project files).
-            --  Also treat it as apostrophe after a literal (this catches
-            --  some legitimate cases, like A."abs"'Address, and also gives
-            --  better error behavior for impossible cases like 123'xxx).
+            --  (or the reserved word "project" in project files). Also treat
+            --  it as apostrophe after a literal (this catches some legitimate
+            --  cases, like A."abs"'Address, and also gives better error
+            --  behavior for impossible cases like 123'xxx).
 
             if Prev_Token = Tok_Identifier
                or else Prev_Token = Tok_Right_Paren
@@ -1531,7 +1549,7 @@ package body Scng is
             --  Otherwise the apostrophe starts a character literal
 
             else
-               --  Case of wide character literal with ESC or [ encoding
+               --  Case of wide character literal
 
                if (Source (Scan_Ptr) = ESC
                      and then
@@ -1545,11 +1563,24 @@ package body Scng is
                      and then
                     Source (Scan_Ptr + 1) = '"')
                then
+                  Wptr := Scan_Ptr;
                   Scan_Wide (Source, Scan_Ptr, Code, Err);
                   Accumulate_Checksum (Code);
 
                   if Err then
                      Error_Illegal_Wide_Character;
+                        Code := Character'Pos (' ');
+
+                  --  In Ada 95 mode we allow any wide character in a character
+                  --  literal, but in Ada 2005, the set of characters allowed
+                  --  is restricted to graphic characters.
+
+                  elsif Ada_Version >= Ada_05
+                    and then Is_UTF_32_Non_Graphic (UTF_32 (Code))
+                  then
+                     Error_Msg
+                       ("(Ada 2005) non-graphic character not permitted " &
+                        "in character literal", Wptr);
                   end if;
 
                   if Source (Scan_Ptr) /= ''' then
@@ -1565,7 +1596,6 @@ package body Scng is
                --  apostrophe instead since this gives better error recovery
 
                elsif Source (Scan_Ptr + 1) /= ''' then
-
                   if Prev_Token = Tok_Range then
                      Token := Tok_Apostrophe;
                      return;
@@ -1586,7 +1616,7 @@ package body Scng is
 
                   if Source (Scan_Ptr) not in Graphic_Character then
                      if Source (Scan_Ptr) in Upper_Half_Character then
-                        if Ada_83 then
+                        if Ada_Version = Ada_83 then
                            Error_Illegal_Character;
                         end if;
 
@@ -1677,6 +1707,7 @@ package body Scng is
 
          when '!' => Exclamation_Case : begin
             Accumulate_Checksum ('!');
+            Obsolescent_Check (Token_Ptr);
 
             if Warn_On_Obsolescent_Feature then
                Error_Msg_S
@@ -1696,7 +1727,6 @@ package body Scng is
                Token := Tok_Vertical_Bar;
                return;
             end if;
-
          end Exclamation_Case;
 
          --  Plus
@@ -1724,6 +1754,7 @@ package body Scng is
 
          when 'a' .. 'z' =>
             Name_Len := 1;
+            Underline_Found := False;
             Name_Buffer (1) := Source (Scan_Ptr);
             Accumulate_Checksum (Name_Buffer (1));
             Scan_Ptr := Scan_Ptr + 1;
@@ -1733,6 +1764,7 @@ package body Scng is
 
          when 'A' .. 'Z' =>
             Name_Len := 1;
+            Underline_Found := False;
             Name_Buffer (1) :=
               Character'Val (Character'Pos (Source (Scan_Ptr)) + 32);
             Accumulate_Checksum (Name_Buffer (1));
@@ -1754,6 +1786,7 @@ package body Scng is
             Name_Len := 1;
             Name_Buffer (1) := '_';
             Scan_Ptr := Scan_Ptr + 1;
+            Underline_Found := False;
             goto Scan_Identifier;
 
          --  Space (not possible, because we scanned past blanks)
@@ -1765,23 +1798,21 @@ package body Scng is
 
          when Upper_Half_Character =>
 
-            --  Wide character case. Note that Scan_Identifier will issue
-            --  an appropriate message if wide characters are not allowed
-            --  in identifiers.
+            --  Wide character case
 
             if Upper_Half_Encoding then
-               Name_Len := 0;
-               goto Scan_Identifier;
+               goto Scan_Wide_Character;
 
             --  Otherwise we have OK Latin-1 character
 
             else
                --  Upper half characters may possibly be identifier letters
-               --  but can never be digits, so Identifier_Char can be used
-               --  to test for a valid start of identifier character.
+               --  but can never be digits, so Identifier_Char can be used to
+               --  test for a valid start of identifier character.
 
                if Identifier_Char (Source (Scan_Ptr)) then
                   Name_Len := 0;
+                  Underline_Found := False;
                   goto Scan_Identifier;
                else
                   Error_Illegal_Character;
@@ -1793,18 +1824,19 @@ package body Scng is
             --  ESC character, possible start of identifier if wide characters
             --  using ESC encoding are allowed in identifiers, which we can
             --  tell by looking at the Identifier_Char flag for ESC, which is
-            --  only true if these conditions are met.
+            --  only true if these conditions are met. In Ada 2005 mode, may
+            --  also be valid UTF_32 space or line terminator character.
 
             if Identifier_Char (ESC) then
                Name_Len := 0;
-               goto Scan_Identifier;
+               goto Scan_Wide_Character;
             else
-               Error_Illegal_Wide_Character;
+               Error_Illegal_Character;
             end if;
 
          --  Invalid control characters
 
-         when NUL | SOH | STX | ETX | EOT | ENQ | ACK | BEL | BS  | SO  |
+         when NUL | SOH | STX | ETX | EOT | ENQ | ACK | BEL | BS  | ASCII.SO |
               SI  | DLE | DC1 | DC2 | DC3 | DC4 | NAK | SYN | ETB | CAN |
               EM  | FS  | GS  | RS  | US  | DEL
          =>
@@ -1813,6 +1845,7 @@ package body Scng is
          --  Invalid graphic characters
 
          when '#' | '$' | '?' | '@' | '`' | '\' | '^' | '~' =>
+
             --  If Set_Special_Character has been called for this character,
             --  set Scans.Special_Character and return a Special token.
 
@@ -1823,7 +1856,7 @@ package body Scng is
                Scan_Ptr := Scan_Ptr + 1;
                return;
 
-            --  otherwise, this is an illegal character
+            --  Otherwise, this is an illegal character
 
             else
                Error_Illegal_Character;
@@ -1839,15 +1872,151 @@ package body Scng is
 
       end loop;
 
-      --  Identifier scanning routine. On entry, some initial characters
-      --  of the identifier may have already been stored in Name_Buffer.
-      --  If so, Name_Len has the number of characters stored. otherwise
-      --  Name_Len is set to zero on entry.
+      --  Wide_Character scanning routine. On entry we have encountered the
+      --  initial character of a wide character sequence.
+
+      <<Scan_Wide_Character>>
+
+         declare
+            Code : Char_Code;
+            Cat  : Category;
+            Err  : Boolean;
+
+         begin
+            Wptr := Scan_Ptr;
+            Scan_Wide (Source, Scan_Ptr, Code, Err);
+
+            --  If bad wide character, signal error and continue scan
+
+            if Err then
+               Error_Illegal_Wide_Character;
+               goto Scan_Next_Character;
+            end if;
+
+            Cat := Get_Category (UTF_32 (Code));
+
+            --  If OK letter, reset scan ptr and go scan identifier
+
+            if Is_UTF_32_Letter (Cat) then
+               Scan_Ptr := Wptr;
+               Name_Len := 0;
+               Underline_Found := False;
+               goto Scan_Identifier;
+
+            --  If OK wide space, ignore and keep scanning (we do not include
+            --  any ignored spaces in checksum)
+
+            elsif Is_UTF_32_Space (Cat) then
+               goto Scan_Next_Character;
+
+            --  If OK wide line terminator, terminate current line
+
+            elsif Is_UTF_32_Line_Terminator (UTF_32 (Code)) then
+               Scan_Ptr := Wptr;
+               goto Scan_Line_Terminator;
+
+            --  Punctuation is an error (at start of identifier)
+
+            elsif Is_UTF_32_Punctuation (Cat) then
+               Error_Msg
+                 ("identifier cannot start with punctuation", Wptr);
+               Scan_Ptr := Wptr;
+               Name_Len := 0;
+               Underline_Found := False;
+               goto Scan_Identifier;
+
+            --  Mark character is an error (at start of identifer)
+
+            elsif Is_UTF_32_Mark (Cat) then
+               Error_Msg
+                 ("identifier cannot start with mark character", Wptr);
+               Scan_Ptr := Wptr;
+               Name_Len := 0;
+               Underline_Found := False;
+               goto Scan_Identifier;
+
+            --  Other format character is an error (at start of identifer)
+
+            elsif Is_UTF_32_Other (Cat) then
+               Error_Msg
+                 ("identifier cannot start with other format character", Wptr);
+               Scan_Ptr := Wptr;
+               Name_Len := 0;
+               Underline_Found := False;
+               goto Scan_Identifier;
+
+            --  Extended digit character is an error. Could be bad start of
+            --  identifier or bad literal. Not worth doing too much to try to
+            --  distinguish these cases, but we will do a little bit.
+
+            elsif Is_UTF_32_Digit (Cat) then
+               Error_Msg
+                 ("identifier cannot start with digit character", Wptr);
+               Scan_Ptr := Wptr;
+               Name_Len := 0;
+               Underline_Found := False;
+               goto Scan_Identifier;
+
+            --  All other wide characters are illegal here
+
+            else
+               Error_Illegal_Wide_Character;
+               goto Scan_Next_Character;
+            end if;
+         end;
+
+      --  Routine to scan line terminator. On entry Scan_Ptr points to a
+      --  character which is one of FF,LR,CR,VT, or one of the wide characters
+      --  that is treated as a line termiantor.
+
+      <<Scan_Line_Terminator>>
+
+         --  Check line too long
+
+         Check_End_Of_Line;
+
+         --  Set Token_Ptr, if End_Of_Line is a token, for the case when it is
+         --  a physical line.
+
+         if End_Of_Line_Is_Token then
+            Token_Ptr := Scan_Ptr;
+         end if;
+
+         declare
+            Physical : Boolean;
+
+         begin
+            Skip_Line_Terminators (Scan_Ptr, Physical);
+
+            --  If we are at start of physical line, update scan pointers to
+            --  reflect the start of the new line.
+
+            if Physical then
+               Current_Line_Start       := Scan_Ptr;
+               Start_Column             := Set_Start_Column;
+               First_Non_Blank_Location := Scan_Ptr;
+
+               --  If End_Of_Line is a token, we return it as it is a
+               --  physical line.
+
+               if End_Of_Line_Is_Token then
+                  Token := Tok_End_Of_Line;
+                  return;
+               end if;
+            end if;
+         end;
+
+         goto Scan_Next_Character;
+
+      --  Identifier scanning routine. On entry, some initial characters of
+      --  the identifier may have already been stored in Name_Buffer. If so,
+      --  Name_Len has the number of characters stored. otherwise Name_Len is
+      --  set to zero on entry. Underline_Found is also set False on entry.
 
       <<Scan_Identifier>>
 
-         --  This loop scans as fast as possible past lower half letters
-         --  and digits, which we expect to be the most common characters.
+         --  This loop scans as fast as possible past lower half letters and
+         --  digits, which we expect to be the most common characters.
 
          loop
             if Source (Scan_Ptr) in 'a' .. 'z'
@@ -1860,74 +2029,24 @@ package body Scng is
                Name_Buffer (Name_Len + 1) :=
                  Character'Val (Character'Pos (Source (Scan_Ptr)) + 32);
                Accumulate_Checksum (Name_Buffer (Name_Len + 1));
+
             else
                exit;
             end if;
 
-            --  Open out the loop a couple of times for speed
-
-            if Source (Scan_Ptr + 1) in 'a' .. 'z'
-              or else Source (Scan_Ptr + 1) in '0' .. '9'
-            then
-               Name_Buffer (Name_Len + 2) := Source (Scan_Ptr + 1);
-               Accumulate_Checksum (Source (Scan_Ptr + 1));
-
-            elsif Source (Scan_Ptr + 1) in 'A' .. 'Z' then
-               Name_Buffer (Name_Len + 2) :=
-                 Character'Val (Character'Pos (Source (Scan_Ptr + 1)) + 32);
-               Accumulate_Checksum (Name_Buffer (Name_Len + 2));
-
-            else
-               Scan_Ptr := Scan_Ptr + 1;
-               Name_Len := Name_Len + 1;
-               exit;
-            end if;
-
-            if Source (Scan_Ptr + 2) in 'a' .. 'z'
-              or else Source (Scan_Ptr + 2) in '0' .. '9'
-            then
-               Name_Buffer (Name_Len + 3) := Source (Scan_Ptr + 2);
-               Accumulate_Checksum (Source (Scan_Ptr + 2));
-
-            elsif Source (Scan_Ptr + 2) in 'A' .. 'Z' then
-               Name_Buffer (Name_Len + 3) :=
-                 Character'Val (Character'Pos (Source (Scan_Ptr + 2)) + 32);
-               Accumulate_Checksum (Name_Buffer (Name_Len + 3));
-            else
-               Scan_Ptr := Scan_Ptr + 2;
-               Name_Len := Name_Len + 2;
-               exit;
-            end if;
-
-            if Source (Scan_Ptr + 3) in 'a' .. 'z'
-              or else Source (Scan_Ptr + 3) in '0' .. '9'
-            then
-               Name_Buffer (Name_Len + 4) := Source (Scan_Ptr + 3);
-               Accumulate_Checksum (Source (Scan_Ptr + 3));
-
-            elsif Source (Scan_Ptr + 3) in 'A' .. 'Z' then
-               Name_Buffer (Name_Len + 4) :=
-                 Character'Val (Character'Pos (Source (Scan_Ptr + 3)) + 32);
-               Accumulate_Checksum (Name_Buffer (Name_Len + 4));
-
-            else
-               Scan_Ptr := Scan_Ptr + 3;
-               Name_Len := Name_Len + 3;
-               exit;
-            end if;
-
-            Scan_Ptr := Scan_Ptr + 4;
-            Name_Len := Name_Len + 4;
+            Underline_Found := False;
+            Scan_Ptr := Scan_Ptr + 1;
+            Name_Len := Name_Len + 1;
          end loop;
 
          --  If we fall through, then we have encountered either an underline
          --  character, or an extended identifier character (i.e. one from the
-         --  upper half), or a wide character, or an identifier terminator.
-         --  The initial test speeds us up in the most common case where we
-         --  have an identifier terminator. Note that ESC is an identifier
-         --  character only if a wide character encoding method that uses
-         --  ESC encoding is active, so if we find an ESC character we know
-         --  that we have a wide character.
+         --  upper half), or a wide character, or an identifier terminator. The
+         --  initial test speeds us up in the most common case where we have
+         --  an identifier terminator. Note that ESC is an identifier character
+         --  only if a wide character encoding method that uses ESC encoding
+         --  is active, so if we find an ESC character we know that we have a
+         --  wide character.
 
          if Identifier_Char (Source (Scan_Ptr)) then
 
@@ -1936,22 +2055,10 @@ package body Scng is
             if Source (Scan_Ptr) = '_' then
                Accumulate_Checksum ('_');
 
-               --  Check error case of identifier ending with underscore
-               --  In this case we ignore the underscore and do not store it.
-
-               if not Identifier_Char (Source (Scan_Ptr + 1)) then
-                  Error_Msg_S ("identifier cannot end with underline");
-                  Scan_Ptr := Scan_Ptr + 1;
-
-               --  Check error case of two underscores. In this case we do
-               --  not store the first underscore (we will store the second)
-
-               elsif Source (Scan_Ptr + 1) = '_' then
-                     Error_No_Double_Underline;
-
-               --  Normal case of legal underscore
-
+               if Underline_Found then
+                  Error_No_Double_Underline;
                else
+                  Underline_Found := True;
                   Name_Len := Name_Len + 1;
                   Name_Buffer (Name_Len) := '_';
                end if;
@@ -1968,6 +2075,7 @@ package body Scng is
                Store_Encoded_Character
                  (Get_Char_Code (Fold_Lower (Source (Scan_Ptr))));
                Scan_Ptr := Scan_Ptr + 1;
+               Underline_Found := False;
                goto Scan_Identifier;
 
             --  Left bracket not followed by a quote terminates an identifier.
@@ -1988,12 +2096,13 @@ package body Scng is
                --  encoding into the name table entry for the identifier.
 
                declare
-                  Sptr : constant Source_Ptr := Scan_Ptr;
                   Code : Char_Code;
                   Err  : Boolean;
                   Chr  : Character;
+                  Cat  : Category;
 
                begin
+                  Wptr := Scan_Ptr;
                   Scan_Wide (Source, Scan_Ptr, Code, Err);
 
                   --  If error, signal error
@@ -2011,76 +2120,169 @@ package body Scng is
                      Accumulate_Checksum (Chr);
                      Store_Encoded_Character
                        (Get_Char_Code (Fold_Lower (Chr)));
+                     Underline_Found := False;
 
-                  --  Character is not normal identifier character, store
-                  --  it in encoded form.
+                  --  Here if not a normal identifier character
 
                   else
-                     Accumulate_Checksum (Code);
-                     Store_Encoded_Character (Code);
-
                      --  Make sure we are allowing wide characters in
                      --  identifiers. Note that we allow wide character
-                     --  notation for an OK identifier character. This
-                     --  in particular allows bracket or other notation
-                     --  to be used for upper half letters.
+                     --  notation for an OK identifier character. This in
+                     --  particular allows bracket or other notation to be
+                     --  used for upper half letters.
 
-                     if Identifier_Character_Set /= 'w' then
+                     --  Wide characters are always allowed in Ada 2005
+
+                     if Identifier_Character_Set /= 'w'
+                       and then Ada_Version < Ada_05
+                     then
                         Error_Msg
-                          ("wide character not allowed in identifier", Sptr);
+                       ("wide character not allowed in identifier", Wptr);
+                     end if;
+
+                     Cat := Get_Category (UTF_32 (Code));
+
+                     --  If OK letter, store it folding to upper case. Note
+                     --  that we include the folded letter in the checksum.
+
+                     if Is_UTF_32_Letter (Cat) then
+                        Code :=
+                          Char_Code (UTF_32_To_Upper_Case (UTF_32 (Code)));
+                        Accumulate_Checksum (Code);
+                        Store_Encoded_Character (Code);
+                        Underline_Found := False;
+
+                     --  If OK extended digit or mark, then store it
+
+                     elsif Is_UTF_32_Digit (Cat)
+                       or else Is_UTF_32_Mark (Cat)
+                     then
+                        Accumulate_Checksum (Code);
+                        Store_Encoded_Character (Code);
+                        Underline_Found := False;
+
+                     --  Wide punctuation is also stored, but counts as an
+                     --  underline character for error checking purposes.
+
+                     elsif Is_UTF_32_Punctuation (Cat) then
+                        Accumulate_Checksum (Code);
+
+                        if Underline_Found then
+                           declare
+                              Cend : constant Source_Ptr := Scan_Ptr;
+                           begin
+                              Scan_Ptr := Wptr;
+                              Error_No_Double_Underline;
+                              Scan_Ptr := Cend;
+                           end;
+
+                        else
+                           Store_Encoded_Character (Code);
+                           Underline_Found := True;
+                        end if;
+
+                     --  Wide character in Unicode cateogory "Other, Format"
+                     --  is accepted in an identifier, but is ignored and not
+                     --  stored. It seems reasonable to exclude it from the
+                     --  checksum.
+
+                     --  Note that it is correct (see AI-395) to simply strip
+                     --  other format characters, before testing for double
+                     --  underlines, or for reserved words).
+
+                     elsif Is_UTF_32_Other (Cat) then
+                        null;
+
+                     --  Wide character in category Separator,Space terminates
+
+                     elsif Is_UTF_32_Space (Cat) then
+                        goto Scan_Identifier_Complete;
+
+                     --  Any other wide character is not acceptable
+
+                     else
+                        Error_Msg
+                          ("invalid wide character in identifier", Wptr);
                      end if;
                   end if;
-               end;
 
-               goto Scan_Identifier;
+                  goto Scan_Identifier;
+               end;
             end if;
          end if;
 
-         --  Scan of identifier is complete. The identifier is stored in
-         --  Name_Buffer, and Scan_Ptr points past the last character.
+      --  Scan of identifier is complete. The identifier is stored in
+      --  Name_Buffer, and Scan_Ptr points past the last character.
 
+      <<Scan_Identifier_Complete>>
          Token_Name := Name_Find;
+
+         --  Check for identifier ending with underline or punctuation char
+
+         if Underline_Found then
+            Underline_Found := False;
+
+            if Source (Scan_Ptr - 1) = '_' then
+               Error_Msg
+                 ("identifier cannot end with underline", Scan_Ptr - 1);
+            else
+               Error_Msg
+                 ("identifier cannot end with punctuation character", Wptr);
+            end if;
+         end if;
 
          --  Here is where we check if it was a keyword
 
-         if Get_Name_Table_Byte (Token_Name) /= 0
-           and then (Ada_95 or else Token_Name not in Ada_95_Reserved_Words)
-         then
+         if Is_Keyword_Name (Token_Name) then
             Token := Token_Type'Val (Get_Name_Table_Byte (Token_Name));
 
-            --  Deal with possible style check for non-lower case keyword,
-            --  but we don't treat ACCESS, DELTA, DIGITS, RANGE as keywords
-            --  for this purpose if they appear as attribute designators.
-            --  Actually we only check the first character for speed.
+            --  Deal with possible style check for non-lower case keyword, but
+            --  we don't treat ACCESS, DELTA, DIGITS, RANGE as keywords for
+            --  this purpose if they appear as attribute designators. Actually
+            --  we only check the first character for speed.
+
+            --  Ada 2005 (AI-284): Do not apply the style check in case of
+            --  "pragma Interface"
+
+            --  Ada 2005 (AI-340): Do not apply the style check in case of
+            --  MOD attribute.
 
             if Style_Check
               and then Source (Token_Ptr) <= 'Z'
               and then (Prev_Token /= Tok_Apostrophe
                           or else
-                            (Token /= Tok_Access
-                               and then Token /= Tok_Delta
-                               and then Token /= Tok_Digits
-                               and then Token /= Tok_Range))
+                            (Token /= Tok_Access and then
+                             Token /= Tok_Delta  and then
+                             Token /= Tok_Digits and then
+                             Token /= Tok_Mod    and then
+                             Token /= Tok_Range))
+              and then (Token /= Tok_Interface
+                          or else
+                            (Token = Tok_Interface
+                               and then Prev_Token /= Tok_Pragma))
             then
                Style.Non_Lower_Case_Keyword;
             end if;
 
-            --  We must reset Token_Name since this is not an identifier
-            --  and if we leave Token_Name set, the parser gets confused
-            --  because it thinks it is dealing with an identifier instead
-            --  of the corresponding keyword.
+            --  We must reset Token_Name since this is not an identifier and
+            --  if we leave Token_Name set, the parser gets confused because
+            --  it thinks it is dealing with an identifier instead of the
+            --  corresponding keyword.
 
             Token_Name := No_Name;
+            Accumulate_Token_Checksum;
             return;
 
          --  It is an identifier after all
 
          else
             Token := Tok_Identifier;
+            Accumulate_Token_Checksum;
             Post_Scan;
             return;
          end if;
    end Scan;
+
    --------------------------
    -- Set_Comment_As_Token --
    --------------------------

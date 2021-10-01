@@ -1,12 +1,12 @@
 ------------------------------------------------------------------------------
 --                                                                          --
---                 GNU ADA RUN-TIME LIBRARY (GNARL) COMPONENTS              --
+--                  GNAT RUN-TIME LIBRARY (GNARL) COMPONENTS                --
 --                                                                          --
 --                 S Y S T E M . T A S K I N G . Q U E U I N G              --
 --                                                                          --
 --                                  B o d y                                 --
 --                                                                          --
---         Copyright (C) 1992-2003, Free Software Foundation, Inc.          --
+--         Copyright (C) 1992-2006, Free Software Foundation, Inc.          --
 --                                                                          --
 -- GNARL is free software; you can  redistribute it  and/or modify it under --
 -- terms of the  GNU General Public License as published  by the Free Soft- --
@@ -16,16 +16,16 @@
 -- or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License --
 -- for  more details.  You should have  received  a copy of the GNU General --
 -- Public License  distributed with GNARL; see file COPYING.  If not, write --
--- to  the Free Software Foundation,  59 Temple Place - Suite 330,  Boston, --
--- MA 02111-1307, USA.                                                      --
+-- to  the  Free Software Foundation,  51  Franklin  Street,  Fifth  Floor, --
+-- Boston, MA 02110-1301, USA.                                              --
 --                                                                          --
--- As a special exception,  if other files  instantiate  generics from this --
--- unit, or you link  this unit with other files  to produce an executable, --
--- this  unit  does not  by itself cause  the resulting  executable  to  be --
--- covered  by the  GNU  General  Public  License.  This exception does not --
--- however invalidate  any other reasons why  the executable file  might be --
--- covered by the  GNU Public License.                                      --
---                                                                          --
+--
+--
+--
+--
+--
+--
+--
 -- GNARL was developed by the GNARL team at Florida State University.       --
 -- Extensive contributions were provided by Ada Core Technologies, Inc.     --
 --                                                                          --
@@ -52,7 +52,7 @@ package body System.Tasking.Queuing is
    use Protected_Objects;
    use Protected_Objects.Entries;
 
-   --  Entry Queues implemented as doubly linked list.
+   --  Entry Queues implemented as doubly linked list
 
    Queuing_Policy : Character;
    pragma Import (C, Queuing_Policy, "__gl_queuing_policy");
@@ -60,7 +60,7 @@ package body System.Tasking.Queuing is
    Priority_Queuing : constant Boolean := Queuing_Policy = 'P';
 
    procedure Send_Program_Error
-     (Self_ID    : Task_ID;
+     (Self_ID    : Task_Id;
       Entry_Call : Entry_Call_Link);
    --  Raise Program_Error in the caller of the specified entry call
 
@@ -74,7 +74,7 @@ package body System.Tasking.Queuing is
    -----------------------------
 
    procedure Broadcast_Program_Error
-     (Self_ID      : Task_ID;
+     (Self_ID      : Task_Id;
       Object       : Protection_Entries_Access;
       Pending_Call : Entry_Call_Link;
       RTS_Locked   : Boolean := False)
@@ -164,7 +164,7 @@ package body System.Tasking.Queuing is
 
    --  Return number of calls on the waiting queue of E
 
-   function Count_Waiting (E : in Entry_Queue) return Natural is
+   function Count_Waiting (E : Entry_Queue) return Natural is
       Count   : Natural;
       Temp    : Entry_Call_Link;
 
@@ -418,7 +418,7 @@ package body System.Tasking.Queuing is
 
    --  Return the head of entry_queue E
 
-   function Head (E : in Entry_Queue) return Entry_Call_Link is
+   function Head (E : Entry_Queue) return Entry_Call_Link is
    begin
       pragma Assert (Check_Queue (E));
       return E.Head;
@@ -469,7 +469,7 @@ package body System.Tasking.Queuing is
    --  queuing policy being used.
 
    procedure Select_Protected_Entry_Call
-     (Self_ID : Task_ID;
+     (Self_ID : Task_Id;
       Object  : Protection_Entries_Access;
       Call    : out Entry_Call_Link)
    is
@@ -528,7 +528,7 @@ package body System.Tasking.Queuing is
             Broadcast_Program_Error (Self_ID, Object, null);
       end;
 
-      --  If a call was selected, dequeue it and return it for service.
+      --  If a call was selected, dequeue it and return it for service
 
       if Entry_Call /= null then
          Temp_Call := Entry_Call;
@@ -547,7 +547,7 @@ package body System.Tasking.Queuing is
    --  being used.
 
    procedure Select_Task_Entry_Call
-     (Acceptor         : Task_ID;
+     (Acceptor         : Task_Id;
       Open_Accepts     : Accept_List_Access;
       Call             : out Entry_Call_Link;
       Selection        : out Select_Index;
@@ -618,10 +618,10 @@ package body System.Tasking.Queuing is
    ------------------------
 
    procedure Send_Program_Error
-     (Self_ID    : Task_ID;
+     (Self_ID    : Task_Id;
       Entry_Call : Entry_Call_Link)
    is
-      Caller : Task_ID;
+      Caller : Task_Id;
    begin
       Caller := Entry_Call.Self;
       Entry_Call.Exception_To_Raise := Program_Error'Identity;

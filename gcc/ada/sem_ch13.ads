@@ -6,7 +6,7 @@
 --                                                                          --
 --                                 S p e c                                  --
 --                                                                          --
---          Copyright (C) 1992-2003 Free Software Foundation, Inc.          --
+--          Copyright (C) 1992-2005, Free Software Foundation, Inc.         --
 --                                                                          --
 -- GNAT is free software;  you can  redistribute it  and/or modify it under --
 -- terms of the  GNU General Public License as published  by the Free Soft- --
@@ -16,8 +16,8 @@
 -- or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License --
 -- for  more details.  You should have  received  a copy of the GNU General --
 -- Public License  distributed with GNAT;  see file COPYING.  If not, write --
--- to  the Free Software Foundation,  59 Temple Place - Suite 330,  Boston, --
--- MA 02111-1307, USA.                                                      --
+-- to  the  Free Software Foundation,  51  Franklin  Street,  Fifth  Floor, --
+-- Boston, MA 02110-1301, USA.                                              --
 --                                                                          --
 -- GNAT was originally developed  by the GNAT team at  New York University. --
 -- Extensive contributions were provided by Ada Core Technologies Inc.      --
@@ -46,9 +46,8 @@ package Sem_Ch13 is
 
    function Minimum_Size
      (T      : Entity_Id;
-      Biased : Boolean := False)
-      return   Nat;
-   --  Given a primitive type, determines the minimum number of bits required
+      Biased : Boolean := False) return Nat;
+   --  Given an elementary type, determines the minimum number of bits required
    --  to represent all values of the type. This function may not be called
    --  with any other types. If the flag Biased is set True, then the minimum
    --  size calculation that biased representation is used in the case of a
@@ -91,15 +90,7 @@ package Sem_Ch13 is
    --  If the size is too small, and an error message is given, then both
    --  Esize and RM_Size are reset to the allowed minimum value in T.
 
-   procedure Record_Rep_Item (T : Entity_Id; N : Node_Id);
-   --  N is the node for either a representation pragma or an attribute
-   --  definition clause that applies to type T. This procedure links
-   --  the node N onto the Rep_Item chain for the type T.
-
-   function Rep_Item_Too_Early
-     (T     : Entity_Id;
-      N     : Node_Id)
-      return  Boolean;
+   function Rep_Item_Too_Early (T : Entity_Id; N : Node_Id) return Boolean;
    --  Called at the start of processing a representation clause or a
    --  representation pragma. Used to check that the representation item
    --  is not being applied to an incompleted type or to a generic formal
@@ -110,8 +101,7 @@ package Sem_Ch13 is
    function Rep_Item_Too_Late
      (T     : Entity_Id;
       N     : Node_Id;
-      FOnly : Boolean := False)
-      return  Boolean;
+      FOnly : Boolean := False) return Boolean;
    --  Called at the start of processing a representation clause or a
    --  representation pragma. Used to check that a representation item
    --  for entity T does not appear too late (according to the rules in

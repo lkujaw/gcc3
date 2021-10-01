@@ -6,7 +6,7 @@
 --                                                                          --
 --                                 B o d y                                  --
 --                                                                          --
---          Copyright (C) 1992-2004 Free Software Foundation, Inc.          --
+--          Copyright (C) 1992-2005, Free Software Foundation, Inc.         --
 --                                                                          --
 -- GNAT is free software;  you can  redistribute it  and/or modify it under --
 -- terms of the  GNU General Public License as published  by the Free Soft- --
@@ -19,19 +19,19 @@
 -- to  the Free Software Foundation,  59 Temple Place - Suite 330,  Boston, --
 -- MA 02111-1307, USA.                                                      --
 --                                                                          --
--- As a special exception,  if other files  instantiate  generics from this --
--- unit, or you link  this unit with other files  to produce an executable, --
--- this  unit  does not  by itself cause  the resulting  executable  to  be --
--- covered  by the  GNU  General  Public  License.  This exception does not --
--- however invalidate  any other reasons why  the executable file  might be --
--- covered by the  GNU Public License.                                      --
---                                                                          --
+--
+--
+--
+--
+--
+--
+--
 -- GNAT was originally developed  by the GNAT team at  New York University. --
 -- Extensive contributions were provided by Ada Core Technologies Inc.      --
 --                                                                          --
 ------------------------------------------------------------------------------
 
---  This is the HI-E version of this package.
+--  This is the HI-E version of this package
 
 with Unchecked_Conversion;
 
@@ -57,7 +57,7 @@ package body System.Secondary_Stack is
    --  Return the address of the secondary stack.
    --  In a multi-threaded environment, Sec_Stack should be a thread-local
    --  variable.
-
+   --
    --  Possible implementation of Get_Sec_Stack in a single-threaded
    --  environment:
    --
@@ -98,15 +98,6 @@ package body System.Secondary_Stack is
    end SS_Allocate;
 
    -------------
-   -- SS_Free --
-   -------------
-
-   procedure SS_Free (Stk : in out System.Address) is
-   begin
-      Stk := Null_Address;
-   end SS_Free;
-
-   -------------
    -- SS_Init --
    -------------
 
@@ -114,10 +105,9 @@ package body System.Secondary_Stack is
      (Stk  : System.Address;
       Size : Natural := Default_Secondary_Stack_Size)
    is
-      Stack : Stack_Ptr := From_Addr (Stk);
+      Stack : constant Stack_Ptr := From_Addr (Stk);
    begin
       pragma Assert (Size >= 2 * Mark_Id'Max_Size_In_Storage_Elements);
-
       Stack.Top := Stack.Mem'First;
       Stack.Last := Mark_Id (Size) - 2 * Mark_Id'Max_Size_In_Storage_Elements;
    end SS_Init;

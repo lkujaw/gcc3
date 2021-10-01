@@ -6,7 +6,7 @@
 --                                                                          --
 --                                 S p e c                                  --
 --                                                                          --
---          Copyright (C) 1999-2001 Free Software Foundation, Inc.          --
+--          Copyright (C) 1999-2006, Free Software Foundation, Inc.         --
 --                                                                          --
 -- GNAT is free software;  you can  redistribute it  and/or modify it under --
 -- terms of the  GNU General Public License as published  by the Free Soft- --
@@ -16,8 +16,8 @@
 -- or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License --
 -- for  more details.  You should have  received  a copy of the GNU General --
 -- Public License  distributed with GNAT;  see file COPYING.  If not, write --
--- to  the Free Software Foundation,  59 Temple Place - Suite 330,  Boston, --
--- MA 02111-1307, USA.                                                      --
+-- to  the  Free Software Foundation,  51  Franklin  Street,  Fifth  Floor, --
+-- Boston, MA 02110-1301, USA.                                              --
 --                                                                          --
 -- GNAT was originally developed  by the GNAT team at  New York University. --
 -- Extensive contributions were provided by Ada Core Technologies Inc.      --
@@ -31,6 +31,15 @@
 with Types; use Types;
 
 package Sem_Warn is
+
+   --------------------
+   -- Initialization --
+   --------------------
+
+   function Set_Warning_Switch (C : Character) return Boolean;
+   --  This function sets the warning switch or switches corresponding to
+   --  the given character. It is used for processing a -gnatw switch on the
+   --  command line, or a string literal in pragma Warnings.
 
    ------------------------------------------
    -- Routines to Handle Unused References --
@@ -98,6 +107,9 @@ package Sem_Warn is
    -- Other Warning Routines --
    ----------------------------
 
+   procedure Check_Code_Statement (N : Node_Id);
+   --  Peform warning checks on a code statement node
+
    procedure Warn_On_Known_Condition (C : Node_Id);
    --  C is a node for a boolean expression resluting from a relational
    --  or membership operation. If the expression has a compile time known
@@ -122,5 +134,14 @@ package Sem_Warn is
    --
    --  If all these conditions are met, the warning is issued noting that
    --  the result of the test is always false or always true as appropriate.
+
+   procedure Warn_On_Suspicious_Index (Name : Entity_Id; X : Node_Id);
+   --  This is called after resolving an indexed component or a slice. Name
+   --  is the entity for the name of the indexed array, and X is the subscript
+   --  for the indexed component case, or one of the bounds in the slice case.
+   --  If Name is an unconstrained parameter of a standard string type, and
+   --  the index is of the form of a literal or Name'Length [- literal], then
+   --  a warning is generated that the subscripting operation is possibly
+   --  incorrectly assuming a lower bound of 1.
 
 end Sem_Warn;

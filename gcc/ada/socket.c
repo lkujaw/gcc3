@@ -2,11 +2,11 @@
  *                                                                          *
  *                         GNAT COMPILER COMPONENTS                         *
  *                                                                          *
- *                              S O C K E T                                 *
+ *                               S O C K E T                                *
  *                                                                          *
  *                          C Implementation File                           *
  *                                                                          *
- *            Copyright (C) 2003, Free Software Foundation, Inc.            *
+ *          Copyright (C) 2003-2005 Free Software Foundation, Inc.          *
  *                                                                          *
  * GNAT is free software;  you can  redistribute it  and/or modify it under *
  * terms of the  GNU General Public License as published  by the Free Soft- *
@@ -16,56 +16,33 @@
  * or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License *
  * for  more details.  You should have  received  a copy of the GNU General *
  * Public License  distributed with GNAT;  see file COPYING.  If not, write *
- * to  the Free Software Foundation,  59 Temple Place - Suite 330,  Boston, *
- * MA 02111-1307, USA.                                                      *
+ * to  the  Free Software Foundation,  51  Franklin  Street,  Fifth  Floor, *
+ * Boston, MA 02110-1301, USA.                                              *
  *                                                                          *
- * As a  special  exception,  if you  link  this file  with other  files to *
- * produce an executable,  this file does not by itself cause the resulting *
- * executable to be covered by the GNU General Public License. This except- *
- * ion does not  however invalidate  any other reasons  why the  executable *
- * file might be covered by the  GNU Public License.                        *
- *                                                                          *
+--
+--
+--
+--
+--
+--
  * GNAT was originally developed  by the GNAT team at  New York University. *
  * Extensive contributions were provided by Ada Core Technologies Inc.      *
  *                                                                          *
  ****************************************************************************/
 
-/*  This file provides a portable binding to the fd set functions           */
+/*  This file provides a portable binding to the sockets API                */
 
-#ifdef __vxworks
-#include "vxWorks.h"
-#endif
-
-#ifdef IN_RTS
-#include "tconfig.h"
-#include "tsystem.h"
-
-#if defined (WINNT)
-#define FD_SETSIZE 1024
-#include <windows.h>
-
-#ifdef __MINGW32__
-#include "mingw32.h"
-#if STD_MINGW
-#include <winsock.h>
-#else
-#include <windows32/sockets.h>
-#endif
-#endif
-#endif
-
-#if defined (VMS)
-#define FD_SETSIZE 4096
-#include <sys/time.h>
-#endif
-
-#else
-#include "config.h"
-#include "system.h"
-#endif
+#include "gsocket.h"
+/* Include all the necessary system-specific headers and define the
+   necessary macros (shared with gen-soccon). */
 
 #include "raise.h"
+/* Required for __gnat_malloc() */
 
+#include <string.h>
+/* Required for memcpy() */
+
+extern void __gnat_disable_sigpipe (int fd);
 extern void __gnat_free_socket_set (fd_set *);
 extern void __gnat_last_socket_in_set (fd_set *, int *);
 extern void __gnat_get_socket_from_set (fd_set *, int *, int *);
@@ -73,7 +50,19 @@ extern void __gnat_insert_socket_in_set (fd_set *, int);
 extern int __gnat_is_socket_in_set (fd_set *, int);
 extern fd_set *__gnat_new_socket_set (fd_set *);
 extern void __gnat_remove_socket_from_set (fd_set *, int);
+extern int __gnat_get_h_errno (void);
 
+/* Disable the sending of SIGPIPE for writes on a broken stream */
+
+void
+__gnat_disable_sigpipe (int fd)
+{
+#ifdef SO_NOSIGPIPE
+  int val = 1;
+  (void) setsockopt (fd, SOL_SOCKET, SO_NOSIGPIPE, &val, sizeof val);
+#endif
+}
+
 /* Free socket set. */
 
 void
@@ -165,4 +154,49 @@ void
 __gnat_remove_socket_from_set (fd_set *set, int socket)
 {
   FD_CLR (socket, set);
+}
+
+/* Get the value of the last host error */
+
+int
+__gnat_get_h_errno (void) {
+#ifdef __vxworks
+  int vxw_errno = errno;
+
+  switch (vxw_errno) {
+    case 0:
+      return 0;
+
+    case S_resolvLib_HOST_NOT_FOUND:
+    case S_hostLib_UNKNOWN_HOST:
+      return HOST_NOT_FOUND;
+
+    case S_resolvLib_TRY_AGAIN:
+      return TRY_AGAIN;
+
+    case S_resolvLib_NO_RECOVERY:
+    case S_resolvLib_BUFFER_2_SMALL:
+    case S_resolvLib_INVALID_PARAMETER:
+    case S_resolvLib_INVALID_ADDRESS:
+    case S_hostLib_INVALID_PARAMETER:
+      return NO_RECOVERY;
+
+    case S_resolvLib_NO_DATA:
+      return NO_DATA;
+
+    default:
+      return -1;
+  }
+#elif defined(VMS)
+  return errno;
+#elif defined(__rtems__)
+  /* At this stage in the tool build, no networking .h files are available.
+     Newlib does not provide networking .h files and RTEMS is not built yet.
+     So we need to explicitly extern h_errno to access it.
+   */
+  extern int h_errno;
+  return h_errno;
+#else
+  return h_errno;
+#endif
 }

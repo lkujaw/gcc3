@@ -1,12 +1,12 @@
 ------------------------------------------------------------------------------
 --                                                                          --
---                GNU ADA RUN-TIME LIBRARY (GNARL) COMPONENTS               --
+--                 GNAT RUN-TIME LIBRARY (GNARL) COMPONENTS                 --
 --                                                                          --
 --             S Y S T E M . T A S K I N G . E N T R Y _ C A L L S          --
 --                                                                          --
 --                                  B o d y                                 --
 --                                                                          --
---         Copyright (C) 1992-2003, Free Software Foundation, Inc.          --
+--         Copyright (C) 1992-2005, Free Software Foundation, Inc.          --
 --                                                                          --
 -- GNARL is free software; you can  redistribute it  and/or modify it under --
 -- terms of the  GNU General Public License as published  by the Free Soft- --
@@ -16,16 +16,16 @@
 -- or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License --
 -- for  more details.  You should have  received  a copy of the GNU General --
 -- Public License  distributed with GNARL; see file COPYING.  If not, write --
--- to  the Free Software Foundation,  59 Temple Place - Suite 330,  Boston, --
--- MA 02111-1307, USA.                                                      --
+-- to  the  Free Software Foundation,  51  Franklin  Street,  Fifth  Floor, --
+-- Boston, MA 02110-1301, USA.                                              --
 --                                                                          --
--- As a special exception,  if other files  instantiate  generics from this --
--- unit, or you link  this unit with other files  to produce an executable, --
--- this  unit  does not  by itself cause  the resulting  executable  to  be --
--- covered  by the  GNU  General  Public  License.  This exception does not --
--- however invalidate  any other reasons why  the executable file  might be --
--- covered by the  GNU Public License.                                      --
---                                                                          --
+--
+--
+--
+--
+--
+--
+--
 -- GNARL was developed by the GNARL team at Florida State University.       --
 -- Extensive contributions were provided by Ada Core Technologies, Inc.     --
 --                                                                          --
@@ -113,7 +113,7 @@ package body System.Tasking.Entry_Calls is
    --  If Single_Lock and server is a PO, take RTS_Lock on exit.
 
    procedure Unlock_And_Update_Server
-     (Self_ID    : Task_ID;
+     (Self_ID    : Task_Id;
       Entry_Call : Entry_Call_Link);
    --  Similar to Unlock_Server, but services entry calls if the
    --  server is a protected object.
@@ -121,7 +121,7 @@ package body System.Tasking.Entry_Calls is
    --  If Single_Lock and server is a PO, take RTS_Lock on exit.
 
    procedure Check_Pending_Actions_For_Entry_Call
-     (Self_ID    : Task_ID;
+     (Self_ID    : Task_Id;
       Entry_Call : Entry_Call_Link);
    --  This procedure performs priority change of a queued call and
    --  dequeuing of an entry call when the call is cancelled.
@@ -133,7 +133,7 @@ package body System.Tasking.Entry_Calls is
    --  and to dequeue the call if the call has been aborted.
 
    procedure Poll_Base_Priority_Change_At_Entry_Call
-     (Self_ID    : Task_ID;
+     (Self_ID    : Task_Id;
       Entry_Call : Entry_Call_Link);
    pragma Inline (Poll_Base_Priority_Change_At_Entry_Call);
    --  A specialized version of Poll_Base_Priority_Change,
@@ -146,7 +146,7 @@ package body System.Tasking.Entry_Calls is
    ---------------------
 
    procedure Check_Exception
-     (Self_ID    : Task_ID;
+     (Self_ID    : Task_Id;
       Entry_Call : Entry_Call_Link)
    is
       pragma Warnings (Off, Self_ID);
@@ -154,7 +154,7 @@ package body System.Tasking.Entry_Calls is
       use type Ada.Exceptions.Exception_Id;
 
       procedure Internal_Raise (X : Ada.Exceptions.Exception_Id);
-      pragma Import (C, Internal_Raise, "__gnat_raise_after_setup");
+      pragma Import (C, Internal_Raise, "__gnat_raise_with_msg");
 
       E : constant Ada.Exceptions.Exception_Id :=
             Entry_Call.Exception_To_Raise;
@@ -174,7 +174,7 @@ package body System.Tasking.Entry_Calls is
    ------------------------------------------
 
    procedure Check_Pending_Actions_For_Entry_Call
-     (Self_ID    : Task_ID;
+     (Self_ID    : Task_Id;
       Entry_Call : Entry_Call_Link) is
    begin
       pragma Assert (Self_ID = Entry_Call.Self);
@@ -213,7 +213,7 @@ package body System.Tasking.Entry_Calls is
    -----------------
 
    procedure Lock_Server (Entry_Call : Entry_Call_Link) is
-      Test_Task         : Task_ID;
+      Test_Task         : Task_Id;
       Test_PO           : Protection_Entries_Access;
       Ceiling_Violation : Boolean;
       Failures          : Integer := 0;
@@ -262,7 +262,7 @@ package body System.Tasking.Entry_Calls is
 
                if Ceiling_Violation then
                   declare
-                     Current_Task      : constant Task_ID := STPO.Self;
+                     Current_Task      : constant Task_Id := STPO.Self;
                      Old_Base_Priority : System.Any_Priority;
 
                   begin
@@ -315,7 +315,7 @@ package body System.Tasking.Entry_Calls is
    ---------------------------------------------
 
    procedure Poll_Base_Priority_Change_At_Entry_Call
-     (Self_ID    : Task_ID;
+     (Self_ID    : Task_Id;
       Entry_Call : Entry_Call_Link) is
    begin
       if Dynamic_Priority_Support and then Self_ID.Pending_Priority_Change then
@@ -377,7 +377,7 @@ package body System.Tasking.Entry_Calls is
    --------------------
 
    procedure Reset_Priority
-     (Acceptor               : Task_ID;
+     (Acceptor               : Task_Id;
       Acceptor_Prev_Priority : Rendezvous_Priority) is
    begin
       pragma Assert (Acceptor = STPO.Self);
@@ -397,7 +397,7 @@ package body System.Tasking.Entry_Calls is
 
    procedure Try_To_Cancel_Entry_Call (Succeeded : out Boolean) is
       Entry_Call : Entry_Call_Link;
-      Self_ID    : constant Task_ID := STPO.Self;
+      Self_ID    : constant Task_Id := STPO.Self;
 
       use type Ada.Exceptions.Exception_Id;
 
@@ -459,18 +459,18 @@ package body System.Tasking.Entry_Calls is
    ------------------------------
 
    procedure Unlock_And_Update_Server
-     (Self_ID    : Task_ID;
+     (Self_ID    : Task_Id;
       Entry_Call : Entry_Call_Link)
    is
       Called_PO : Protection_Entries_Access;
-      Caller    : Task_ID;
+      Caller    : Task_Id;
 
    begin
       if Entry_Call.Called_Task /= null then
          STPO.Unlock (Entry_Call.Called_Task);
       else
          Called_PO := To_Protection (Entry_Call.Called_PO);
-         PO_Service_Entries (Self_ID, Called_PO);
+         PO_Service_Entries (Self_ID, Called_PO, False);
 
          if Called_PO.Pending_Action then
             Called_PO.Pending_Action := False;
@@ -503,7 +503,7 @@ package body System.Tasking.Entry_Calls is
    -------------------
 
    procedure Unlock_Server (Entry_Call : Entry_Call_Link) is
-      Caller    : Task_ID;
+      Caller    : Task_Id;
       Called_PO : Protection_Entries_Access;
 
    begin
@@ -543,7 +543,7 @@ package body System.Tasking.Entry_Calls is
    -------------------------
 
    procedure Wait_For_Completion (Entry_Call : Entry_Call_Link) is
-      Self_Id : constant Task_ID := Entry_Call.Self;
+      Self_Id : constant Task_Id := Entry_Call.Self;
    begin
       --  If this is a conditional call, it should be cancelled when it
       --  becomes abortable. This is checked in the loop below.
@@ -600,7 +600,7 @@ package body System.Tasking.Entry_Calls is
       Mode        : Delay_Modes;
       Yielded     : out Boolean)
    is
-      Self_Id  : constant Task_ID := Entry_Call.Self;
+      Self_Id  : constant Task_Id := Entry_Call.Self;
       Timedout : Boolean := False;
 
       use type Ada.Exceptions.Exception_Id;
@@ -699,7 +699,7 @@ package body System.Tasking.Entry_Calls is
    --------------------------
 
    procedure Wait_Until_Abortable
-     (Self_ID : Task_ID;
+     (Self_ID : Task_Id;
       Call    : Entry_Call_Link) is
    begin
       pragma Assert (Self_ID.ATC_Nesting_Level > 0);

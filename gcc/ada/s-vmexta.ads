@@ -6,7 +6,7 @@
 --                                                                          --
 --                                 S p e c                                  --
 --                                                                          --
---            Copyright (C) 1997 Free Software Foundation, Inc.             --
+--           Copyright (C) 1997-2004 Free Software Foundation, Inc.         --
 --                                                                          --
 -- GNAT is free software;  you can  redistribute it  and/or modify it under --
 -- terms of the  GNU General Public License as published  by the Free Soft- --
@@ -16,16 +16,16 @@
 -- or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License --
 -- for  more details.  You should have  received  a copy of the GNU General --
 -- Public License  distributed with GNAT;  see file COPYING.  If not, write --
--- to  the Free Software Foundation,  59 Temple Place - Suite 330,  Boston, --
--- MA 02111-1307, USA.                                                      --
+-- to  the  Free Software Foundation,  51  Franklin  Street,  Fifth  Floor, --
+-- Boston, MA 02110-1301, USA.                                              --
 --                                                                          --
--- As a special exception,  if other files  instantiate  generics from this --
--- unit, or you link  this unit with other files  to produce an executable, --
--- this  unit  does not  by itself cause  the resulting  executable  to  be --
--- covered  by the  GNU  General  Public  License.  This exception does not --
--- however invalidate  any other reasons why  the executable file  might be --
--- covered by the  GNU Public License.                                      --
---                                                                          --
+--
+--
+--
+--
+--
+--
+--
 -- GNAT was originally developed  by the GNAT team at  New York University. --
 -- Extensive contributions were provided by Ada Core Technologies Inc.      --
 --                                                                          --
@@ -35,9 +35,14 @@
 --  where there is at least one Import/Export exception present.
 
 with System.Standard_Library;
+
 package System.VMS_Exception_Table is
 
-   procedure Register_VMS_Exception (Code : Integer);
+   package SSL renames System.Standard_Library;
+
+   procedure Register_VMS_Exception
+     (Code : SSL.Exception_Code;
+      E    : SSL.Exception_Data_Ptr);
    --  Register an exception in the hash table mapping with a VMS
    --  condition code.
 
@@ -45,9 +50,12 @@ package System.VMS_Exception_Table is
 
 private
 
-   function Coded_Exception (X : Natural)
-     return System.Standard_Library.Exception_Data_Ptr;
+   function Base_Code_In (Code : SSL.Exception_Code) return SSL.Exception_Code;
+   --  Value of Code with the severity bits masked off.
+
+   function Coded_Exception (X : SSL.Exception_Code)
+     return SSL.Exception_Data_Ptr;
    --  Given a VMS condition, find and return it's allocated Ada exception
-   --  (called only from a-init.c).
+   --  (called only from init.c).
 
 end System.VMS_Exception_Table;

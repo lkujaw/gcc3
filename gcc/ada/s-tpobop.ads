@@ -1,13 +1,13 @@
 ------------------------------------------------------------------------------
 --                                                                          --
---                GNU ADA RUN-TIME LIBRARY (GNARL) COMPONENTS               --
+--                 GNAT RUN-TIME LIBRARY (GNARL) COMPONENTS                 --
 --                                                                          --
---    S Y S T E M . T A S K I N G . P R O T E C T E D _ O B J E C T S .     --
---                            O P E R A T I O N S                           --
+--     S Y S T E M . T A S K I N G . P R O T E C T E D _ O B J E C T S .    --
+--                             O P E R A T I O N S                          --
 --                                                                          --
 --                                  S p e c                                 --
 --                                                                          --
---          Copyright (C) 1992-2001, Free Software Foundation, Inc.         --
+--          Copyright (C) 1992-2005, Free Software Foundation, Inc.         --
 --                                                                          --
 -- GNARL is free software; you can  redistribute it  and/or modify it under --
 -- terms of the  GNU General Public License as published  by the Free Soft- --
@@ -17,34 +17,35 @@
 -- or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License --
 -- for  more details.  You should have  received  a copy of the GNU General --
 -- Public License  distributed with GNARL; see file COPYING.  If not, write --
--- to  the Free Software Foundation,  59 Temple Place - Suite 330,  Boston, --
--- MA 02111-1307, USA.                                                      --
+-- to  the  Free Software Foundation,  51  Franklin  Street,  Fifth  Floor, --
+-- Boston, MA 02110-1301, USA.                                              --
 --                                                                          --
--- As a special exception,  if other files  instantiate  generics from this --
--- unit, or you link  this unit with other files  to produce an executable, --
--- this  unit  does not  by itself cause  the resulting  executable  to  be --
--- covered  by the  GNU  General  Public  License.  This exception does not --
--- however invalidate  any other reasons why  the executable file  might be --
--- covered by the  GNU Public License.                                      --
---                                                                          --
+--
+--
+--
+--
+--
+--
+--
 -- GNARL was developed by the GNARL team at Florida State University.       --
 -- Extensive contributions were provided by Ada Core Technologies, Inc.     --
 --                                                                          --
 ------------------------------------------------------------------------------
 
---  This package contains all the extended primitives related to
---  Protected_Objects with entries.
+--  This package contains all the extended primitives related to protected
+--  objects with entries.
+
 --  The handling of protected objects with no entries is done in
 --  System.Tasking.Protected_Objects, the simple routines for protected
---  objects with entries in System.Tasking.Protected_Objects.Entries.
---  The split between Entries and Operations is needed to break circular
+--  objects with entries in System.Tasking.Protected_Objects.Entries. The
+--  split between Entries and Operations is needed to break circular
 --  dependencies inside the run time.
 
 --  Note: the compiler generates direct calls to this interface, via Rtsfind.
 --  Any changes to this interface may require corresponding compiler changes.
 
 with Ada.Exceptions;
---  used for Exception_Id
+--  Used for Exception_Id
 
 with System.Tasking.Protected_Objects.Entries;
 
@@ -95,19 +96,25 @@ package System.Tasking.Protected_Objects.Operations is
    pragma Inline (Service_Entries);
 
    procedure PO_Service_Entries
-     (Self_ID : Task_ID;
-      Object  : Entries.Protection_Entries_Access);
+     (Self_ID       : Task_Id;
+      Object        : Entries.Protection_Entries_Access;
+      Unlock_Object : Boolean := True);
    --  Service all entry queues of the specified object, executing the
    --  corresponding bodies of any queued entry calls that are waiting
    --  on True barriers. This is used when the state of a protected
    --  object may have changed, in particular after the execution of
    --  the statement sequence of a protected procedure.
+   --
    --  Note that servicing an entry may change the value of one or more
    --  barriers, so this routine keeps checking barriers until all of
    --  them are closed.
    --
-   --  This must be called with abortion deferred and with the corresponding
+   --  This must be called with abort deferred and with the corresponding
    --  object locked.
+   --
+   --  If Unlock_Object is set True, then Object is unlocked on return,
+   --  otherwise Object remains locked and the caller is responsible for
+   --  the required unlock.
 
    procedure Complete_Entry_Body (Object : Entries.Protection_Entries_Access);
    --  Called from within an entry body procedure, indicates that the
@@ -167,38 +174,37 @@ package System.Tasking.Protected_Objects.Operations is
      (Object : Entries.Protection_Entries'Class;
       E      : Protected_Entry_Index)
       return   Natural;
-   --  Return the number of entry calls to E on Object.
+   --  Return the number of entry calls to E on Object
 
    function Protected_Entry_Caller
-     (Object : Entries.Protection_Entries'Class) return Task_ID;
+     (Object : Entries.Protection_Entries'Class) return Task_Id;
    --  Return value of E'Caller, where E is the protected entry currently
    --  being handled. This will only work if called from within an entry
    --  body, as required by the LRM (C.7.1(14)).
 
-   --  For internal use only:
+   --  For internal use only
 
    procedure PO_Do_Or_Queue
-     (Self_ID    : Task_ID;
+     (Self_ID    : Task_Id;
       Object     : Entries.Protection_Entries_Access;
       Entry_Call : Entry_Call_Link;
       With_Abort : Boolean);
    --  This procedure either executes or queues an entry call, depending
-   --  on the status of the corresponding barrier. It assumes that abortion
+   --  on the status of the corresponding barrier. It assumes that abort
    --  is deferred and that the specified object is locked.
 
 private
    type Communication_Block is record
-      Self      : Task_ID;
+      Self      : Task_Id;
       Enqueued  : Boolean := True;
       Cancelled : Boolean := False;
    end record;
    pragma Volatile (Communication_Block);
 
    --  ?????
-   --  The Communication_Block seems to be a relic.
-   --  At the moment, the compiler seems to be generating
-   --  unnecessary conditional code based on this block.
-   --  See the code generated for async. select with task entry
+   --  The Communication_Block seems to be a relic. At the moment, the
+   --  compiler seems to be generating unnecessary conditional code based on
+   --  this block. See the code generated for async. select with task entry
    --  call for another way of solving this.
 
 end System.Tasking.Protected_Objects.Operations;

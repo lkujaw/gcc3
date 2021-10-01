@@ -6,7 +6,7 @@
 --                                                                          --
 --                                 B o d y                                  --
 --                                                                          --
---              Copyright (C) 2002-2003, Ada Core Technologies, Inc.        --
+--                     Copyright (C) 2002-2006, AdaCore                     --
 --                                                                          --
 -- GNAT is free software;  you can  redistribute it  and/or modify it under --
 -- terms of the  GNU General Public License as published  by the Free Soft- --
@@ -16,8 +16,8 @@
 -- or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License --
 -- for  more details.  You should have  received  a copy of the GNU General --
 -- Public License  distributed with GNAT;  see file COPYING.  If not, write --
--- to  the Free Software Foundation,  59 Temple Place - Suite 330,  Boston, --
--- MA 02111-1307, USA.                                                      --
+-- to  the  Free Software Foundation,  51  Franklin  Street,  Fifth  Floor, --
+-- Boston, MA 02110-1301, USA.                                              --
 --                                                                          --
 -- GNAT was originally developed  by the GNAT team at  New York University. --
 -- Extensive contributions were provided by Ada Core Technologies Inc.      --
@@ -36,20 +36,16 @@ with GNAT;     use GNAT;
 
 package body MLib.Utl is
 
-   Initialized   : Boolean := False;
+   Gcc_Name : constant String := "gcc";
+   Gcc_Exec : OS_Lib.String_Access;
 
-   Gcc_Name      : constant String := "gcc";
-   Gcc_Exec      : OS_Lib.String_Access;
+   Ar_Name    : OS_Lib.String_Access;
+   Ar_Exec    : OS_Lib.String_Access;
+   Ar_Options : OS_Lib.String_List_Access;
 
-   Ar_Name       : OS_Lib.String_Access;
-   Ar_Exec       : OS_Lib.String_Access;
-   Ar_Options    : OS_Lib.String_List_Access;
-
-   Ranlib_Name   : OS_Lib.String_Access;
-   Ranlib_Exec   : OS_Lib.String_Access := null;
-
-   procedure Initialize;
-   --  Look for the tools in the path and record the full path for each one
+   Ranlib_Name    : OS_Lib.String_Access;
+   Ranlib_Exec    : OS_Lib.String_Access := null;
+   Ranlib_Options : OS_Lib.String_List_Access := null;
 
    --------
    -- Ar --
@@ -59,15 +55,40 @@ package body MLib.Utl is
       Full_Output_File : constant String :=
                              Ext_To (Output_File, Archive_Ext);
 
-      Arguments : OS_Lib.Argument_List_Access;
-
-      Success   : Boolean;
-
+      Arguments   : OS_Lib.Argument_List_Access;
+      Success     : Boolean;
       Line_Length : Natural := 0;
-      Max_Line_Length : constant := 200; --  arbitrary
 
    begin
-      Initialize;
+      if Ar_Exec = null then
+         Ar_Name := new String'(Archive_Builder);
+         Ar_Exec := OS_Lib.Locate_Exec_On_Path (Ar_Name.all);
+
+         if Ar_Exec = null then
+            Fail (Ar_Name.all, " not found in path");
+
+         elsif Opt.Verbose_Mode then
+            Write_Str  ("found ");
+            Write_Line (Ar_Exec.all);
+         end if;
+
+         Ar_Options := Archive_Builder_Options;
+
+         --  ranlib
+
+         Ranlib_Name := new String'(Archive_Indexer);
+
+         if Ranlib_Name'Length > 0 then
+            Ranlib_Exec := OS_Lib.Locate_Exec_On_Path (Ranlib_Name.all);
+
+            if Ranlib_Exec /= null and then Opt.Verbose_Mode then
+               Write_Str ("found ");
+               Write_Line (Ranlib_Exec.all);
+            end if;
+         end if;
+
+         Ranlib_Options := Archive_Indexer_Options;
+      end if;
 
       Arguments :=
         new String_List (1 .. 1 + Ar_Options'Length + Objects'Length);
@@ -82,9 +103,10 @@ package body MLib.Utl is
          Line_Length := Ar_Name'Length;
 
          for J in Arguments'Range loop
+
             --  Make sure the Output buffer does not overflow
 
-            if Line_Length + 1 + Arguments (J)'Length > Max_Line_Length then
+            if Line_Length + 1 + Arguments (J)'Length > Buffer_Max then
                Write_Eol;
                Line_Length := 0;
             end if;
@@ -114,7 +136,7 @@ package body MLib.Utl is
 
          OS_Lib.Spawn
            (Ranlib_Exec.all,
-            (1 => Arguments (Ar_Options'Length + 1)),
+            Ranlib_Options.all & (Arguments (Ar_Options'Length + 1)),
             Success);
 
          if not Success then
@@ -127,8 +149,8 @@ package body MLib.Utl is
    -- Delete_File --
    -----------------
 
-   procedure Delete_File (Filename : in String) is
-      File   : constant String := Filename & ASCII.Nul;
+   procedure Delete_File (Filename : String) is
+      File    : constant String := Filename & ASCII.Nul;
       Success : Boolean;
 
    begin
@@ -154,8 +176,8 @@ package body MLib.Utl is
      (Output_File : String;
       Objects     : Argument_List;
       Options     : Argument_List;
-      Driver_Name : Name_Id       := No_Name;
-      Options_2   : Argument_List := No_Argument_List)
+      Options_2   : Argument_List;
+      Driver_Name : Name_Id := No_Name)
    is
       Arguments :
         OS_Lib.Argument_List
@@ -173,11 +195,18 @@ package body MLib.Utl is
       Lib_Opt : constant OS_Lib.String_Access :=
                   new String'(Dynamic_Option);
 
-      Driver  : String_Access;
-   begin
-      Initialize;
+      Driver    : String_Access;
 
+   begin
       if Driver_Name = No_Name then
+         if Gcc_Exec = null then
+            Gcc_Exec := OS_Lib.Locate_Exec_On_Path (Gcc_Name);
+
+            if Gcc_Exec = null then
+               Fail (Gcc_Name, " not found in path");
+            end if;
+         end if;
+
          Driver := Gcc_Exec;
 
       else
@@ -233,57 +262,6 @@ package body MLib.Utl is
          end if;
       end if;
    end Gcc;
-
-   ----------------
-   -- Initialize --
-   ----------------
-
-   procedure Initialize is
-   begin
-      if not Initialized then
-         Initialized := True;
-
-         --  gcc
-
-         Gcc_Exec := OS_Lib.Locate_Exec_On_Path (Gcc_Name);
-
-         if Gcc_Exec = null then
-            Fail (Gcc_Name, " not found in path");
-
-         elsif Opt.Verbose_Mode then
-            Write_Str  ("found ");
-            Write_Line (Gcc_Exec.all);
-         end if;
-
-         --  ar
-
-         Ar_Name := new String'(Archive_Builder);
-         Ar_Exec := OS_Lib.Locate_Exec_On_Path (Ar_Name.all);
-
-         if Ar_Exec = null then
-            Fail (Ar_Name.all, " not found in path");
-
-         elsif Opt.Verbose_Mode then
-            Write_Str  ("found ");
-            Write_Line (Ar_Exec.all);
-         end if;
-
-         Ar_Options := Archive_Builder_Options;
-
-         --  ranlib
-
-         Ranlib_Name := new String'(Archive_Indexer);
-
-         if Ranlib_Name'Length > 0 then
-            Ranlib_Exec := OS_Lib.Locate_Exec_On_Path (Ranlib_Name.all);
-
-            if Ranlib_Exec /= null and then Opt.Verbose_Mode then
-               Write_Str ("found ");
-               Write_Line (Ranlib_Exec.all);
-            end if;
-         end if;
-      end if;
-   end Initialize;
 
    -------------------
    -- Lib_Directory --

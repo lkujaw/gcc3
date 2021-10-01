@@ -6,7 +6,7 @@
 --                                                                          --
 --                                 B o d y                                  --
 --                                                                          --
---          Copyright (C) 1999-2003 Free Software Foundation, Inc.          --
+--          Copyright (C) 1999-2006, Free Software Foundation, Inc.         --
 --                                                                          --
 -- GNAT is free software;  you can  redistribute it  and/or modify it under --
 -- terms of the  GNU General Public License as published  by the Free Soft- --
@@ -16,19 +16,19 @@
 -- or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License --
 -- for  more details.  You should have  received  a copy of the GNU General --
 -- Public License  distributed with GNAT;  see file COPYING.  If not, write --
--- to  the Free Software Foundation,  59 Temple Place - Suite 330,  Boston, --
--- MA 02111-1307, USA.                                                      --
+-- to  the  Free Software Foundation,  51  Franklin  Street,  Fifth  Floor, --
+-- Boston, MA 02110-1301, USA.                                              --
 --                                                                          --
 -- GNAT was originally developed  by the GNAT team at  New York University. --
 -- Extensive contributions were provided by Ada Core Technologies Inc.      --
 --                                                                          --
 ------------------------------------------------------------------------------
 
-with Csets;  use Csets;
-with Namet;  use Namet;
-with Opt;    use Opt;
-with Osint;  use Osint;
-with Output; use Output;
+with Csets;    use Csets;
+with Namet;    use Namet;
+with Opt;      use Opt;
+with Osint;    use Osint;
+with Output;   use Output;
 
 package body Targparm is
    use ASCII;
@@ -44,7 +44,8 @@ package body Targparm is
       BDC,  --   Backend_Divide_Checks
       BOC,  --   Backend_Overflow_Checks
       CLA,  --   Command_Line_Args
-      CRT,  --   Configurable_Run_Time
+      CRT,  --   Configurable_Run_Times
+      CSV,  --   Compiler_System_Version
       D32,  --   Duration_32_Bits
       DEN,  --   Denorm
       DSP,  --   Functions_Return_By_DSP
@@ -53,6 +54,7 @@ package body Targparm is
       FFO,  --   Fractional_Fixed_Ops
       MOV,  --   Machine_Overflows
       MRN,  --   Machine_Rounds
+      PAS,  --   Preallocated_Stacks
       S64,  --   Support_64_Bit_Divides
       SAG,  --   Support_Aggregates
       SCA,  --   Support_Composite_Assign
@@ -65,15 +67,9 @@ package body Targparm is
       UAM,  --   Use_Ada_Main_Program_Name
       VMS,  --   OpenVMS
       ZCD,  --   ZCX_By_Default
-      ZCG,  --   GCC_ZCX_Support
-      ZCF,  --   Front_End_ZCX_Support
+      ZCG); --   GCC_ZCX_Support
 
-   --  The following entries are obsolete and can eventually be removed
-
-      HIM,  --   High_Integrity_Mode
-      LSI); --   Long_Shifts_Inlined
-
-   subtype Targparm_Tags_OK is Targparm_Tags range AAM .. ZCF;
+   subtype Targparm_Tags_OK is Targparm_Tags range AAM .. ZCG;
    --  Range excluding obsolete entries
 
    Targparm_Flags : array (Targparm_Tags) of Boolean := (others => False);
@@ -86,6 +82,7 @@ package body Targparm is
    BOC_Str : aliased constant Source_Buffer := "Backend_Overflow_Checks";
    CLA_Str : aliased constant Source_Buffer := "Command_Line_Args";
    CRT_Str : aliased constant Source_Buffer := "Configurable_Run_Time";
+   CSV_Str : aliased constant Source_Buffer := "Compiler_System_Version";
    D32_Str : aliased constant Source_Buffer := "Duration_32_Bits";
    DEN_Str : aliased constant Source_Buffer := "Denorm";
    DSP_Str : aliased constant Source_Buffer := "Functions_Return_By_DSP";
@@ -94,6 +91,7 @@ package body Targparm is
    FFO_Str : aliased constant Source_Buffer := "Fractional_Fixed_Ops";
    MOV_Str : aliased constant Source_Buffer := "Machine_Overflows";
    MRN_Str : aliased constant Source_Buffer := "Machine_Rounds";
+   PAS_Str : aliased constant Source_Buffer := "Preallocated_Stacks";
    S64_Str : aliased constant Source_Buffer := "Support_64_Bit_Divides";
    SAG_Str : aliased constant Source_Buffer := "Support_Aggregates";
    SCA_Str : aliased constant Source_Buffer := "Support_Composite_Assign";
@@ -107,12 +105,6 @@ package body Targparm is
    VMS_Str : aliased constant Source_Buffer := "OpenVMS";
    ZCD_Str : aliased constant Source_Buffer := "ZCX_By_Default";
    ZCG_Str : aliased constant Source_Buffer := "GCC_ZCX_Support";
-   ZCF_Str : aliased constant Source_Buffer := "Front_End_ZCX_Support";
-
-   --  Obsolete entries
-
-   HIM_Str : aliased constant Source_Buffer := "High_Integrity_Mode";
-   LSI_Str : aliased constant Source_Buffer := "Long_Shifts_Inlined";
 
    --  The following defines a set of pointers to the above strings,
    --  indexed by the tag values.
@@ -124,6 +116,7 @@ package body Targparm is
       BOC_Str'Access,
       CLA_Str'Access,
       CRT_Str'Access,
+      CSV_Str'Access,
       D32_Str'Access,
       DEN_Str'Access,
       DSP_Str'Access,
@@ -132,6 +125,7 @@ package body Targparm is
       FFO_Str'Access,
       MOV_Str'Access,
       MRN_Str'Access,
+      PAS_Str'Access,
       S64_Str'Access,
       SAG_Str'Access,
       SCA_Str'Access,
@@ -144,13 +138,33 @@ package body Targparm is
       UAM_Str'Access,
       VMS_Str'Access,
       ZCD_Str'Access,
-      ZCG_Str'Access,
-      ZCF_Str'Access,
+      ZCG_Str'Access);
 
-      --  Obsolete entries
+   -----------------------
+   -- Local Subprograms --
+   -----------------------
 
-      HIM_Str'Access,
-      LSI_Str'Access);
+   procedure Set_Profile_Restrictions (P : Profile_Name);
+   --  Set Restrictions_On_Target for the given profile
+
+   ------------------------------
+   -- Set_Profile_Restrictions --
+   ------------------------------
+
+   procedure Set_Profile_Restrictions (P : Profile_Name) is
+      R : Restriction_Flags  renames Profile_Info (P).Set;
+      V : Restriction_Values renames Profile_Info (P).Value;
+   begin
+      for J in R'Range loop
+         if R (J) then
+            Restrictions_On_Target.Set (J) := True;
+
+            if J in All_Parameter_Restrictions then
+               Restrictions_On_Target.Value (J) := V (J);
+            end if;
+         end if;
+      end loop;
+   end Set_Profile_Restrictions;
 
    ---------------------------
    -- Get_Target_Parameters --
@@ -192,7 +206,7 @@ package body Targparm is
       Source_Last  : Source_Ptr)
    is
       P : Source_Ptr;
-      V : Uint;
+      --  Scans source buffer containing source of system.ads
 
       Fatal : Boolean := False;
       --  Set True if a fatal error is detected
@@ -207,6 +221,8 @@ package body Targparm is
          Parameters_Obtained := True;
       end if;
 
+      Opt.Address_Is_Private := False;
+
       P := Source_First;
       Line_Loop : while System_Text (P .. P + 10) /= "end System;" loop
 
@@ -215,12 +231,39 @@ package body Targparm is
          if System_Text (P) = '-' then
             goto Line_Loop_Continue;
 
+         --  Test for type Address is private
+
+         elsif System_Text (P .. P + 26) = "   type Address is private;" then
+            Opt.Address_Is_Private := True;
+            P := P + 26;
+            goto Line_Loop_Continue;
+
+         --  Test for pragma Profile (Ravenscar);
+
+         elsif System_Text (P .. P + 26) =
+                 "pragma Profile (Ravenscar);"
+         then
+            Set_Profile_Restrictions (Ravenscar);
+            Opt.Task_Dispatching_Policy := 'F';
+            Opt.Locking_Policy          := 'C';
+            P := P + 27;
+            goto Line_Loop_Continue;
+
+         --  Test for pragma Profile (Restricted);
+
+         elsif System_Text (P .. P + 27) =
+                 "pragma Profile (Restricted);"
+         then
+            Set_Profile_Restrictions (Restricted);
+            P := P + 28;
+            goto Line_Loop_Continue;
+
          --  Test for pragma Restrictions
 
          elsif System_Text (P .. P + 20) = "pragma Restrictions (" then
             P := P + 21;
 
-            Rloop : for K in Partition_Restrictions loop
+            Rloop : for K in All_Boolean_Restrictions loop
                declare
                   Rname : constant String := Restriction_Id'Image (K);
 
@@ -234,7 +277,7 @@ package body Targparm is
                   end loop;
 
                   if System_Text (P + Rname'Length) = ')' then
-                     Restrictions_On_Target (K) := True;
+                     Restrictions_On_Target.Set (K) := True;
                      goto Line_Loop_Continue;
                   end if;
                end;
@@ -243,10 +286,13 @@ package body Targparm is
                null;
             end loop Rloop;
 
-            Ploop : for K in Restriction_Parameter_Id loop
+            Ploop : for K in All_Parameter_Restrictions loop
                declare
                   Rname : constant String :=
-                            Restriction_Parameter_Id'Image (K);
+                            All_Parameter_Restrictions'Image (K);
+
+                  V : Natural;
+                  --  Accumulates value
 
                begin
                   for J in Rname'Range loop
@@ -261,22 +307,45 @@ package body Targparm is
                                                       " => "
                   then
                      P := P + Rname'Length + 4;
-                     V := Uint_0;
 
+                     V := 0;
                      loop
                         if System_Text (P) in '0' .. '9' then
-                           V := 10 * V + Character'Pos (System_Text (P)) - 48;
+                           declare
+                              pragma Unsuppress (Overflow_Check);
+
+                           begin
+                              --  Accumulate next digit
+
+                              V := 10 * V +
+                                   Character'Pos (System_Text (P)) -
+                                   Character'Pos ('0');
+
+                           exception
+                              --  On overflow, we just ignore the pragma since
+                              --  that is the standard handling in this case.
+
+                              when Constraint_Error =>
+                                 goto Line_Loop_Continue;
+                           end;
+
                         elsif System_Text (P) = '_' then
                            null;
+
                         elsif System_Text (P) = ')' then
-                           Restriction_Parameters_On_Target (K) := V;
-                           goto  Line_Loop_Continue;
+                           Restrictions_On_Target.Value (K) := V;
+                           Restrictions_On_Target.Set (K) := True;
+                           goto Line_Loop_Continue;
+
                         else
-                           goto Ploop_Continue;
+                           exit Ploop;
                         end if;
 
                         P := P + 1;
                      end loop;
+
+                  else
+                     exit Ploop;
                   end if;
                end;
 
@@ -287,7 +356,7 @@ package body Targparm is
             Set_Standard_Error;
             Write_Line
                ("fatal error: system.ads is incorrectly formatted");
-            Write_Str ("unrecognized restrictions pragma: ");
+            Write_Str ("unrecognized or incorrect restrictions pragma: ");
 
             while System_Text (P) /= ')'
                     and then
@@ -300,6 +369,13 @@ package body Targparm is
             Write_Eol;
             Fatal := True;
             Set_Standard_Output;
+
+         --  Test for pragma Detect_Blocking;
+
+         elsif System_Text (P .. P + 22) = "pragma Detect_Blocking;" then
+            P := P + 23;
+            Opt.Detect_Blocking := True;
+            goto Line_Loop_Continue;
 
          --  Discard_Names
 
@@ -421,6 +497,34 @@ package body Targparm is
 
             goto Line_Loop_Continue;
 
+         --  See if we have an Executable_Extension
+
+         elsif System_Text (P .. P + 45) =
+                  "   Executable_Extension : constant String := """
+         then
+            P := P + 46;
+
+            Name_Len := 0;
+            while System_Text (P) /= '"'
+              and then System_Text (P) /= ASCII.LF
+            loop
+               Add_Char_To_Name_Buffer (System_Text (P));
+               P := P + 1;
+            end loop;
+
+            if System_Text (P) /= '"' or else System_Text (P + 1) /= ';' then
+               Set_Standard_Error;
+               Write_Line
+                 ("incorrectly formatted Executable_Extension in system.ads");
+               Set_Standard_Output;
+               Fatal := True;
+
+            else
+               Executable_Extension_On_Target := Name_Enter;
+            end if;
+
+            goto Line_Loop_Continue;
+
          --  Next See if we have a configuration parameter
 
          else
@@ -429,7 +533,6 @@ package body Targparm is
                                                       Targparm_Str (K).all
                then
                   P := P + 3 + Targparm_Str (K)'Length;
-
 
                   if Targparm_Flags (K) then
                      Set_Standard_Error;
@@ -469,6 +572,7 @@ package body Targparm is
                      when BOC => Backend_Overflow_Checks_On_Target   := Result;
                      when CLA => Command_Line_Args_On_Target         := Result;
                      when CRT => Configurable_Run_Time_On_Target     := Result;
+                     when CSV => Compiler_System_Version             := Result;
                      when D32 => Duration_32_Bits_On_Target          := Result;
                      when DEN => Denorm_On_Target                    := Result;
                      when DSP => Functions_Return_By_DSP_On_Target   := Result;
@@ -477,6 +581,7 @@ package body Targparm is
                      when FFO => Fractional_Fixed_Ops_On_Target      := Result;
                      when MOV => Machine_Overflows_On_Target         := Result;
                      when MRN => Machine_Rounds_On_Target            := Result;
+                     when PAS => Preallocated_Stacks_On_Target       := Result;
                      when S64 => Support_64_Bit_Divides_On_Target    := Result;
                      when SAG => Support_Aggregates_On_Target        := Result;
                      when SCA => Support_Composite_Assign_On_Target  := Result;
@@ -490,15 +595,14 @@ package body Targparm is
                      when VMS => OpenVMS_On_Target                   := Result;
                      when ZCD => ZCX_By_Default_On_Target            := Result;
                      when ZCG => GCC_ZCX_Support_On_Target           := Result;
-                     when ZCF => Front_End_ZCX_Support_On_Target     := Result;
-
-                     --  Obsolete entries
-
-                     when HIM => null;
-                     when LSI => null;
 
                      goto Line_Loop_Continue;
                   end case;
+
+                  --  Here we are seeing a parameter we do not understand. We
+                  --  simply ignore this (will happen when an old compiler is
+                  --  used to compile a newer version of GNAT which does not
+                  --  support the
                end if;
             end loop Config_Param_Loop;
          end if;
@@ -520,28 +624,39 @@ package body Targparm is
          if P >= Source_Last then
             Set_Standard_Error;
             Write_Line ("fatal error, system.ads not formatted correctly");
+            Write_Line ("unexpected end of file");
             Set_Standard_Output;
+            raise Unrecoverable_Error;
          end if;
       end loop Line_Loop;
 
-      --  Check no missing target parameter settings
+      --  Now that OpenVMS_On_Target has been given its definitive value,
+      --  change the multi-unit index character from '~' to '$' for OpenVMS.
 
-      for K in Targparm_Tags_OK loop
-         if not Targparm_Flags (K) then
-            Set_Standard_Error;
-            Write_Line
-              ("fatal error: system.ads is incorrectly formatted");
-            Write_Str ("missing line for parameter: ");
+      if OpenVMS_On_Target then
+         Multi_Unit_Index_Character := '$';
+      end if;
 
-            for J in Targparm_Str (K)'Range loop
-               Write_Char (Targparm_Str (K).all (J));
-            end loop;
+      --  Check no missing target parameter settings (skip for compiler vsn)
 
-            Write_Eol;
-            Set_Standard_Output;
-            Fatal := True;
-         end if;
-      end loop;
+      if not Compiler_System_Version then
+         for K in Targparm_Tags_OK loop
+            if not Targparm_Flags (K) then
+               Set_Standard_Error;
+               Write_Line
+                 ("fatal error: system.ads is incorrectly formatted");
+               Write_Str ("missing line for parameter: ");
+
+               for J in Targparm_Str (K)'Range loop
+                  Write_Char (Targparm_Str (K).all (J));
+               end loop;
+
+               Write_Eol;
+               Set_Standard_Output;
+               Fatal := True;
+            end if;
+         end loop;
+      end if;
 
       if Fatal then
          raise Unrecoverable_Error;

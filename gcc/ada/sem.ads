@@ -6,7 +6,7 @@
 --                                                                          --
 --                                 S p e c                                  --
 --                                                                          --
---          Copyright (C) 1992-2003 Free Software Foundation, Inc.          --
+--          Copyright (C) 1992-2005, Free Software Foundation, Inc.         --
 --                                                                          --
 -- GNAT is free software;  you can  redistribute it  and/or modify it under --
 -- terms of the  GNU General Public License as published  by the Free Soft- --
@@ -16,8 +16,8 @@
 -- or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License --
 -- for  more details.  You should have  received  a copy of the GNU General --
 -- Public License  distributed with GNAT;  see file COPYING.  If not, write --
--- to  the Free Software Foundation,  59 Temple Place - Suite 330,  Boston, --
--- MA 02111-1307, USA.                                                      --
+-- to  the  Free Software Foundation,  51  Franklin  Street,  Fifth  Floor, --
+-- Boston, MA 02110-1301, USA.                                              --
 --                                                                          --
 -- GNAT was originally developed  by the GNAT team at  New York University. --
 -- Extensive contributions were provided by Ada Core Technologies Inc.      --
@@ -79,7 +79,7 @@
 --  terminates, the expression can be expanded since all the semantic
 --  information is available at that point.
 
---  If we are not generating code then the expansion phase is a no-op.
+--  If we are not generating code then the expansion phase is a no-op
 
 --  When generating code there are a number of exceptions to the basic
 --  Analysis-Resolution-Expansion model for expressions. The most prominent
@@ -347,20 +347,22 @@ package Sem is
    -- Handling of Check Suppression --
    -----------------------------------
 
-   --  There are two kinds of suppress checks, scope based suppress checks
-   --  (from initial command line arguments, or from Suppress pragmas not
-   --  including an entity name). The scope based suppress checks are recorded
+   --  There are two kinds of suppress checks: scope based suppress checks,
+   --  and entity based suppress checks.
+
+   --  Scope based suppress chems (from initial command line arguments,
+   --  or from Suppress pragmas not including an entity name) are recorded
    --  in the Sem.Supress variable, and all that is necessary is to save the
    --  state of this variable on scope entry, and restore it on scope exit.
 
-   --  The other kind of suppress check is entity based suppress checks, from
-   --  Suppress pragmas giving an Entity_Id. These are handled as follows. If
-   --  a suppress or unsuppress pragma is encountered for a given entity, then
-   --  the flag Checks_May_Be_Suppressed is set in the entity and an entry is
-   --  made in either the Local_Entity_Suppress table (case of pragma that
-   --  appears in other than a package spec), or in the Global_Entity_Suppress
-   --  table (case of pragma that appears in a package spec, which is by the
-   --  rule of RM 11.5(7) applicable throughout the life of the entity).
+   --  Entity based suppress checks, from Suppress pragmas giving an Entity_Id,
+   --  are handled as follows. If a suppress or unsuppress pragma is
+   --  encountered for a given entity, then the flag Checks_May_Be_Suppressed
+   --  is set in the entity and an entry is made in either the
+   --  Local_Entity_Suppress table (case of pragma that appears in other than
+   --  a package spec), or in the Global_Entity_Suppress table (case of pragma
+   --  that appears in a package spec, which is by the rule of RM 11.5(7)
+   --  applicable throughout the life of the entity).
 
    --  If the Checks_May_Be_Suppressed flag is set in an entity then the
    --  procedure is to search first the local and then the global suppress

@@ -1,12 +1,12 @@
 ------------------------------------------------------------------------------
 --                                                                          --
---                GNU ADA RUN-TIME LIBRARY (GNARL) COMPONENTS               --
+--                 GNAT RUN-TIME LIBRARY (GNARL) COMPONENTS                 --
 --                                                                          --
 --                     S Y S T E M . I N T E R R U P T S                    --
 --                                                                          --
 --                                  B o d y                                 --
 --                                                                          --
---         Copyright (C) 1992-2003, Free Software Foundation, Inc.          --
+--         Copyright (C) 1992-2006, Free Software Foundation, Inc.          --
 --                                                                          --
 -- GNARL is free software; you can  redistribute it  and/or modify it under --
 -- terms of the  GNU General Public License as published  by the Free Soft- --
@@ -16,16 +16,16 @@
 -- or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License --
 -- for  more details.  You should have  received  a copy of the GNU General --
 -- Public License  distributed with GNARL; see file COPYING.  If not, write --
--- to  the Free Software Foundation,  59 Temple Place - Suite 330,  Boston, --
--- MA 02111-1307, USA.                                                      --
+-- to  the  Free Software Foundation,  51  Franklin  Street,  Fifth  Floor, --
+-- Boston, MA 02110-1301, USA.                                              --
 --                                                                          --
--- As a special exception,  if other files  instantiate  generics from this --
--- unit, or you link  this unit with other files  to produce an executable, --
--- this  unit  does not  by itself cause  the resulting  executable  to  be --
--- covered  by the  GNU  General  Public  License.  This exception does not --
--- however invalidate  any other reasons why  the executable file  might be --
--- covered by the  GNU Public License.                                      --
---                                                                          --
+--
+--
+--
+--
+--
+--
+--
 -- GNARL was developed by the GNARL team at Florida State University.       --
 -- Extensive contributions were provided by Ada Core Technologies, Inc.     --
 --                                                                          --
@@ -55,7 +55,7 @@
 --  one Server_Task per interrupt.
 
 with Ada.Task_Identification;
---  used for Task_ID type
+--  used for Task_Id type
 
 with Ada.Exceptions;
 --  used for Raise_Exception
@@ -106,13 +106,6 @@ with System.Storage_Elements;
 --           To_Integer
 --           Integer_Address
 
-with System.Tasking;
---  used for Task_ID
---           Task_Entry_Index
---           Null_Task
---           Self
---           Interrupt_Manager_ID
-
 with System.Tasking.Utilities;
 --  used for Make_Independent
 
@@ -141,7 +134,7 @@ package body System.Interrupts is
    package IMOP renames System.Interrupt_Management.Operations;
 
    function To_System is new Unchecked_Conversion
-     (Ada.Task_Identification.Task_Id, Task_ID);
+     (Ada.Task_Identification.Task_Id, Task_Id);
 
    -----------------
    -- Local Tasks --
@@ -152,28 +145,28 @@ package body System.Interrupts is
    --  nizing it.
 
    task Interrupt_Manager is
-      entry Detach_Interrupt_Entries (T : Task_ID);
+      entry Detach_Interrupt_Entries (T : Task_Id);
 
       entry Initialize (Mask : IMNG.Interrupt_Mask);
 
       entry Attach_Handler
-        (New_Handler : in Parameterless_Handler;
-         Interrupt   : in Interrupt_ID;
-         Static      : in Boolean;
-         Restoration : in Boolean := False);
+        (New_Handler : Parameterless_Handler;
+         Interrupt   : Interrupt_ID;
+         Static      : Boolean;
+         Restoration : Boolean := False);
 
       entry Exchange_Handler
         (Old_Handler : out Parameterless_Handler;
-         New_Handler : in Parameterless_Handler;
-         Interrupt   : in Interrupt_ID;
-         Static      : in Boolean);
+         New_Handler : Parameterless_Handler;
+         Interrupt   : Interrupt_ID;
+         Static      : Boolean);
 
       entry Detach_Handler
-        (Interrupt   : in Interrupt_ID;
-         Static      : in Boolean);
+        (Interrupt   : Interrupt_ID;
+         Static      : Boolean);
 
       entry Bind_Interrupt_To_Entry
-        (T         : Task_ID;
+        (T         : Task_Id;
          E         : Task_Entry_Index;
          Interrupt : Interrupt_ID);
 
@@ -204,7 +197,7 @@ package body System.Interrupts is
    -------------------------------
 
    type Entry_Assoc is record
-      T : Task_ID;
+      T : Task_Id;
       E : Task_Entry_Index;
    end record;
 
@@ -235,17 +228,17 @@ package body System.Interrupts is
    --  True iff the corresponding interrupt is blocked in the process level
 
    Last_Unblocker :
-     array (Interrupt_ID'Range) of Task_ID := (others => Null_Task);
+     array (Interrupt_ID'Range) of Task_Id := (others => Null_Task);
    pragma Volatile_Components (Last_Unblocker);
    --  Holds the ID of the last Task which Unblocked this Interrupt.
    --  It contains Null_Task if no tasks have ever requested the
    --  Unblocking operation or the Interrupt is currently Blocked.
 
-   Server_ID : array (Interrupt_ID'Range) of Task_ID :=
+   Server_ID : array (Interrupt_ID'Range) of Task_Id :=
                  (others => Null_Task);
    pragma Atomic_Components (Server_ID);
-   --  Holds the Task_ID of the Server_Task for each interrupt.
-   --  Task_ID is needed to accomplish locking per Interrupt base. Also
+   --  Holds the Task_Id of the Server_Task for each interrupt.
+   --  Task_Id is needed to accomplish locking per Interrupt base. Also
    --  is needed to decide whether to create a new Server_Task.
 
    --  Type and Head, Tail of the list containing Registered Interrupt
@@ -256,7 +249,7 @@ package body System.Interrupts is
    type R_Link is access all Registered_Handler;
 
    type Registered_Handler is record
-      H :    System.Address := System.Null_Address;
+      H    : System.Address := System.Null_Address;
       Next : R_Link := null;
    end record;
 
@@ -287,9 +280,9 @@ package body System.Interrupts is
    --  can detach handlers attached through pragma Attach_Handler.
 
    procedure Attach_Handler
-     (New_Handler : in Parameterless_Handler;
-      Interrupt   : in Interrupt_ID;
-      Static      : in Boolean := False)
+     (New_Handler : Parameterless_Handler;
+      Interrupt   : Interrupt_ID;
+      Static      : Boolean := False)
    is
    begin
       if Is_Reserved (Interrupt) then
@@ -305,17 +298,16 @@ package body System.Interrupts is
    -- Bind_Interrupt_To_Entry --
    -----------------------------
 
-   --  This procedure raises a Program_Error if it tries to
-   --  bind an interrupt to which an Entry or a Procedure is
-   --  already bound.
+   --  This procedure raises a Program_Error if it tries to bind an
+   --  interrupt to which an Entry or a Procedure is already bound.
 
    procedure Bind_Interrupt_To_Entry
-     (T       : Task_ID;
+     (T       : Task_Id;
       E       : Task_Entry_Index;
       Int_Ref : System.Address)
    is
       Interrupt   : constant Interrupt_ID :=
-        Interrupt_ID (Storage_Elements.To_Integer (Int_Ref));
+                      Interrupt_ID (Storage_Elements.To_Integer (Int_Ref));
 
    begin
       if Is_Reserved (Interrupt) then
@@ -324,7 +316,6 @@ package body System.Interrupts is
       end if;
 
       Interrupt_Manager.Bind_Interrupt_To_Entry (T, E, Interrupt);
-
    end Bind_Interrupt_To_Entry;
 
    ---------------------
@@ -354,9 +345,9 @@ package body System.Interrupts is
            Interrupt_ID'Image (Interrupt) & " is reserved");
       end if;
 
-      --  ??? Since Parameterless_Handler is not Atomic, the
-      --  current implementation is wrong. We need a new service in
-      --  Interrupt_Manager to ensure atomicity.
+      --  ??? Since Parameterless_Handler is not Atomic, the current
+      --  implementation is wrong. We need a new service in Interrupt_Manager
+      --  to ensure atomicity.
 
       return User_Handler (Interrupt).H;
    end Current_Handler;
@@ -383,14 +374,13 @@ package body System.Interrupts is
       end if;
 
       Interrupt_Manager.Detach_Handler (Interrupt, Static);
-
    end Detach_Handler;
 
    ------------------------------
    -- Detach_Interrupt_Entries --
    ------------------------------
 
-   procedure Detach_Interrupt_Entries (T : Task_ID) is
+   procedure Detach_Interrupt_Entries (T : Task_Id) is
    begin
       Interrupt_Manager.Detach_Interrupt_Entries (T);
    end Detach_Interrupt_Entries;
@@ -404,8 +394,8 @@ package body System.Interrupts is
    --  previous handler's binding status (ie. do not care if it is a
    --  dynamic or static handler).
 
-   --  This option is needed so that during the finalization of a PO, we
-   --  can detach handlers attached through pragma Attach_Handler.
+   --  This option is needed so that during the finalization of a PO,
+   --  we can detach handlers attached through pragma Attach_Handler.
 
    procedure Exchange_Handler
      (Old_Handler : out Parameterless_Handler;
@@ -421,12 +411,11 @@ package body System.Interrupts is
 
       Interrupt_Manager.Exchange_Handler
         (Old_Handler, New_Handler, Interrupt, Static);
-
    end Exchange_Handler;
 
-   ----------------
-   --  Finalize  --
-   ----------------
+   --------------
+   -- Finalize --
+   --------------
 
    procedure Finalize (Object : in out Static_Interrupt_Protection) is
    begin
@@ -451,7 +440,7 @@ package body System.Interrupts is
    -- Has_Interrupt_Or_Attach_Handler --
    -------------------------------------
 
-   --  Need comments as to why these always return True
+   --  Need comments as to why these always return True ???
 
    function Has_Interrupt_Or_Attach_Handler
      (Object : access Dynamic_Interrupt_Protection) return Boolean
@@ -602,7 +591,6 @@ package body System.Interrupts is
       end loop;
 
       return False;
-
    end Is_Registered;
 
    -----------------
@@ -637,15 +625,15 @@ package body System.Interrupts is
       New_Node_Ptr : R_Link;
 
    begin
-      --  This routine registers the Handler as usable for Dynamic
-      --  Interrupt Handler. Routines attaching and detaching Handler
-      --  dynamically should first consult if the Handler is rgistered.
-      --  A Program Error should be raised if it is not registered.
+      --  This routine registers the Handler as usable for Dynamic Interrupt
+      --  Handler. Routines attaching and detaching Handler dynamically should
+      --  first consult if the Handler is registered. A Program Error should
+      --  be raised if it is not registered.
 
-      --  The pragma Interrupt_Handler can only appear in the library
-      --  level PO definition and instantiation. Therefore, we do not need
-      --  to implement Unregistering operation. Neither we need to
-      --  protect the queue structure using a Lock.
+      --  The pragma Interrupt_Handler can only appear in the library level PO
+      --  definition and instantiation. Therefore, we do not need to implement
+      --  Unregistering operation. Neither we need to protect the queue
+      --  structure using a Lock.
 
       pragma Assert (Handler_Addr /= System.Null_Address);
 
@@ -681,7 +669,7 @@ package body System.Interrupts is
    ------------------
 
    function Unblocked_By
-     (Interrupt : Interrupt_ID) return System.Tasking.Task_ID
+     (Interrupt : Interrupt_ID) return System.Tasking.Task_Id
    is
    begin
       if Is_Reserved (Interrupt) then
@@ -712,18 +700,18 @@ package body System.Interrupts is
 
    task body Interrupt_Manager is
 
-      ----------------------
-      --  Local Variables --
-      ----------------------
+      ---------------------
+      -- Local Variables --
+      ---------------------
 
       Intwait_Mask  : aliased IMNG.Interrupt_Mask;
       Ret_Interrupt : Interrupt_ID;
       Old_Mask      : aliased IMNG.Interrupt_Mask;
       Old_Handler   : Parameterless_Handler;
 
-      ---------------------
-      --  Local Routines --
-      ---------------------
+      --------------------
+      -- Local Routines --
+      --------------------
 
       procedure Bind_Handler (Interrupt : Interrupt_ID);
       --  This procedure does not do anything if the Interrupt is blocked.
@@ -804,7 +792,6 @@ package body System.Interrupts is
          else
             IMOP.Install_Default_Action (IMNG.Interrupt_ID (Interrupt));
          end if;
-
       end Unbind_Handler;
 
       --------------------------------
@@ -832,6 +819,7 @@ package body System.Interrupts is
          --  status of the current_Handler.
 
          if not Static and then User_Handler (Interrupt).Static then
+
             --  Tries to detach a static Interrupt Handler.
             --  raise a program error.
 
@@ -854,7 +842,6 @@ package body System.Interrupts is
          if Old_Handler /= null then
             Unbind_Handler (Interrupt);
          end if;
-
       end Unprotected_Detach_Handler;
 
       ----------------------------------
@@ -866,7 +853,8 @@ package body System.Interrupts is
          New_Handler : Parameterless_Handler;
          Interrupt   : Interrupt_ID;
          Static      : Boolean;
-         Restoration : Boolean := False) is
+         Restoration : Boolean := False)
+      is
       begin
          if User_Entry (Interrupt).T /= Null_Task then
 
@@ -925,7 +913,7 @@ package body System.Interrupts is
          end if;
 
          --  Invoke a corresponding Server_Task if not yet created.
-         --  Place Task_ID info in Server_ID array.
+         --  Place Task_Id info in Server_ID array.
 
          if Server_ID (Interrupt) = Null_Task then
 
@@ -951,7 +939,6 @@ package body System.Interrupts is
          if Old_Handler = null then
             Bind_Handler (Interrupt);
          end if;
-
       end Unprotected_Exchange_Handler;
 
    --  Start of processing for Interrupt_Manager
@@ -1020,10 +1007,10 @@ package body System.Interrupts is
          begin
             select
                accept Attach_Handler
-                  (New_Handler : in Parameterless_Handler;
-                   Interrupt   : in Interrupt_ID;
-                   Static      : in Boolean;
-                   Restoration : in Boolean := False)
+                  (New_Handler : Parameterless_Handler;
+                   Interrupt   : Interrupt_ID;
+                   Static      : Boolean;
+                   Restoration : Boolean := False)
                do
                   Unprotected_Exchange_Handler
                     (Old_Handler, New_Handler, Interrupt, Static, Restoration);
@@ -1032,9 +1019,9 @@ package body System.Interrupts is
             or
                accept Exchange_Handler
                   (Old_Handler : out Parameterless_Handler;
-                   New_Handler : in Parameterless_Handler;
-                   Interrupt   : in Interrupt_ID;
-                   Static      : in Boolean)
+                   New_Handler : Parameterless_Handler;
+                   Interrupt   : Interrupt_ID;
+                   Static      : Boolean)
                do
                   Unprotected_Exchange_Handler
                     (Old_Handler, New_Handler, Interrupt, Static);
@@ -1042,15 +1029,15 @@ package body System.Interrupts is
 
             or
                accept Detach_Handler
-                 (Interrupt   : in Interrupt_ID;
-                  Static      : in Boolean)
+                 (Interrupt   : Interrupt_ID;
+                  Static      : Boolean)
                do
                   Unprotected_Detach_Handler (Interrupt, Static);
                end Detach_Handler;
 
             or
                accept Bind_Interrupt_To_Entry
-                 (T       : Task_ID;
+                 (T       : Task_Id;
                   E       : Task_Entry_Index;
                   Interrupt : Interrupt_ID)
                do
@@ -1078,9 +1065,10 @@ package body System.Interrupts is
                   T.Interrupt_Entry := True;
 
                   --  Invoke a corresponding Server_Task if not yet created.
-                  --  Place Task_ID info in Server_ID array.
+                  --  Place Task_Id info in Server_ID array.
 
                   if Server_ID (Interrupt) = Null_Task then
+
                      --  When a new Server_Task is created, it should have its
                      --  signal mask set to the All_Tasks_Mask.
 
@@ -1096,10 +1084,11 @@ package body System.Interrupts is
                end Bind_Interrupt_To_Entry;
 
             or
-               accept Detach_Interrupt_Entries (T : Task_ID) do
+               accept Detach_Interrupt_Entries (T : Task_Id) do
                   for J in Interrupt_ID'Range loop
                      if not Is_Reserved (J) then
                         if User_Entry (J).T = T then
+
                            --  The interrupt should no longer be ingnored if
                            --  it was ever ignored.
 
@@ -1111,7 +1100,7 @@ package body System.Interrupts is
                      end if;
                   end loop;
 
-                  --  Indicate in ATCB that no Interrupt Entries are attached.
+                  --  Indicate in ATCB that no Interrupt Entries are attached
 
                   T.Interrupt_Entry := False;
                end Detach_Interrupt_Entries;
@@ -1133,10 +1122,10 @@ package body System.Interrupts is
                   if User_Handler (Interrupt).H /= null
                     or else  User_Entry (Interrupt).T /= Null_Task
                   then
-                     --  This is the case where the Server_Task is waiting on
-                     --  "sigwait." Wake it up by sending an
-                     --  Abort_Task_Interrupt so that the Server_Task waits on
-                     --  Cond.
+                     --  This is the case where the Server_Task is waiting
+                     --  on "sigwait." Wake it up by sending an
+                     --  Abort_Task_Interrupt so that the Server_Task
+                     --  waits on Cond.
 
                      POP.Abort_Task (Server_ID (Interrupt));
 
@@ -1166,6 +1155,7 @@ package body System.Interrupts is
                   then
                      --  No handler is attached. Unmask the Interrupt so that
                      --  the default action can be carried out.
+
                      IMOP.Thread_Unblock_Interrupt
                        (IMNG.Interrupt_ID (Interrupt));
 
@@ -1174,6 +1164,7 @@ package body System.Interrupts is
                      --  since it was being blocked and an Interrupt Hander or
                      --  an Entry was there. Wake it up and let it change
                      --  it place of waiting according to its new state.
+
                      POP.Wakeup (Server_ID (Interrupt),
                        Interrupt_Server_Blocked_Interrupt_Sleep);
                   end if;
@@ -1249,9 +1240,9 @@ package body System.Interrupts is
    task body Server_Task is
       Intwait_Mask    : aliased IMNG.Interrupt_Mask;
       Ret_Interrupt   : Interrupt_ID;
-      Self_ID         : constant Task_ID := Self;
+      Self_ID         : constant Task_Id := Self;
       Tmp_Handler     : Parameterless_Handler;
-      Tmp_ID          : Task_ID;
+      Tmp_ID          : Task_Id;
       Tmp_Entry_Index : Task_Entry_Index;
 
    begin
@@ -1356,69 +1347,78 @@ package body System.Interrupts is
                POP.Write_Lock (Self_ID);
 
             else
-               pragma Assert (Ret_Interrupt = Interrupt);
-
                if Single_Lock then
                   POP.Lock_RTS;
                end if;
 
                POP.Write_Lock (Self_ID);
 
-               --  Even though we have received an Interrupt the status may
-               --  have changed already before we got the Self_ID lock above.
-               --  Therefore we make sure a Handler or an Entry is still
-               --  there and make appropriate call.
-               --  If there is no calls to make we need to regenerate the
-               --  Interrupt in order not to lose it.
+               if Ret_Interrupt /= Interrupt then
 
-               if User_Handler (Interrupt).H /= null then
-                  Tmp_Handler := User_Handler (Interrupt).H;
+                  --  On some systems (e.g. recent linux kernels), sigwait
+                  --  may return unexpectedly (with errno set to EINTR).
 
-                  --  RTS calls should not be made with self being locked.
-
-                  POP.Unlock (Self_ID);
-
-                  if Single_Lock then
-                     POP.Unlock_RTS;
-                  end if;
-
-                  Tmp_Handler.all;
-
-                  if Single_Lock then
-                     POP.Lock_RTS;
-                  end if;
-
-                  POP.Write_Lock (Self_ID);
-
-               elsif User_Entry (Interrupt).T /= Null_Task then
-                  Tmp_ID := User_Entry (Interrupt).T;
-                  Tmp_Entry_Index := User_Entry (Interrupt).E;
-
-                  --  RTS calls should not be made with self being locked.
-
-                  if Single_Lock then
-                     POP.Unlock_RTS;
-                  end if;
-
-                  POP.Unlock (Self_ID);
-
-                  System.Tasking.Rendezvous.Call_Simple
-                    (Tmp_ID, Tmp_Entry_Index, System.Null_Address);
-
-                  POP.Write_Lock (Self_ID);
-
-                  if Single_Lock then
-                     POP.Lock_RTS;
-                  end if;
+                  null;
 
                else
-                  --  This is a situation that this task wake up
-                  --  receiving an Interrupt and before it get the lock
-                  --  the Interrupt is blocked. We do not
-                  --  want to lose the interrupt in this case so that
-                  --  regenerate the Interrupt to process level;
+                  --  Even though we have received an Interrupt the status may
+                  --  have changed already before we got the Self_ID lock above
+                  --  Therefore we make sure a Handler or an Entry is still
+                  --  there and make appropriate call.
 
-                  IMOP.Interrupt_Self_Process (IMNG.Interrupt_ID (Interrupt));
+                  --  If there is no calls to make we need to regenerate the
+                  --  Interrupt in order not to lose it.
+
+                  if User_Handler (Interrupt).H /= null then
+                     Tmp_Handler := User_Handler (Interrupt).H;
+
+                     --  RTS calls should not be made with self being locked.
+
+                     POP.Unlock (Self_ID);
+
+                     if Single_Lock then
+                        POP.Unlock_RTS;
+                     end if;
+
+                     Tmp_Handler.all;
+
+                     if Single_Lock then
+                        POP.Lock_RTS;
+                     end if;
+
+                     POP.Write_Lock (Self_ID);
+
+                  elsif User_Entry (Interrupt).T /= Null_Task then
+                     Tmp_ID := User_Entry (Interrupt).T;
+                     Tmp_Entry_Index := User_Entry (Interrupt).E;
+
+                     --  RTS calls should not be made with self being locked.
+
+                     if Single_Lock then
+                        POP.Unlock_RTS;
+                     end if;
+
+                     POP.Unlock (Self_ID);
+
+                     System.Tasking.Rendezvous.Call_Simple
+                       (Tmp_ID, Tmp_Entry_Index, System.Null_Address);
+
+                     POP.Write_Lock (Self_ID);
+
+                     if Single_Lock then
+                        POP.Lock_RTS;
+                     end if;
+
+                  else
+                     --  This is a situation that this task wakes up receiving
+                     --  an Interrupt and before it gets the lock the Interrupt
+                     --  is blocked. We do not want to lose the interrupt in
+                     --  this case so we regenerate the Interrupt to process
+                     --  level.
+
+                     IMOP.Interrupt_Self_Process
+                       (IMNG.Interrupt_ID (Interrupt));
+                  end if;
                end if;
             end if;
          end if;
@@ -1431,32 +1431,36 @@ package body System.Interrupts is
 
          System.Tasking.Initialization.Undefer_Abort (Self_ID);
 
-         --  Undefer abort here to allow a window for this task
-         --  to be aborted  at the time of system shutdown.
+         if Self_ID.Pending_Action then
+            Initialization.Do_Pending_Action (Self_ID);
+         end if;
+
+         --  Undefer abort here to allow a window for this task to be aborted
+         --  at the time of system shutdown. We also explicitely test for
+         --  Pending_Action in case System.Parameters.No_Abort is True.
+
       end loop;
    end Server_Task;
 
 --  Elaboration code for package System.Interrupts
 
 begin
-
    --  Get Interrupt_Manager's ID so that Abort_Interrupt can be sent.
 
    Interrupt_Manager_ID := To_System (Interrupt_Manager'Identity);
 
-   --  During the elaboration of this package body we want RTS to
-   --  inherit the interrupt mask from the Environment Task.
+   --  During the elaboration of this package body we want the RTS
+   --  to inherit the interrupt mask from the Environment Task.
 
-   --  The Environment Task should have gotten its mask from
-   --  the enclosing process during the RTS start up. (See
-   --  in s-inmaop.adb). Pass the Interrupt_Mask of the Environment
-   --  task to the Interrupt_Manager.
+   IMOP.Setup_Interrupt_Mask;
 
-   --  Note : At this point we know that all tasks (including
-   --  RTS internal servers) are masked for non-reserved signals
-   --  (see s-taprop.adb). Only the Interrupt_Manager will have
-   --  masks set up differently inheriting the original Environment
-   --  Task's mask.
+   --  The environment task should have gotten its mask from the enclosing
+   --  process during the RTS start up. (See processing in s-inmaop.adb). Pass
+   --  the Interrupt_Mask of the environment task to the Interrupt_Manager.
+
+   --  Note : At this point we know that all tasks are masked for non-reserved
+   --  signals. Only the Interrupt_Manager will have masks set up differently
+   --  inheriting the original environment task's mask.
 
    Interrupt_Manager.Initialize (IMOP.Environment_Mask);
 end System.Interrupts;

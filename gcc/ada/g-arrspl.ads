@@ -2,11 +2,11 @@
 --                                                                          --
 --                         GNAT COMPILER COMPONENTS                         --
 --                                                                          --
---                      G N A T . A R R A Y _ S P L T                       --
+--                     G N A T . A R R A Y _ S P L I T                      --
 --                                                                          --
 --                                 S p e c                                  --
 --                                                                          --
---          Copyright (C) 2002-2003 Free Software Foundation, Inc.          --
+--          Copyright (C) 2002-2006, Free Software Foundation, Inc.         --
 --                                                                          --
 -- GNAT is free software;  you can  redistribute it  and/or modify it under --
 -- terms of the  GNU General Public License as published  by the Free Soft- --
@@ -16,16 +16,16 @@
 -- or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License --
 -- for  more details.  You should have  received  a copy of the GNU General --
 -- Public License  distributed with GNAT;  see file COPYING.  If not, write --
--- to  the Free Software Foundation,  59 Temple Place - Suite 330,  Boston, --
--- MA 02111-1307, USA.                                                      --
+-- to  the  Free Software Foundation,  51  Franklin  Street,  Fifth  Floor, --
+-- Boston, MA 02110-1301, USA.                                              --
 --                                                                          --
--- As a special exception,  if other files  instantiate  generics from this --
--- unit, or you link  this unit with other files  to produce an executable, --
--- this  unit  does not  by itself cause  the resulting  executable  to  be --
--- covered  by the  GNU  General  Public  License.  This exception does not --
--- however invalidate  any other reasons why  the executable file  might be --
--- covered by the  GNU Public License.                                      --
---                                                                          --
+--
+--
+--
+--
+--
+--
+--
 -- GNAT was originally developed  by the GNAT team at  New York University. --
 -- Extensive contributions were provided by Ada Core Technologies Inc.      --
 --                                                                          --
@@ -42,7 +42,7 @@ generic
    --  Element of the array, this must be a discrete type
 
    type Element_Sequence is array (Positive range <>) of Element;
-   --  The array which is a sequence of element.
+   --  The array which is a sequence of element
 
    type Element_Set is private;
    --  This type represent a set of elements. This set does not defined a
@@ -90,6 +90,10 @@ package GNAT.Array_Split is
    --  is a sequence of Element along which to split the array. The source
    --  array is sliced at separator boundaries. The separators are not
    --  included as part of the resulting slices.
+   --
+   --  Note that if From is terminated by a separator an extra empty element
+   --  is added to the slice set. If From only contains a separator the slice
+   --  set contains two empty elements.
 
    procedure Create
      (S          : out Slice_Set;
@@ -120,8 +124,7 @@ package GNAT.Array_Split is
 
    function Slice
      (S     : Slice_Set;
-      Index : Slice_Number)
-      return  Element_Sequence;
+      Index : Slice_Number) return Element_Sequence;
    pragma Inline (Slice);
    --  Returns the slice at position Index. First slice is 1. If Index is 0
    --  the whole array is returned including the separators (this is the
@@ -138,8 +141,7 @@ package GNAT.Array_Split is
 
    function Separators
      (S     : Slice_Set;
-      Index : Slice_Number)
-      return  Slice_Separators;
+      Index : Slice_Number) return Slice_Separators;
    --  Returns the separators used to slice (front and back) the slice at
    --  position Index. For slices at start and end of the original array, the
    --  Array_End value is returned for the corresponding outer bound. In
@@ -165,7 +167,7 @@ private
       Start : Positive;
       Stop  : Natural;
    end record;
-   --  Starting/Ending position of a slice. This does not include separators.
+   --  Starting/Ending position of a slice. This does not include separators
 
    type Slices_Indexes is array (Slice_Number range <>) of Slice_Info;
    type Slices_Access is access Slices_Indexes;

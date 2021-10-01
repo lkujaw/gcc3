@@ -6,7 +6,7 @@
 --                                                                          --
 --                                 B o d y                                  --
 --                                                                          --
---          Copyright (C) 1992-1997, Free Software Foundation, Inc.         --
+--          Copyright (C) 1992-2006, Free Software Foundation, Inc.         --
 --                                                                          --
 -- GNAT is free software;  you can  redistribute it  and/or modify it under --
 -- terms of the  GNU General Public License as published  by the Free Soft- --
@@ -16,24 +16,25 @@
 -- or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License --
 -- for  more details.  You should have  received  a copy of the GNU General --
 -- Public License  distributed with GNAT;  see file COPYING.  If not, write --
--- to  the Free Software Foundation,  59 Temple Place - Suite 330,  Boston, --
--- MA 02111-1307, USA.                                                      --
+-- to  the  Free Software Foundation,  51  Franklin  Street,  Fifth  Floor, --
+-- Boston, MA 02110-1301, USA.                                              --
 --                                                                          --
--- As a special exception,  if other files  instantiate  generics from this --
--- unit, or you link  this unit with other files  to produce an executable, --
--- this  unit  does not  by itself cause  the resulting  executable  to  be --
--- covered  by the  GNU  General  Public  License.  This exception does not --
--- however invalidate  any other reasons why  the executable file  might be --
--- covered by the  GNU Public License.                                      --
---                                                                          --
+--
+--
+--
+--
+--
+--
+--
 -- GNAT was originally developed  by the GNAT team at  New York University. --
 -- Extensive contributions were provided by Ada Core Technologies Inc.      --
 --                                                                          --
 ------------------------------------------------------------------------------
 
+with Interfaces;      use Interfaces;
 with System.Val_Util; use System.Val_Util;
+with System.WCh_Cnv;  use System.WCh_Cnv;
 with System.WCh_Con;  use System.WCh_Con;
-with System.WCh_StW;  use System.WCh_StW;
 
 package body System.Val_WChar is
 
@@ -42,9 +43,27 @@ package body System.Val_WChar is
    --------------------------
 
    function Value_Wide_Character
-      (Str  : String;
-       EM   : WC_Encoding_Method)
-       return Wide_Character
+     (Str : String;
+      EM  : System.WCh_Con.WC_Encoding_Method) return Wide_Character
+   is
+      WC : constant Wide_Wide_Character := Value_Wide_Wide_Character (Str, EM);
+      WV : constant Unsigned_32         := Wide_Wide_Character'Pos (WC);
+   begin
+      if WV > 16#FFFF# then
+         raise Constraint_Error
+           with "out of range character for Value attribute";
+      else
+         return Wide_Character'Val (WV);
+      end if;
+   end Value_Wide_Character;
+
+   -------------------------------
+   -- Value_Wide_Wide_Character --
+   -------------------------------
+
+   function Value_Wide_Wide_Character
+     (Str : String;
+      EM  : System.WCh_Con.WC_Encoding_Method) return Wide_Wide_Character
    is
       F : Natural;
       L : Natural;
@@ -57,56 +76,104 @@ package body System.Val_WChar is
 
       if S (F) = ''' and then S (L) = ''' then
 
+         --  Must be at least three characters
+
+         if L - F < 2 then
+            raise Constraint_Error;
+
          --  If just three characters, simple character case
 
-         if L - F = 2 then
-            return Wide_Character'Val (Character'Pos (S (F + 1)));
+         elsif L - F = 2 then
+            return Wide_Wide_Character'Val (Character'Pos (S (F + 1)));
 
-         --  Otherwise must be a wide character in quotes. The easiest
-         --  thing is to convert the string to a wide string and then
-         --  pick up the single character that it should contain.
+         --  Only other possibility for quoted string is wide char sequence
 
          else
             declare
-               WS : constant Wide_String :=
-                      String_To_Wide_String (S (F + 1 .. L - 1), EM);
+               P : Natural;
+               W : Wide_Wide_Character;
+
+               function In_Char return Character;
+               --  Function for instantiations of Char_Sequence_To_UTF_32
+
+               -------------
+               -- In_Char --
+               -------------
+
+               function In_Char return Character is
+               begin
+                  P := P + 1;
+
+                  if P = Str'Last then
+                     raise Constraint_Error;
+                  end if;
+
+                  return Str (P);
+               end In_Char;
+
+               function UTF_32 is
+                 new Char_Sequence_To_UTF_32 (In_Char);
 
             begin
-               if WS'Length /= 1 then
-                  raise Constraint_Error;
+               P := F + 1;
+
+               --  Brackets encoding
+
+               if S (F + 1) = '[' then
+                  W := Wide_Wide_Character'Val (UTF_32 ('[', WCEM_Brackets));
 
                else
-                  return WS (WS'First);
+                  W := Wide_Wide_Character'Val (UTF_32 (S (F + 1), EM));
                end if;
+
+               if P /= L - 1 then
+                  raise Constraint_Error;
+               end if;
+
+               return W;
             end;
          end if;
 
-      --  the last two values of the type have language-defined names:
+      --  Deal with Hex_hhhhhhhh cases for wide_[wide_]character cases
 
-      elsif S = "FFFE" then
-         return Wide_Character'Val (16#FFFE#);
+      elsif Str'Length = 12
+        and then Str (Str'First .. Str'First + 3) = "Hex_"
+      then
+         declare
+            W : Unsigned_32 := 0;
 
-      elsif S = "FFFF" then
-         return Wide_Character'Val (16#FFFF#);
+         begin
+            for J in Str'First + 4 .. Str'First + 11 loop
+               W := W * 16 + Character'Pos (Str (J));
 
-      --  Otherwise must be a control character
+               if Str (J) in '0' .. '9' then
+                  W := W - Character'Pos ('0');
+               elsif Str (J) in 'A' .. 'F' then
+                  W := W - Character'Pos ('A') + 10;
+               elsif Str (J) in 'a' .. 'f' then
+                  W := W - Character'Pos ('a') + 10;
+               else
+                  raise Constraint_Error;
+               end if;
+            end loop;
+
+            if W > 16#7FFF_FFFF# then
+               raise Constraint_Error;
+            else
+               return Wide_Wide_Character'Val (W);
+            end if;
+         end;
+
+      --  Otherwise must be one of the special names for Character
 
       else
-         for C in Character'Val (16#00#) .. Character'Val (16#1F#) loop
-            if S (F .. L) = Character'Image (C) then
-               return Wide_Character'Val (Character'Pos (C));
-            end if;
-         end loop;
-
-         for C in Character'Val (16#7F#) .. Character'Val (16#9F#) loop
-            if S (F .. L) = Character'Image (C) then
-               return Wide_Character'Val (Character'Pos (C));
-            end if;
-         end loop;
-
-         raise Constraint_Error;
+         return
+           Wide_Wide_Character'Val (Character'Pos (Character'Value (Str)));
       end if;
 
-   end Value_Wide_Character;
+   exception
+      when Constraint_Error =>
+         raise Constraint_Error with "invalid string for value attribute";
+   end Value_Wide_Wide_Character;
 
 end System.Val_WChar;

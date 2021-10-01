@@ -6,7 +6,7 @@
 --                                                                          --
 --                                 B o d y                                  --
 --                                                                          --
---          Copyright (C) 1992-2002 Free Software Foundation, Inc.          --
+--          Copyright (C) 1992-2005, Free Software Foundation, Inc.         --
 --                                                                          --
 -- GNAT is free software;  you can  redistribute it  and/or modify it under --
 -- terms of the  GNU General Public License as published  by the Free Soft- --
@@ -16,25 +16,25 @@
 -- or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License --
 -- for  more details.  You should have  received  a copy of the GNU General --
 -- Public License  distributed with GNAT;  see file COPYING.  If not, write --
--- to  the Free Software Foundation,  59 Temple Place - Suite 330,  Boston, --
--- MA 02111-1307, USA.                                                      --
+-- to  the  Free Software Foundation,  51  Franklin  Street,  Fifth  Floor, --
+-- Boston, MA 02110-1301, USA.                                              --
 --                                                                          --
--- As a special exception,  if other files  instantiate  generics from this --
--- unit, or you link  this unit with other files  to produce an executable, --
--- this  unit  does not  by itself cause  the resulting  executable  to  be --
--- covered  by the  GNU  General  Public  License.  This exception does not --
--- however invalidate  any other reasons why  the executable file  might be --
--- covered by the  GNU Public License.                                      --
---                                                                          --
+--
+--
+--
+--
+--
+--
+--
 -- GNAT was originally developed  by the GNAT team at  New York University. --
 -- Extensive contributions were provided by Ada Core Technologies Inc.      --
 --                                                                          --
 ------------------------------------------------------------------------------
 
---  The body of Interfaces.COBOL is implementation independent (i.e. the
---  same version is used with all versions of GNAT). The specialization
---  to a particular COBOL format is completely contained in the private
---  part ot the spec.
+--  The body of Interfaces.COBOL is implementation independent (i.e. the same
+--  version is used with all versions of GNAT). The specialization to a
+--  particular COBOL format is completely contained in the private part of
+--  the spec.
 
 with Interfaces; use Interfaces;
 with System;     use System;
@@ -76,8 +76,7 @@ package body Interfaces.COBOL is
 
    function Binary_To_Decimal
      (Item   : Byte_Array;
-      Format : Binary_Format)
-      return   Integer_64;
+      Format : Binary_Format) return Integer_64;
    --  This function converts a numeric value in the given format to its
    --  corresponding integer value. This is the non-generic implementation
    --  of Decimal_Conversions.To_Decimal. The generic routine does the
@@ -85,8 +84,7 @@ package body Interfaces.COBOL is
 
    function Numeric_To_Decimal
      (Item   : Numeric;
-      Format : Display_Format)
-      return   Integer_64;
+      Format : Display_Format) return Integer_64;
    --  This function converts a numeric value in the given format to its
    --  corresponding integer value. This is the non-generic implementation
    --  of Decimal_Conversions.To_Decimal. The generic routine does the
@@ -94,8 +92,7 @@ package body Interfaces.COBOL is
 
    function Packed_To_Decimal
      (Item   : Packed_Decimal;
-      Format : Packed_Format)
-      return   Integer_64;
+      Format : Packed_Format) return Integer_64;
    --  This function converts a packed value in the given format to its
    --  corresponding integer value. This is the non-generic implementation
    --  of Decimal_Conversions.To_Decimal. The generic routine does the
@@ -107,8 +104,7 @@ package body Interfaces.COBOL is
    function To_Display
      (Item   : Integer_64;
       Format : Display_Format;
-      Length : Natural)
-      return   Numeric;
+      Length : Natural) return Numeric;
    --  This function converts the given integer value into display format,
    --  using the given format, with the length in bytes of the result given
    --  by the last parameter. This is the non-generic implementation of
@@ -118,8 +114,7 @@ package body Interfaces.COBOL is
    function To_Packed
      (Item   : Integer_64;
       Format : Packed_Format;
-      Length : Natural)
-      return   Packed_Decimal;
+      Length : Natural) return Packed_Decimal;
    --  This function converts the given integer value into packed format,
    --  using the given format, with the length in digits of the result given
    --  by the last parameter. This is the non-generic implementation of
@@ -128,15 +123,13 @@ package body Interfaces.COBOL is
 
    function Valid_Numeric
      (Item   : Numeric;
-      Format : Display_Format)
-      return   Boolean;
+      Format : Display_Format) return Boolean;
    --  This is the non-generic implementation of Decimal_Conversions.Valid
    --  for the display case.
 
    function Valid_Packed
      (Item   : Packed_Decimal;
-      Format : Packed_Format)
-      return   Boolean;
+      Format : Packed_Format) return Boolean;
    --  This is the non-generic implementation of Decimal_Conversions.Valid
    --  for the packed case.
 
@@ -146,8 +139,7 @@ package body Interfaces.COBOL is
 
    function Binary_To_Decimal
      (Item   : Byte_Array;
-      Format : Binary_Format)
-      return   Integer_64
+      Format : Binary_Format) return Integer_64
    is
       Len : constant Natural := Item'Length;
 
@@ -212,7 +204,7 @@ package body Interfaces.COBOL is
    -- Numeric_To_Decimal --
    ------------------------
 
-   --  The following assumptions are made in the coding of this routine
+   --  The following assumptions are made in the coding of this routine:
 
    --    The range of COBOL_Digits is compact and the ten values
    --    represent the digits 0-9 in sequence
@@ -225,12 +217,11 @@ package body Interfaces.COBOL is
 
    --    The COBOL_Minus_Digits set is disjoint from COBOL_Digits
 
-   --  These assumptions are true for all COBOL representations we know of.
+   --  These assumptions are true for all COBOL representations we know of
 
    function Numeric_To_Decimal
      (Item   : Numeric;
-      Format : Display_Format)
-      return   Integer_64
+      Format : Display_Format) return Integer_64
    is
       pragma Unsuppress (Range_Check);
       Sign   : COBOL_Character := COBOL_Plus;
@@ -288,8 +279,7 @@ package body Interfaces.COBOL is
 
    function Packed_To_Decimal
      (Item   : Packed_Decimal;
-      Format : Packed_Format)
-      return   Integer_64
+      Format : Packed_Format) return Integer_64
    is
       pragma Unsuppress (Range_Check);
       Result : Integer_64 := 0;
@@ -449,8 +439,7 @@ package body Interfaces.COBOL is
    function To_Display
      (Item   : Integer_64;
       Format : Display_Format;
-      Length : Natural)
-      return   Numeric
+      Length : Natural) return Numeric
    is
       Result : Numeric (1 .. Length);
       Val    : Integer_64 := Item;
@@ -560,8 +549,7 @@ package body Interfaces.COBOL is
    function To_Packed
      (Item   : Integer_64;
       Format : Packed_Format;
-      Length : Natural)
-      return   Packed_Decimal
+      Length : Natural) return Packed_Decimal
    is
       Result : Packed_Decimal (1 .. Length);
       Val    : Integer_64;
@@ -628,10 +616,13 @@ package body Interfaces.COBOL is
 
    function Valid_Numeric
      (Item   : Numeric;
-      Format : Display_Format)
-      return   Boolean
+      Format : Display_Format) return Boolean
    is
    begin
+      if Item'Length = 0 then
+         return False;
+      end if;
+
       --  All character positions except first and last must be Digits.
       --  This is true for all the formats.
 
@@ -677,8 +668,7 @@ package body Interfaces.COBOL is
 
    function Valid_Packed
      (Item   : Packed_Decimal;
-      Format : Packed_Format)
-      return   Boolean
+      Format : Packed_Format) return Boolean
    is
    begin
       case Packed_Representation is
@@ -715,18 +705,14 @@ package body Interfaces.COBOL is
       --  Note that the tests here are all compile time tests
 
       function Length (Format : Binary_Format) return Natural is
-         pragma Warnings (Off, Format);
-
+         pragma Unreferenced (Format);
       begin
          if Num'Digits <= 2 then
             return 1;
-
          elsif Num'Digits <= 4 then
             return 2;
-
          elsif Num'Digits <= 9 then
             return 4;
-
          else -- Num'Digits in 10 .. 18
             return 8;
          end if;
@@ -752,11 +738,9 @@ package body Interfaces.COBOL is
       --  Note that the tests here are all compile time checks
 
       function Length
-        (Format : Packed_Format)
-         return   Natural
+        (Format : Packed_Format) return Natural
       is
-         pragma Warnings (Off, Format);
-
+         pragma Unreferenced (Format);
       begin
          case Packed_Representation is
             when IBM =>
@@ -770,8 +754,7 @@ package body Interfaces.COBOL is
 
       function To_Binary
         (Item   : Num;
-         Format : Binary_Format)
-         return   Byte_Array
+         Format : Binary_Format) return Byte_Array
       is
       begin
          --  Note: all these tests are compile time tests
@@ -820,7 +803,6 @@ package body Interfaces.COBOL is
          pragma Unsuppress (Range_Check);
       begin
          return Binary'Integer_Value (Item);
-
       exception
          when Constraint_Error =>
             raise Conversion_Error;
@@ -832,14 +814,11 @@ package body Interfaces.COBOL is
 
       function To_Decimal
         (Item   : Byte_Array;
-         Format : Binary_Format)
-         return   Num
+         Format : Binary_Format) return Num
       is
          pragma Unsuppress (Range_Check);
-
       begin
          return Num'Fixed_Value (Binary_To_Decimal (Item, Format));
-
       exception
          when Constraint_Error =>
             raise Conversion_Error;
@@ -851,10 +830,8 @@ package body Interfaces.COBOL is
 
       function To_Decimal (Item : Binary) return Num is
          pragma Unsuppress (Range_Check);
-
       begin
          return Num'Fixed_Value (Item);
-
       exception
          when Constraint_Error =>
             raise Conversion_Error;
@@ -866,14 +843,12 @@ package body Interfaces.COBOL is
 
       function To_Decimal
         (Item   : Numeric;
-         Format : Display_Format)
-         return   Num
+         Format : Display_Format) return Num
       is
          pragma Unsuppress (Range_Check);
 
       begin
          return Num'Fixed_Value (Numeric_To_Decimal (Item, Format));
-
       exception
          when Constraint_Error =>
             raise Conversion_Error;
@@ -885,10 +860,8 @@ package body Interfaces.COBOL is
 
       function To_Decimal (Item : Long_Binary) return Num is
          pragma Unsuppress (Range_Check);
-
       begin
          return Num'Fixed_Value (Item);
-
       exception
          when Constraint_Error =>
             raise Conversion_Error;
@@ -900,14 +873,11 @@ package body Interfaces.COBOL is
 
       function To_Decimal
         (Item   : Packed_Decimal;
-         Format : Packed_Format)
-         return   Num
+         Format : Packed_Format) return Num
       is
          pragma Unsuppress (Range_Check);
-
       begin
          return Num'Fixed_Value (Packed_To_Decimal (Item, Format));
-
       exception
          when Constraint_Error =>
             raise Conversion_Error;
@@ -919,18 +889,15 @@ package body Interfaces.COBOL is
 
       function To_Display
         (Item   : Num;
-         Format : Display_Format)
-         return   Numeric
+         Format : Display_Format) return Numeric
       is
          pragma Unsuppress (Range_Check);
-
       begin
          return
            To_Display
              (Integer_64'Integer_Value (Item),
               Format,
               Length (Format));
-
       exception
          when Constraint_Error =>
             raise Conversion_Error;
@@ -942,10 +909,8 @@ package body Interfaces.COBOL is
 
       function To_Long_Binary (Item : Num) return Long_Binary is
          pragma Unsuppress (Range_Check);
-
       begin
          return Long_Binary'Integer_Value (Item);
-
       exception
          when Constraint_Error =>
             raise Conversion_Error;
@@ -957,18 +922,15 @@ package body Interfaces.COBOL is
 
       function To_Packed
         (Item   : Num;
-         Format : Packed_Format)
-         return   Packed_Decimal
+         Format : Packed_Format) return Packed_Decimal
       is
          pragma Unsuppress (Range_Check);
-
       begin
          return
            To_Packed
              (Integer_64'Integer_Value (Item),
               Format,
               Length (Format));
-
       exception
          when Constraint_Error =>
             raise Conversion_Error;
@@ -980,16 +942,13 @@ package body Interfaces.COBOL is
 
       function Valid
         (Item   : Byte_Array;
-         Format : Binary_Format)
-         return   Boolean
+         Format : Binary_Format) return Boolean
       is
          Val : Num;
          pragma Unreferenced (Val);
-
       begin
          Val := To_Decimal (Item, Format);
          return True;
-
       exception
          when Conversion_Error =>
             return False;
@@ -1001,8 +960,7 @@ package body Interfaces.COBOL is
 
       function Valid
         (Item   : Numeric;
-         Format : Display_Format)
-         return   Boolean
+         Format : Display_Format) return Boolean
       is
       begin
          return Valid_Numeric (Item, Format);
@@ -1014,8 +972,7 @@ package body Interfaces.COBOL is
 
       function Valid
         (Item   : Packed_Decimal;
-         Format : Packed_Format)
-         return   Boolean
+         Format : Packed_Format) return Boolean
       is
       begin
          return Valid_Packed (Item, Format);

@@ -6,7 +6,7 @@
 --                                                                          --
 --                                 B o d y                                  --
 --                                                                          --
---             Copyright (C) 2003 Free Software Foundation, Inc.            --
+--          Copyright (C) 2003-2005, Free Software Foundation, Inc.         --
 --                                                                          --
 -- This specification is derived from the Ada Reference Manual for use with --
 -- GNAT. The copyright notice above, and the license provisions that follow --
@@ -20,22 +20,29 @@
 -- or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License --
 -- for  more details.  You should have  received  a copy of the GNU General --
 -- Public License  distributed with GNAT;  see file COPYING.  If not, write --
--- to  the Free Software Foundation,  59 Temple Place - Suite 330,  Boston, --
--- MA 02111-1307, USA.                                                      --
+-- to  the  Free Software Foundation,  51  Franklin  Street,  Fifth  Floor, --
+-- Boston, MA 02110-1301, USA.                                              --
 --                                                                          --
--- As a special exception,  if other files  instantiate  generics from this --
--- unit, or you link  this unit with other files  to produce an executable, --
--- this  unit  does not  by itself cause  the resulting  executable  to  be --
--- covered  by the  GNU  General  Public  License.  This exception does not --
--- however invalidate  any other reasons why  the executable file  might be --
--- covered by the  GNU Public License.                                      --
---                                                                          --
+--
+--
+--
+--
+--
+--
+--
 -- GNAT was originally developed  by the GNAT team at  New York University. --
 -- Extensive contributions were provided by Ada Core Technologies Inc.      --
 --                                                                          --
 ------------------------------------------------------------------------------
 
 --  Default version for most targets
+
+with System.Standard_Library; use System.Standard_Library;
+--  Used for Adafinal
+
+with System.Soft_Links;
+--  Used for Task_Termination_Handler
+--           Task_Termination_NT
 
 procedure Ada.Exceptions.Last_Chance_Handler
   (Except : Exception_Occurrence)
@@ -45,90 +52,58 @@ is
    pragma Import (C, Unhandled_Terminate, "__gnat_unhandled_terminate");
    --  Perform system dependent shutdown code
 
-   function Tailored_Exception_Information
-     (X : Exception_Occurrence) return String;
-   --  Exception information to be output in the case of automatic tracing
-   --  requested through GNAT.Exception_Traces.
-   --
-   --  This is the same as Exception_Information if no backtrace decorator
-   --  is currently in place. Otherwise, this is Exception_Information with
-   --  the call chain raw addresses replaced by the result of a call to the
-   --  current decorator provided with the call chain addresses.
+   function Exception_Message_Length
+     (X : Exception_Occurrence) return Natural;
+   pragma Import (Ada, Exception_Message_Length, "__gnat_exception_msg_len");
 
+   procedure Append_Info_Exception_Message
+     (X : Exception_Occurrence; Info : in out String; Ptr : in out Natural);
    pragma Import
-     (Ada, Tailored_Exception_Information,
-        "__gnat_tailored_exception_information");
+     (Ada, Append_Info_Exception_Message, "__gnat_append_info_e_msg");
 
-   procedure Tailored_Exception_Information
-     (X    : Exception_Occurrence;
-      Buff : in out String;
-      Last : in out Integer);
-   --  Procedural version of the above function. Instead of returning the
-   --  result, this one is put in Buff (Buff'first .. Buff'first + Last)
+   procedure Append_Info_Exception_Information
+     (X : Exception_Occurrence; Info : in out String; Ptr : in out Natural);
+   pragma Import
+     (Ada, Append_Info_Exception_Information, "__gnat_append_info_e_info");
 
    procedure To_Stderr (S : String);
    pragma Import (Ada, To_Stderr, "__gnat_to_stderr");
    --  Little routine to output string to stderr
 
+   Ptr   : Natural := 0;
+   Nobuf : String (1 .. 0);
+
    Nline : constant String := String'(1 => ASCII.LF);
    --  Convenient shortcut
 
-   Msg : constant String := Except.Msg (1 .. Except.Msg_Length);
-
-   Max_Static_Exc_Info : constant := 1024;
-   --  This should be enough for most exception information cases
-   --  even though tailoring introduces some uncertainty.  The
-   --  name+message should not exceed 320 chars, so that leaves at
-   --  least 35 backtrace slots (each slot needs 19 chars for
-   --  representing a 64 bit address).
-
-   subtype Exc_Info_Type is String (1 .. Max_Static_Exc_Info);
-   type Str_Ptr is access Exc_Info_Type;
-   Exc_Info : Str_Ptr;
-   Exc_Info_Last : Natural := 0;
-   --  Buffer that is allocated to store the tailored exception
-   --  information while Adafinal is run. This buffer is allocated
-   --  on the heap only when it is needed. It is better to allocate
-   --  on the heap than on the stack since stack overflows are more
-   --  common than heap overflows.
-
-   procedure Tailored_Exception_Information
-     (X    : Exception_Occurrence;
-      Buff : in out String;
-      Last : in out Integer)
-   is
-      Info : constant String := Tailored_Exception_Information (X);
-   begin
-      Last := Info'Last;
-      Buff (1 .. Last) := Info;
-   end Tailored_Exception_Information;
-
 begin
-   --  First allocate & store the exception info in a buffer when
-   --  we know it will be needed. This needs to be done before
-   --  Adafinal because it implicitly uses the secondary stack.
+   --  Do not execute any task termination code when shutting down the system.
+   --  The Adafinal procedure would execute the task termination routine for
+   --  normal termination, but we have already executed the task termination
+   --  procedure because of an unhandled exception.
 
-   if Except.Id.Full_Name.all (1) /= '_'
-     and then Except.Num_Tracebacks /= 0
-   then
-      Exc_Info := new Exc_Info_Type;
-      if Exc_Info /= null then
-         Tailored_Exception_Information
-           (Except, Exc_Info.all, Exc_Info_Last);
-      end if;
-   end if;
+   System.Soft_Links.Task_Termination_Handler :=
+     System.Soft_Links.Task_Termination_NT'Access;
 
-   --  Let's shutdown the runtime now. The rest of the procedure
-   --  needs to be careful not to use anything that would require
-   --  runtime support. In particular, functions returning strings
-   --  are banned since the sec stack is no longer functional.
+   --  Let's shutdown the runtime now. The rest of the procedure needs to be
+   --  careful not to use anything that would require runtime support. In
+   --  particular, functions returning strings are banned since the sec stack
+   --  is no longer functional. This is particularly important to note for the
+   --  Exception_Information output. We used to allow the tailored version to
+   --  show up here, which turned out to be a bad idea as it might involve a
+   --  traceback decorator the length of which we don't control. Potentially
+   --  heavy primary/secondary stack use or dynamic allocations right before
+   --  this point are not welcome, moving the output before the finalization
+   --  raises order of outputs concerns, and decorators are intended to only
+   --  be used with exception traces, which should have been issued already.
+
    System.Standard_Library.Adafinal;
 
    --  Check for special case of raising _ABORT_SIGNAL, which is not
    --  really an exception at all. We recognize this by the fact that
    --  it is the only exception whose name starts with underscore.
 
-   if Except.Id.Full_Name.all (1) = '_' then
+   if To_Ptr (Except.Id.Full_Name) (1) = '_' then
       To_Stderr (Nline);
       To_Stderr ("Execution terminated by abort of environment task");
       To_Stderr (Nline);
@@ -140,11 +115,12 @@ begin
    elsif Except.Num_Tracebacks = 0 then
       To_Stderr (Nline);
       To_Stderr ("raised ");
-      To_Stderr (Except.Id.Full_Name.all (1 .. Except.Id.Name_Length - 1));
+      To_Stderr
+        (To_Ptr (Except.Id.Full_Name) (1 .. Except.Id.Name_Length - 1));
 
-      if Msg'Length /= 0 then
+      if Exception_Message_Length (Except) /= 0 then
          To_Stderr (" : ");
-         To_Stderr (Msg);
+         Append_Info_Exception_Message (Except, Nobuf, Ptr);
       end if;
 
       To_Stderr (Nline);
@@ -152,13 +128,11 @@ begin
    --  Traceback exists
 
    else
-      --  Note we can have this whole information output twice if
-      --  this occurrence gets reraised up to here.
-
       To_Stderr (Nline);
       To_Stderr ("Execution terminated by unhandled exception");
       To_Stderr (Nline);
-      To_Stderr (Exc_Info (1 .. Exc_Info_Last));
+
+      Append_Info_Exception_Information (Except, Nobuf, Ptr);
    end if;
 
    Unhandled_Terminate;

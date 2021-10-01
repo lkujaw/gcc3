@@ -18,7 +18,7 @@
 --  with C. All functions have been removed from the original spec.
 
 package Interfaces.C is
-pragma Pure (C);
+   pragma Pure;
 
    --  Declaration's based on C's <limits.h>
 

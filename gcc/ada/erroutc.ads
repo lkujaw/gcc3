@@ -6,7 +6,7 @@
 --                                                                          --
 --                                 S p e c                                  --
 --                                                                          --
---          Copyright (C) 1992-2003 Free Software Foundation, Inc.          --
+--          Copyright (C) 1992-2006, Free Software Foundation, Inc.         --
 --                                                                          --
 -- GNAT is free software;  you can  redistribute it  and/or modify it under --
 -- terms of the  GNU General Public License as published  by the Free Soft- --
@@ -16,8 +16,8 @@
 -- or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License --
 -- for  more details.  You should have  received  a copy of the GNU General --
 -- Public License  distributed with GNAT;  see file COPYING.  If not, write --
--- to  the Free Software Foundation,  59 Temple Place - Suite 330,  Boston, --
--- MA 02111-1307, USA.                                                      --
+-- to  the  Free Software Foundation,  51  Franklin  Street,  Fifth  Floor, --
+-- Boston, MA 02110-1301, USA.                                              --
 --                                                                          --
 -- GNAT was originally developed  by the GNAT team at  New York University. --
 -- Extensive contributions were provided by Ada Core Technologies Inc.      --
@@ -27,9 +27,8 @@
 --  This packages contains global variables and routines common to error
 --  reporting packages, including Errout and Prj.Err.
 
-with Hostparm;
 with Table;
-with Types;  use Types;
+with Types; use Types;
 
 package Erroutc is
 
@@ -41,6 +40,10 @@ package Erroutc is
    --  Indicates if current message is a continuation. Intialized from the
    --  Msg_Cont parameter in Error_Msg_Internal and then set True if a \
    --  insertion character is encountered.
+
+   Continuation_New_Line : Boolean := False;
+   --  Indicates if current message was a continuation line marked with \\ to
+   --  force a new line. Set True if \\ encountered.
 
    Flag_Source : Source_File_Index;
    --  Source file index for source file where error is being posted
@@ -77,9 +80,12 @@ package Erroutc is
    Manual_Quote_Mode : Boolean := False;
    --  Set True in manual quotation mode
 
-   Max_Msg_Length : constant := 80 + 2 * Hostparm.Max_Line_Length;
-   --  Maximum length of error message. The addition of Max_Line_Length
+   Max_Msg_Length : constant := 1024 + 2 * Int (Column_Number'Last);
+   --  Maximum length of error message. The addition of 2 * Column_Number'Last
    --  ensures that two insertion tokens of maximum length can be accomodated.
+   --  The value of 1024 is an arbitrary value that should be more than long
+   --  enough to accomodate any reasonable message (and for that matter, some
+   --  pretty unreasonable messages!)
 
    Msg_Buffer : String (1 .. Max_Msg_Length);
    --  Buffer used to prepare error messages
@@ -120,7 +126,7 @@ package Erroutc is
    --  Error_Msg routines.
 
    function Get_Location (E : Error_Msg_Id) return Source_Ptr;
-   --  Returns the flag location of the error message with the given id E.
+   --  Returns the flag location of the error message with the given id E
 
    -----------------------------------
    -- Error Message Data Structures --
@@ -138,7 +144,8 @@ package Erroutc is
       --  Text of error message, fully expanded with all insertions
 
       Next : Error_Msg_Id;
-      --  Pointer to next message in error chain
+      --  Pointer to next message in error chain. A value of No_Error_Msg
+      --  indicates the end of the chain.
 
       Sfile : Source_File_Index;
       --  Source table index of source file. In the case of an error that
@@ -216,8 +223,11 @@ package Erroutc is
    --------------------------
 
    --  Pragma Warnings allows warnings to be turned off for a specified
-   --  region of code, and the following tabl is the data structure used
+   --  region of code, and the following tables are the data structure used
    --  to keep track of these regions.
+
+   --  The first table is used for the basic command line control, and for
+   --  the forms of Warning with a single ON or OFF parameter
 
    --  It contains pairs of source locations, the first being the start
    --  location for a warnings off region, and the second being the end
@@ -244,6 +254,49 @@ package Erroutc is
      Table_Initial        => 100,
      Table_Increment      => 200,
      Table_Name           => "Warnings");
+
+   --  The second table is used for the specific forms of the pragma, where
+   --  the first argument is ON or OFF, and the second parameter is a string
+   --  which is the entire message to suppress, or a prefix of it.
+
+   type Specific_Warning_Entry is record
+      Start : Source_Ptr;
+      Stop  : Source_Ptr;
+      --  Starting and ending source pointers for the range. These are always
+      --  from the same source file. Start is set to No_Location for the case
+      --  of a configuration pragma.
+
+      Msg : String_Ptr;
+      --  Message from pragma Warnings (Off, string)
+
+      Pattern : String_Ptr;
+      --  Same as Msg, excluding initial and final asterisks if present. The
+      --  lower bound of this string is always one.
+
+      Patlen : Natural;
+      --  Length of pattern string (excluding initial/final asterisks)
+
+      Open : Boolean;
+      --  Set to True if OFF has been encountered with no matchin ON
+
+      Used : Boolean;
+      --  Set to True if entry has been used to suppress a warning
+
+      Star_Start : Boolean;
+      --  True if given pattern had * at start
+
+      Star_End : Boolean;
+      --  True if given pattern had * at end
+
+   end record;
+
+   package Specific_Warnings is new Table.Table (
+     Table_Component_Type => Specific_Warning_Entry,
+     Table_Index_Type     => Natural,
+     Table_Low_Bound      => 1,
+     Table_Initial        => 100,
+     Table_Increment      => 200,
+     Table_Name           => "Specific_Warnings");
 
    -----------------
    -- Subprograms --
@@ -290,9 +343,11 @@ package Erroutc is
    --  as all blanks, avoiding output of junk line numbers.
 
    procedure Output_Msg_Text (E : Error_Msg_Id);
-   --  Outputs characters of text in the text of the error message E, excluding
-   --  any final exclamation point. Note that no end of line is output, the
-   --  caller is responsible for adding the end of line.
+   --  Outputs characters of text in the text of the error message E. Note that
+   --  no end of line is output, the caller is responsible for adding the end
+   --  of line. If Error_Msg_Line_Length is non-zero, this is the routine that
+   --  splits the line generating multiple lines of output, and in this case
+   --  the last line has no terminating end of line character.
 
    procedure Purge_Messages (From : Source_Ptr; To : Source_Ptr);
    --  All error messages whose location is in the range From .. To (not
@@ -305,8 +360,8 @@ package Erroutc is
 
    procedure Set_Msg_Blank;
    --  Sets a single blank in the message if the preceding character is a
-   --  non-blank character other than a left parenthesis. Has no effect if
-   --  manual quote mode is turned on.
+   --  non-blank character other than a left parenthesis or minus. Has no
+   --  effect if manual quote mode is turned on.
 
    procedure Set_Msg_Blank_Conditional;
    --  Sets a single blank in the message if the preceding character is a
@@ -330,7 +385,7 @@ package Erroutc is
    --  Handle name insertion (% insertion character)
 
    procedure Set_Msg_Insertion_Reserved_Name;
-   --  Handle insertion of reserved word name (* insertion character).
+   --  Handle insertion of reserved word name (* insertion character)
 
    procedure Set_Msg_Insertion_Reserved_Word
      (Text : String;
@@ -373,6 +428,24 @@ package Erroutc is
    --  the input value of E was either already No_Error_Msg, or was the
    --  last non-deleted message.
 
+   procedure Set_Specific_Warning_Off (Loc : Source_Ptr; Msg : String);
+   --  This is called in response to the two argument form of pragma Warnings
+   --  where the first argument is OFF, and the second argument is the prefix
+   --  of a specific warning to be suppressed. The first argument is the start
+   --  of the suppression range, and the second argument is the string from
+   --  the pragma. Loc is set to No_Location for the configuration pragma case.
+
+   procedure Set_Specific_Warning_On
+     (Loc : Source_Ptr;
+      Msg : String;
+      Err : out Boolean);
+   --  This is called in response to the two argument form of pragma Warnings
+   --  where the first argument is ON, and the second argument is the prefix
+   --  of a specific warning to be suppressed. The first argument is the end
+   --  of the suppression range, and the second argument is the string from
+   --  the pragma. Err is set to True on return to report the error of no
+   --  matching Warnings Off pragma preceding this one.
+
    procedure Set_Warnings_Mode_Off (Loc : Source_Ptr);
    --  Called in response to a pragma Warnings (Off) to record the source
    --  location from which warnings are to be turned off.
@@ -393,6 +466,20 @@ package Erroutc is
    function Warnings_Suppressed (Loc : Source_Ptr) return Boolean;
    --  Determines if given location is covered by a warnings off suppression
    --  range in the warnings table (or is suppressed by compilation option,
-   --  which generates a warning range for the whole source file).
+   --  which generates a warning range for the whole source file). This routine
+   --  only deals with the general ON/OFF case, not specific warnings
+
+   function Warning_Specifically_Suppressed
+     (Loc : Source_Ptr;
+      Msg : String_Ptr) return Boolean;
+   --  Determines if given message to be posted at given location is suppressed
+   --  by specific ON/OFF Warnings pragmas specifying this particular message.
+
+   type Error_Msg_Proc is
+     access procedure (Msg : String; Flag_Location : Source_Ptr);
+   procedure Validate_Specific_Warnings (Eproc : Error_Msg_Proc);
+   --  Checks that specific warnings are consistent (for non-configuration
+   --  case, properly closed, and used). The argument is a pointer to the
+   --  Error_Msg procedure to be called if any inconsistencies are detected.
 
 end Erroutc;

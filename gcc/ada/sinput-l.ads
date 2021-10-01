@@ -6,7 +6,7 @@
 --                                                                          --
 --                                 S p e c                                  --
 --                                                                          --
---          Copyright (C) 1992-2002, Free Software Foundation, Inc.         --
+--          Copyright (C) 1992-2005, Free Software Foundation, Inc.         --
 --                                                                          --
 -- GNAT is free software;  you can  redistribute it  and/or modify it under --
 -- terms of the  GNU General Public License as published  by the Free Soft- --
@@ -16,8 +16,8 @@
 -- or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License --
 -- for  more details.  You should have  received  a copy of the GNU General --
 -- Public License  distributed with GNAT;  see file COPYING.  If not, write --
--- to  the Free Software Foundation,  59 Temple Place - Suite 330,  Boston, --
--- MA 02111-1307, USA.                                                      --
+-- to  the  Free Software Foundation,  51  Franklin  Street,  Fifth  Floor, --
+-- Boston, MA 02110-1301, USA.                                              --
 --                                                                          --
 -- GNAT was originally developed  by the GNAT team at  New York University. --
 -- Extensive contributions were provided by Ada Core Technologies Inc.      --
@@ -30,13 +30,11 @@
 --  off into a child package to avoid a dependence of Sinput on Osint which
 --  would cause trouble in the tree read/write routines.
 
-with Types; use Types;
-
 package Sinput.L is
 
-   -------------------------------------------
-   --  Subprograms for Loading Source Files --
-   -------------------------------------------
+   ------------------------------------------
+   -- Subprograms for Loading Source Files --
+   ------------------------------------------
 
    function Load_Source_File (N : File_Name_Type) return Source_File_Index;
    --  Given a source file name, returns the index of the corresponding entry
@@ -54,14 +52,14 @@ package Sinput.L is
    --  The file is never preprocessed.
 
    function Load_Definition_File
-     (N    : File_Name_Type)
-      return Source_File_Index;
-   --  Needs comments ???
+     (N : File_Name_Type) return Source_File_Index;
+   --  Loads preprocessing definition file. Similar to Load_Source_File
+   --  except that this file is not itself preprocessed.
 
    function Load_Preprocessing_Data_File
-     (N    : File_Name_Type)
-      return Source_File_Index;
-   --  Similar to Load_Source_File, except that the file is never preprocessed.
+     (N : File_Name_Type) return Source_File_Index;
+   --  Loads preprocessing data file. Similar to Load_Source_File except
+   --  that this file is not itself preprocessed.
 
    procedure Complete_Source_File_Entry;
    --  Called on completing the parsing of a source file. This call completes

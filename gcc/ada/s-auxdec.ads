@@ -6,7 +6,7 @@
 --                                                                          --
 --                                 S p e c                                  --
 --                                                                          --
---          Copyright (C) 1996-2002 Free Software Foundation, Inc.          --
+--          Copyright (C) 1996-2006, Free Software Foundation, Inc.         --
 --                                                                          --
 -- GNAT is free software;  you can  redistribute it  and/or modify it under --
 -- terms of the  GNU General Public License as published  by the Free Soft- --
@@ -16,16 +16,16 @@
 -- or FITNESS For A PARTICULAR PURPOSE.  See the GNU General Public License --
 -- for  more details.  You should have  received  a copy of the GNU General --
 -- Public License  distributed with GNAT;  see file COPYING.  If not, write --
--- to  the Free Software Foundation,  59 Temple Place - Suite 330,  Boston, --
--- MA 02111-1307, USA.                                                      --
+-- to  the  Free Software Foundation,  51  Franklin  Street,  Fifth  Floor, --
+-- Boston, MA 02110-1301, USA.                                              --
 --                                                                          --
--- As a special exception,  if other files  instantiate  generics from this --
--- unit, or you link  this unit with other files  to produce an executable, --
--- this  unit  does not  by itself cause  the resulting  executable  to  be --
--- covered  by the  GNU  General  Public  License.  This exception does not --
--- however invalidate  any other reasons why  the executable file  might be --
--- covered by the  GNU Public License.                                      --
---                                                                          --
+--
+--
+--
+--
+--
+--
+--
 -- GNAT was originally developed  by the GNAT team at  New York University. --
 -- Extensive contributions were provided by Ada Core Technologies Inc.      --
 --                                                                          --
@@ -40,7 +40,17 @@
 with Unchecked_Conversion;
 
 package System.Aux_DEC is
-pragma Elaborate_Body (Aux_DEC);
+   pragma Preelaborate;
+
+   subtype Short_Address is Address;
+   --  In some versions of System.Aux_DEC, notably that for VMS on the
+   --  ia64, there are two address types (64-bit and 32-bit), and the
+   --  name Short_Address is used for the short address form. To avoid
+   --  difficulties (in regression tests and elsewhere) with units that
+   --  reference Short_Address, it is provided for other targets as a
+   --  synonum for the normal Address type, and, as in the case where
+   --  the lengths are different, Address and Short_Address can be
+   --  freely inter-converted.
 
    type Integer_8  is range -2 **  (8 - 1) .. +2 **  (8 - 1) - 1;
    for Integer_8'Size  use  8;
@@ -56,7 +66,7 @@ pragma Elaborate_Body (Aux_DEC);
 
    type Largest_Integer is range Min_Int .. Max_Int;
 
-   type AST_Handler is limited private;
+   type AST_Handler is private;
 
    No_AST_Handler : constant AST_Handler;
 
@@ -199,13 +209,13 @@ pragma Elaborate_Body (Aux_DEC);
    type Unsigned_Quadword_Array is
       array (Integer range <>) of Unsigned_Quadword;
 
-   function To_Address      (X : Integer)           return Address;
+   function To_Address (X : Integer) return Address;
    pragma Pure_Function (To_Address);
 
    function To_Address_Long (X : Unsigned_Longword) return Address;
    pragma Pure_Function (To_Address_Long);
 
-   function To_Integer      (X : Address)           return Integer;
+   function To_Integer (X : Address) return Integer;
 
    function To_Unsigned_Longword (X : Address)     return Unsigned_Longword;
    function To_Unsigned_Longword (X : AST_Handler) return Unsigned_Longword;
@@ -278,17 +288,17 @@ pragma Elaborate_Body (Aux_DEC);
    procedure Clear_Interlocked
      (Bit          : in out Boolean;
       Old_Value    : out Boolean;
-      Retry_Count  : in Natural;
+      Retry_Count  : Natural;
       Success_Flag : out Boolean);
 
    procedure Set_Interlocked
      (Bit          : in out Boolean;
       Old_Value    : out Boolean;
-      Retry_Count  : in Natural;
+      Retry_Count  : Natural;
       Success_Flag : out Boolean);
 
    procedure Add_Interlocked
-     (Addend       : in Short_Integer;
+     (Addend       : Short_Integer;
       Augend       : in out Aligned_Word;
       Sign         : out Integer);
 
@@ -312,67 +322,67 @@ pragma Elaborate_Body (Aux_DEC);
 
    procedure Add_Atomic
      (To           : in out Aligned_Integer;
-      Amount       : in Integer);
+      Amount       : Integer);
 
    procedure Add_Atomic
      (To           : in out Aligned_Integer;
-      Amount       : in Integer;
-      Retry_Count  : in Natural;
+      Amount       : Integer;
+      Retry_Count  : Natural;
       Old_Value    : out Integer;
       Success_Flag : out Boolean);
 
    procedure Add_Atomic
      (To           : in out Aligned_Long_Integer;
-      Amount       : in Long_Integer);
+      Amount       : Long_Integer);
 
    procedure Add_Atomic
      (To           : in out Aligned_Long_Integer;
-      Amount       : in Long_Integer;
-      Retry_Count  : in Natural;
+      Amount       : Long_Integer;
+      Retry_Count  : Natural;
       Old_Value    : out Long_Integer;
       Success_Flag : out Boolean);
 
    procedure And_Atomic
      (To           : in out Aligned_Integer;
-      From         : in Integer);
+      From         : Integer);
 
    procedure And_Atomic
      (To           : in out Aligned_Integer;
-      From         : in Integer;
-      Retry_Count  : in Natural;
+      From         : Integer;
+      Retry_Count  : Natural;
       Old_Value    : out Integer;
       Success_Flag : out Boolean);
 
    procedure And_Atomic
      (To           : in out Aligned_Long_Integer;
-      From         : in Long_Integer);
+      From         : Long_Integer);
 
    procedure And_Atomic
      (To           : in out Aligned_Long_Integer;
-      From         : in Long_Integer;
-      Retry_Count  : in Natural;
+      From         : Long_Integer;
+      Retry_Count  : Natural;
       Old_Value    : out Long_Integer;
       Success_Flag : out Boolean);
 
    procedure Or_Atomic
      (To           : in out Aligned_Integer;
-      From         : in Integer);
+      From         : Integer);
 
    procedure Or_Atomic
      (To           : in out Aligned_Integer;
-      From         : in Integer;
-      Retry_Count  : in Natural;
+      From         : Integer;
+      Retry_Count  : Natural;
       Old_Value    : out Integer;
       Success_Flag : out Boolean);
 
    procedure Or_Atomic
      (To           : in out Aligned_Long_Integer;
-      From         : in Long_Integer);
+      From         : Long_Integer);
 
    procedure Or_Atomic
      (To           : in out Aligned_Long_Integer;
-      From         : in Long_Integer;
-      Retry_Count  : in Natural;
+      From         : Long_Integer;
+      Retry_Count  : Natural;
       Old_Value    : out Long_Integer;
       Success_Flag : out Boolean);
 
@@ -397,22 +407,22 @@ pragma Elaborate_Body (Aux_DEC);
       OK_Empty       => +2);
 
    procedure Insqhi
-     (Item   : in  Address;
-      Header : in  Address;
+     (Item   : Address;
+      Header : Address;
       Status : out Insq_Status);
 
    procedure Remqhi
-     (Header : in  Address;
+     (Header : Address;
       Item   : out Address;
       Status : out Remq_Status);
 
    procedure Insqti
-     (Item   : in  Address;
-      Header : in  Address;
+     (Item   : Address;
+      Header : Address;
       Status : out Insq_Status);
 
    procedure Remqti
-     (Header : in  Address;
+     (Header : Address;
       Item   : out Address;
       Status : out Remq_Status);
 
@@ -449,7 +459,7 @@ private
    --  convention C so that the critical parameters are passed by reference.
    --  Without this, the parameters are passed by copy, creating load/store
    --  race conditions. We also inline them, since this seems more in the
-   --  spirit of the original (hardware instrinsic) routines.
+   --  spirit of the original (hardware intrinsic) routines.
 
    pragma Convention (C, Clear_Interlocked);
    pragma Inline_Always (Clear_Interlocked);

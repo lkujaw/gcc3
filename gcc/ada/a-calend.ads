@@ -6,7 +6,7 @@
 --                                                                          --
 --                                 S p e c                                  --
 --                                                                          --
---          Copyright (C) 1992-1997 Free Software Foundation, Inc.          --
+--          Copyright (C) 1992-2006, Free Software Foundation, Inc.         --
 --                                                                          --
 -- This specification is derived from the Ada Reference Manual for use with --
 -- GNAT. The copyright notice above, and the license provisions that follow --
@@ -20,16 +20,16 @@
 -- or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License --
 -- for  more details.  You should have  received  a copy of the GNU General --
 -- Public License  distributed with GNAT;  see file COPYING.  If not, write --
--- to  the Free Software Foundation,  59 Temple Place - Suite 330,  Boston, --
--- MA 02111-1307, USA.                                                      --
+-- to  the  Free Software Foundation,  51  Franklin  Street,  Fifth  Floor, --
+-- Boston, MA 02110-1301, USA.                                              --
 --                                                                          --
--- As a special exception,  if other files  instantiate  generics from this --
--- unit, or you link  this unit with other files  to produce an executable, --
--- this  unit  does not  by itself cause  the resulting  executable  to  be --
--- covered  by the  GNU  General  Public  License.  This exception does not --
--- however invalidate  any other reasons why  the executable file  might be --
--- covered by the  GNU Public License.                                      --
---                                                                          --
+--
+--
+--
+--
+--
+--
+--
 -- GNAT was originally developed  by the GNAT team at  New York University. --
 -- Extensive contributions were provided by Ada Core Technologies Inc.      --
 --                                                                          --
@@ -67,8 +67,21 @@ package Ada.Calendar is
      (Year    : Year_Number;
       Month   : Month_Number;
       Day     : Day_Number;
-      Seconds : Day_Duration := 0.0)
-      return    Time;
+      Seconds : Day_Duration := 0.0) return Time;
+   --  GNAT Note: Normally when procedure Split is called on a Time value
+   --  result of a call to function Time_Of, the out parameters of procedure
+   --  Split are identical to the in parameters of function Time_Of. However,
+   --  when a non-existent time of day is specified, the values for Seconds
+   --  may or may not be different. This may happen when Daylight Saving Time
+   --  (DST) is in effect, on the day when switching to DST, if Seconds
+   --  specifies a time of day in the hour that does not exist. For example,
+   --  in New York:
+   --
+   --    Time_Of (Year => 1998, Month => 4, Day => 5, Seconds => 10740.0)
+   --
+   --  will return a Time value T. If Split is called on T, the resulting
+   --  Seconds may be 14340.0 (3:59:00) instead of 10740.0 (2:59:00 being
+   --  a time that not exist).
 
    function "+" (Left : Time;     Right : Duration) return Time;
    function "+" (Left : Duration; Right : Time)     return Time;
@@ -113,5 +126,57 @@ private
    --  real value representing a time interval in seconds.
 
    type Time is new Duration;
+
+   --  The following package provides handling of leap seconds. It is
+   --  used by Ada.Calendar.Arithmetic and Ada.Calendar.Formatting, both
+   --  Ada 2005 children of Ada.Calendar.
+
+   package Leap_Sec_Ops is
+
+      After_Last_Leap : constant Time := Time'Last;
+      --  Bigger by far than any leap second value. Not within range of
+      --  Ada.Calendar specified dates.
+
+      procedure Cumulative_Leap_Secs
+        (Start_Date    : Time;
+         End_Date      : Time;
+         Leaps_Between : out Duration;
+         Next_Leap_Sec : out Time);
+      --  Leaps_Between is the sum of the leap seconds that have occured
+      --  on or after Start_Date and before (strictly before) End_Date.
+      --  Next_Leap_Sec represents the next leap second occurence on or
+      --  after End_Date. If there are no leaps seconds after End_Date,
+      --  After_Last_Leap is returned. This does not provide info about
+      --  the next leap second (pos/neg or ?). After_Last_Leap can be used
+      --  as End_Date to count all the leap seconds that have occured on
+      --  or after Start_Date.
+      --  Important Notes: any fractional parts of Start_Date and End_Date
+      --  are discarded before the calculations are done. For instance: if
+      --  113 seconds is a leap second (it isn't) and 113.5 is input as an
+      --  End_Date, the leap second at 113 will not be counted in
+      --  Leaps_Between, but it will be returned as Next_Leap_Sec. Thus, if
+      --  the caller wants to know if the End_Date is a leap second, the
+      --  comparison should be:
+      --     End_Date >= Next_Leap_Sec;
+      --  After_Last_Leap is designed so that this comparison works without
+      --  having to first check if Next_Leap_Sec is a valid leap second.
+
+      function All_Leap_Seconds return Duration;
+      --  Returns the sum off all of the leap seoncds.
+
+   end Leap_Sec_Ops;
+
+   procedure Split_W_Offset
+     (Date    : Time;
+      Year    : out Year_Number;
+      Month   : out Month_Number;
+      Day     : out Day_Number;
+      Seconds : out Day_Duration;
+      Offset  : out Long_Integer);
+   --  Split_W_Offset has the same spec as Split with the addition of an
+   --  offset value which give the offset of the local time zone from UTC
+   --  at the input Date. This value comes for free during the implementation
+   --  of Split and is needed by UTC_Time_Offset. The returned Offset time
+   --  is straight from the C tm struct and is in seconds.
 
 end Ada.Calendar;

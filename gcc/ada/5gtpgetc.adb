@@ -1,12 +1,12 @@
 ------------------------------------------------------------------------------
 --                                                                          --
---                GNU ADA RUN-TIME LIBRARY (GNARL) COMPONENTS               --
+--                 GNAT RUN-TIME LIBRARY (GNARL) COMPONENTS                 --
 --                                                                          --
 --     S Y S T E M . T A S K _ P R I M I T I V E S . G E N _ T C B I N F    --
 --                                                                          --
 --                                 B o d y                                  --
 --                                                                          --
---              Copyright (C) 1999-2000 Free Software Fundation             --
+--          Copyright (C) 1999-2005, Free Software Fundation, Inc.          --
 --                                                                          --
 -- GNARL is free software; you can  redistribute it  and/or modify it under --
 -- terms of the  GNU General Public License as published  by the Free Soft- --
@@ -19,13 +19,13 @@
 -- to  the Free Software Foundation,  59 Temple Place - Suite 330,  Boston, --
 -- MA 02111-1307, USA.                                                      --
 --                                                                          --
--- As a special exception,  if other files  instantiate  generics from this --
--- unit, or you link  this unit with other files  to produce an executable, --
--- this  unit  does not  by itself cause  the resulting  executable  to  be --
--- covered  by the  GNU  General  Public  License.  This exception does not --
--- however invalidate  any other reasons why  the executable file  might be --
--- covered by the  GNU Public License.                                      --
---                                                                          --
+--
+--
+--
+--
+--
+--
+--
 -- GNARL was developed by the GNARL team at Florida State University.       --
 -- Extensive contributions were provided by Ada Core Technologies, Inc.     --
 --                                                                          --
@@ -34,13 +34,15 @@
 --  This is an SGI Irix version of this package
 
 --  This procedure creates the file "a-tcbinf.c"
---  "A-tcbinf.c" is subsequently compiled and made part of the RTL
---  to be referenced by the SGI Workshop debugger. The main procedure:
---  "Gen_Tcbinf" imports this child procedure and runs as part of the
---  RTL build process. Because of the complex process used to build
---  the GNAT RTL for all the different systems and the frequent changes
---  made to the internal data structures, its impractical to create
---  "a-tcbinf.c" using a standalone process.
+
+--  "A-tcbinf.c" is subsequently compiled and made part of the RTL to be
+--  referenced by the SGI Workshop debugger. The main procedure: "Gen_Tcbinf"
+--  imports this child procedure and runs as part of the RTL build process.
+--  Because of the complex process used to build the GNAT RTL for all the
+--  different systems and the frequent changes made to the internal data
+--  structures, its impractical to create "a-tcbinf.c" using a standalone
+--  process.
+
 with System.Tasking;
 with Ada.Text_IO;
 with Unchecked_Conversion;

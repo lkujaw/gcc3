@@ -6,7 +6,7 @@
 --                                                                          --
 --                                 B o d y                                  --
 --                                                                          --
---          Copyright (C) 1992-2001, Free Software Foundation, Inc.         --
+--          Copyright (C) 1992-2005, Free Software Foundation, Inc.         --
 --                                                                          --
 -- GNAT is free software;  you can  redistribute it  and/or modify it under --
 -- terms of the  GNU General Public License as published  by the Free Soft- --
@@ -16,8 +16,8 @@
 -- or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License --
 -- for  more details.  You should have  received  a copy of the GNU General --
 -- Public License  distributed with GNAT;  see file COPYING.  If not, write --
--- to  the Free Software Foundation,  59 Temple Place - Suite 330,  Boston, --
--- MA 02111-1307, USA.                                                      --
+-- to  the  Free Software Foundation,  51  Franklin  Street,  Fifth  Floor, --
+-- Boston, MA 02110-1301, USA.                                              --
 --                                                                          --
 -- GNAT was originally developed  by the GNAT team at  New York University. --
 -- Extensive contributions were provided by Ada Core Technologies Inc.      --
@@ -28,9 +28,11 @@ with Atree;    use Atree;
 with Errout;   use Errout;
 with Opt;      use Opt;
 with Restrict; use Restrict;
+with Rident;   use Rident;
 with Sem_Ch8;  use Sem_Ch8;
 with Sinfo;    use Sinfo;
 with Stand;    use Stand;
+with Uintp;    use Uintp;
 
 package body Sem_Ch2 is
 
@@ -40,7 +42,6 @@ package body Sem_Ch2 is
 
    procedure Analyze_Character_Literal (N : Node_Id) is
    begin
-
       --  The type is eventually inherited from the context. If expansion
       --  has already established the proper type, do not modify it.
 
@@ -51,7 +52,7 @@ package body Sem_Ch2 is
       Set_Is_Static_Expression (N);
 
       if Comes_From_Source (N)
-        and then not In_Character_Range (Char_Literal_Value (N))
+        and then not In_Character_Range (UI_To_CC (Char_Literal_Value (N)))
       then
          Check_Restriction (No_Wide_Characters, N);
       end if;
@@ -102,7 +103,6 @@ package body Sem_Ch2 is
 
    procedure Analyze_String_Literal (N : Node_Id) is
    begin
-
       --  The type is eventually inherited from the context. If expansion
       --  has already established the proper type, do not modify it.
 
@@ -114,7 +114,7 @@ package body Sem_Ch2 is
       --  turns out to be non-static, then the Is_Static_Expression flag
       --  will be reset in Eval_String_Literal.
 
-      if Ada_95 then
+      if Ada_Version >= Ada_95 then
          Set_Is_Static_Expression (N);
       end if;
 

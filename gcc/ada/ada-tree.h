@@ -6,7 +6,7 @@
  *                                                                          *
  *                              C Header File                               *
  *                                                                          *
- *          Copyright (C) 1992-2003 Free Software Foundation, Inc.          *
+ *          Copyright (C) 1992-2006, Free Software Foundation, Inc.         *
  *                                                                          *
  * GNAT is free software;  you can  redistribute it  and/or modify it under *
  * terms of the  GNU General Public License as published  by the Free Soft- *
@@ -34,32 +34,32 @@ enum gnat_tree_code {
 #undef DEFTREECODE
 
 /* A tree to hold a loop ID.  */
-struct tree_loop_id GTY(()) 
+struct tree_loop_id GTY(())
 {
   struct tree_common common;
   struct nesting *loop_id;
 };
 
 /* The language-specific tree.  */
-union lang_tree_node 
+union lang_tree_node
   GTY((desc ("TREE_CODE (&%h.generic) == GNAT_LOOP_ID"),
        chain_next ("(union lang_tree_node *)TREE_CHAIN (&%h.generic)")))
 {
-  union tree_node GTY ((tag ("0"), 
-			desc ("tree_node_structure (&%h)"))) 
+  union tree_node GTY ((tag ("0"),
+			desc ("tree_node_structure (&%h)")))
     generic;
   struct tree_loop_id GTY ((tag ("1"))) loop_id;
 };
 
 /* Ada uses the lang_decl and lang_type fields to hold more trees.  */
-struct lang_decl GTY(()) 
+struct lang_decl GTY(())
 {
-  union lang_tree_node 
+  union lang_tree_node
     GTY((desc ("TREE_CODE (&%h.generic) == GNAT_LOOP_ID"))) t;
 };
 struct lang_type GTY(())
 {
-  union lang_tree_node 
+  union lang_tree_node
     GTY((desc ("TREE_CODE (&%h.generic) == GNAT_LOOP_ID"))) t;
 };
 
@@ -94,8 +94,8 @@ struct lang_type GTY(())
   TYPE_LANG_FLAG_1 (FUNCTION_TYPE_CHECK (NODE))
 
 /* For RECORD_TYPE, UNION_TYPE, and QUAL_UNION_TYPE, nonzero if this denotes
-   a left-justified modular type (will only be true for RECORD_TYPE).  */
-#define TYPE_LEFT_JUSTIFIED_MODULAR_P(NODE) TYPE_LANG_FLAG_1 (NODE)
+   a justified modular type (will only be true for RECORD_TYPE).  */
+#define TYPE_JUSTIFIED_MODULAR_P(NODE) TYPE_LANG_FLAG_1 (NODE)
 
 /* Nonzero in an arithmetic subtype if this is a subtype not known to the
    front-end.  */
@@ -256,6 +256,9 @@ struct lang_type GTY(())
 /* Nonzero in a PARM_DECL if we are to pass by descriptor.  */
 #define DECL_BY_DESCRIPTOR_P(NODE) DECL_LANG_FLAG_5 (PARM_DECL_CHECK (NODE))
 
+/* Nonzero in a VAR_DECL if it is a pointer renaming a global object.  */
+#define DECL_RENAMING_GLOBAL_P(NODE) DECL_LANG_FLAG_5 (VAR_DECL_CHECK (NODE))
+
 /* In a CONST_DECL, points to a VAR_DECL that is allocatable to
    memory.  Used when a scalar constant is aliased or has its
    address taken.  */
@@ -271,9 +274,27 @@ struct lang_type GTY(())
 #define SET_DECL_ORIGINAL_FIELD(NODE, X) \
   (DECL_LANG_SPECIFIC (FIELD_DECL_CHECK (NODE)) = (struct lang_decl *)(X))
 
+/* In a VAR_DECL, points to the object being renamed if the VAR_DECL is a
+   renaming pointer, otherwise 0.  Note that this object is guaranteed to
+   be protected against multiple evaluations.  */
+#define DECL_RENAMED_OBJECT(NODE) \
+  (&DECL_LANG_SPECIFIC (VAR_DECL_CHECK (NODE))->t.generic)
+#define SET_DECL_RENAMED_OBJECT(NODE, X) \
+  (DECL_LANG_SPECIFIC (VAR_DECL_CHECK (NODE)) = (struct lang_decl *)(X))
+
+/* In a TYPE_DECL, points to the parallel type if any, otherwise 0.  */
+#define DECL_PARALLEL_TYPE(NODE) \
+  (&DECL_LANG_SPECIFIC (TYPE_DECL_CHECK (NODE))->t.generic)
+#define SET_DECL_PARALLEL_TYPE(NODE, X) \
+  (DECL_LANG_SPECIFIC (TYPE_DECL_CHECK (NODE)) = (struct lang_decl *)(X))
+
 /* In a FIELD_DECL corresponding to a discriminant, contains the
    discriminant number.  */
 #define DECL_DISCRIMINANT_NUMBER(NODE) DECL_INITIAL (FIELD_DECL_CHECK (NODE))
+
+/* In a FUNCTION_DECL for which DECL_BUILT_IN does not hold, contains the
+   source location.  */
+#define DECL_ADA_SOURCE_LOCATION(NODE) (FUNCTION_DECL_CHECK (NODE)->decl.u1.i)
 
 /* This is the loop id for a GNAT_LOOP_ID node.  */
 #define TREE_LOOP_ID(NODE) \

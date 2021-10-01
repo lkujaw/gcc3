@@ -6,7 +6,7 @@
 --                                                                          --
 --                                 B o d y                                  --
 --                                                                          --
---          Copyright (C) 1992-2001 Free Software Foundation, Inc.          --
+--          Copyright (C) 1992-2005, Free Software Foundation, Inc.         --
 --                                                                          --
 -- GNAT is free software;  you can  redistribute it  and/or modify it under --
 -- terms of the  GNU General Public License as published  by the Free Soft- --
@@ -16,36 +16,19 @@
 -- or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License --
 -- for  more details.  You should have  received  a copy of the GNU General --
 -- Public License  distributed with GNAT;  see file COPYING.  If not, write --
--- to  the Free Software Foundation,  59 Temple Place - Suite 330,  Boston, --
--- MA 02111-1307, USA.                                                      --
+-- to  the  Free Software Foundation,  51  Franklin  Street,  Fifth  Floor, --
+-- Boston, MA 02110-1301, USA.                                              --
 --                                                                          --
 -- GNAT was originally developed  by the GNAT team at  New York University. --
 -- Extensive contributions were provided by Ada Core Technologies Inc.      --
 --                                                                          --
 ------------------------------------------------------------------------------
 
-with Hostparm; use Hostparm;
 with Namet;    use Namet;
 with Output;   use Output;
+with Targparm; use Targparm;
 
 package body Butil is
-
-   --------------------------
-   -- Get_Unit_Name_String --
-   --------------------------
-
-   procedure Get_Unit_Name_String (U : Unit_Name_Type) is
-   begin
-      Get_Name_String (U);
-
-      if Name_Buffer (Name_Len) = 's' then
-         Name_Buffer (Name_Len - 1 .. Name_Len + 5) := " (spec)";
-      else
-         Name_Buffer (Name_Len - 1 .. Name_Len + 5) := " (body)";
-      end if;
-
-      Name_Len := Name_Len + 5;
-   end Get_Unit_Name_String;
 
    ----------------------
    -- Is_Internal_Unit --
@@ -62,11 +45,11 @@ package body Butil is
                                or else
                              Name_Buffer (1 .. 5) = "gnat."))
         or else
-          (OpenVMS
-             and then Name_Len > 3
-             and then (Name_Buffer (1 .. 4) = "dec%"
-                         or else
-                       Name_Buffer (1 .. 4) = "dec."));
+          (OpenVMS_On_Target
+           and then Name_Len > 3
+           and then (Name_Buffer (1 .. 4) = "dec%"
+                      or else
+                     Name_Buffer (1 .. 4) = "dec."));
 
    end Is_Internal_Unit;
 

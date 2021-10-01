@@ -6,7 +6,7 @@
 --                                                                          --
 --                                 S p e c                                  --
 --                                                                          --
---          Copyright (C) 2000-2001 Free Software Foundation, Inc.          --
+--          Copyright (C) 2000-2005, Free Software Foundation, Inc.         --
 --                                                                          --
 -- GNAT is free software;  you can  redistribute it  and/or modify it under --
 -- terms of the  GNU General Public License as published  by the Free Soft- --
@@ -16,8 +16,8 @@
 -- or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License --
 -- for  more details.  You should have  received  a copy of the GNU General --
 -- Public License  distributed with GNAT;  see file COPYING.  If not, write --
--- to  the Free Software Foundation,  59 Temple Place - Suite 330,  Boston, --
--- MA 02111-1307, USA.                                                      --
+-- to  the  Free Software Foundation,  51  Franklin  Street,  Fifth  Floor, --
+-- Boston, MA 02110-1301, USA.                                              --
 --                                                                          --
 -- GNAT was originally developed  by the GNAT team at  New York University. --
 -- Extensive contributions were provided by Ada Core Technologies Inc.      --
@@ -46,12 +46,17 @@ package SFN_Scan is
    --  of these procedures:
 
    type Set_File_Name_Ptr is access
-     procedure (Typ : Character; U : String; F : String);
+     procedure
+       (Typ   : Character;
+        U     : String;
+        F     : String;
+        Index : Natural);
    --  The procedure with this profile is called when a Source_File_Name
    --  pragma of the form having a unit name parameter. Typ is 'b' for
    --  a body file name, and 's' for a spec file name. U is a string that
    --  contains the unit name, exactly as it appeared in the source file,
-   --  and F is the file taken from the second parameter.
+   --  and F is the file taken from the second parameter. Index is taken
+   --  from the third parameter, or is set to zero if no third parameter.
 
    type Set_File_Name_Pattern_Ptr is access
      procedure (Pat : String; Typ : Character; Dot : String; Cas : Character);

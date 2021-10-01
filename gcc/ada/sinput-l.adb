@@ -6,7 +6,7 @@
 --                                                                          --
 --                                 B o d y                                  --
 --                                                                          --
---          Copyright (C) 1992-2003 Free Software Foundation, Inc.          --
+--          Copyright (C) 1992-2006, Free Software Foundation, Inc.         --
 --                                                                          --
 -- GNAT is free software;  you can  redistribute it  and/or modify it under --
 -- terms of the  GNU General Public License as published  by the Free Soft- --
@@ -16,8 +16,8 @@
 -- or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License --
 -- for  more details.  You should have  received  a copy of the GNU General --
 -- Public License  distributed with GNAT;  see file COPYING.  If not, write --
--- to  the Free Software Foundation,  59 Temple Place - Suite 330,  Boston, --
--- MA 02111-1307, USA.                                                      --
+-- to  the  Free Software Foundation,  51  Franklin  Street,  Fifth  Floor, --
+-- Boston, MA 02110-1301, USA.                                              --
 --                                                                          --
 -- GNAT was originally developed  by the GNAT team at  New York University. --
 -- Extensive contributions were provided by Ada Core Technologies Inc.      --
@@ -30,7 +30,7 @@ with Debug;    use Debug;
 with Einfo;    use Einfo;
 with Errout;   use Errout;
 with Namet;    use Namet;
-with Opt;
+with Opt;      use Opt;
 with Osint;    use Osint;
 with Output;   use Output;
 with Prep;     use Prep;
@@ -78,9 +78,8 @@ package body Sinput.L is
    --  Used to initialize the preprocessor.
 
    function Load_File
-     (N    : File_Name_Type;
-      T    : Osint.File_Type)
-      return Source_File_Index;
+     (N : File_Name_Type;
+      T : Osint.File_Type) return Source_File_Index;
    --  Load a source file, a configuration pragmas file or a definition file
    --  Coding also allows preprocessing file, but not a library file ???
 
@@ -244,8 +243,14 @@ package body Sinput.L is
       declare
          pragma Suppress (All_Checks);
 
+         pragma Warnings (Off);
+         --  This unchecked conversion is aliasing safe, since it is never
+         --  used to create improperly aliased pointer values.
+
          function To_Source_Buffer_Ptr is new
            Unchecked_Conversion (Address, Source_Buffer_Ptr);
+
+         pragma Warnings (On);
 
       begin
          Source_File.Table (Xnew).Source_Text :=
@@ -259,8 +264,7 @@ package body Sinput.L is
    ----------------------
 
    function Load_Config_File
-     (N    : File_Name_Type)
-      return Source_File_Index
+     (N : File_Name_Type) return Source_File_Index
    is
    begin
       return Load_File (N, Osint.Config);
@@ -271,8 +275,7 @@ package body Sinput.L is
    --------------------------
 
    function Load_Definition_File
-     (N    : File_Name_Type)
-      return Source_File_Index
+     (N : File_Name_Type) return Source_File_Index
    is
    begin
       return Load_File (N, Osint.Definition);
@@ -283,9 +286,8 @@ package body Sinput.L is
    ---------------
 
    function Load_File
-     (N :    File_Name_Type;
-      T :    Osint.File_Type)
-      return Source_File_Index
+     (N : File_Name_Type;
+      T : Osint.File_Type) return Source_File_Index
    is
       Src : Source_Buffer_Ptr;
       X   : Source_File_Index;
@@ -295,11 +297,21 @@ package body Sinput.L is
       Preprocessing_Needed : Boolean := False;
 
    begin
-      for J in 1 .. Source_File.Last loop
-         if Source_File.Table (J).File_Name = N then
-            return J;
-         end if;
-      end loop;
+      --  If already there, don't need to reload file. An exception occurs
+      --  in multiple unit per file mode. It would be nice in this case to
+      --  share the same source file for each unit, but this leads to many
+      --  difficulties with assumptions (e.g. in the body of lib), that a
+      --  unit can be found by locating its source file index. Since we do
+      --  not expect much use of this mode, it's no big deal to waste a bit
+      --  of space and time by reading and storing the source multiple times.
+
+      if Multiple_Unit_Index = 0 then
+         for J in 1 .. Source_File.Last loop
+            if Source_File.Table (J).File_Name = N then
+               return J;
+            end if;
+         end loop;
+      end if;
 
       --  Here we must build a new entry in the file table
 
@@ -429,6 +441,7 @@ package body Sinput.L is
                   Source_Last         => Hi,
                   Source_Text         => Src,
                   Template            => No_Source_File,
+                  Unit                => No_Unit,
                   Time_Stamp          => Osint.Current_Source_File_Stamp);
 
             Alloc_Line_Tables (S, Opt.Table_Factor * Alloc.Lines_Initial);
@@ -485,7 +498,7 @@ package body Sinput.L is
                --  Initialize the scanner and set its behavior for
                --  preprocessing, then preprocess.
 
-               Scn.Scanner.Initialize_Scanner (No_Unit, X);
+               Scn.Scanner.Initialize_Scanner (X);
 
                Scn.Scanner.Set_Special_Character ('#');
                Scn.Scanner.Set_Special_Character ('$');
@@ -539,8 +552,15 @@ package body Sinput.L is
                      declare
                         pragma Suppress (All_Checks);
 
+                        pragma Warnings (Off);
+                        --  This unchecked conversion is aliasing safe, since
+                        --  it is never used to create improperly aliased
+                        --  pointer values.
+
                         function To_Source_Buffer_Ptr is new
                           Unchecked_Conversion (Address, Source_Buffer_Ptr);
+
+                        pragma Warnings (On);
 
                      begin
                         Src := To_Source_Buffer_Ptr (Actual_Ptr (0)'Address);
@@ -571,8 +591,7 @@ package body Sinput.L is
    ----------------------------------
 
    function Load_Preprocessing_Data_File
-     (N    : File_Name_Type)
-      return Source_File_Index
+     (N : File_Name_Type) return Source_File_Index
    is
    begin
       return Load_File (N, Osint.Preprocessing_Data);
@@ -583,8 +602,7 @@ package body Sinput.L is
    ----------------------
 
    function Load_Source_File
-     (N    : File_Name_Type)
-      return Source_File_Index
+     (N : File_Name_Type) return Source_File_Index
    is
    begin
       return Load_File (N, Osint.Source);

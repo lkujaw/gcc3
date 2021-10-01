@@ -6,7 +6,7 @@
 --                                                                          --
 --                                 B o d y                                  --
 --                                                                          --
---          Copyright (C) 1992-2004 Free Software Foundation, Inc.          --
+--          Copyright (C) 1992-2006, Free Software Foundation, Inc.         --
 --                                                                          --
 -- GNAT is free software;  you can  redistribute it  and/or modify it under --
 -- terms of the  GNU General Public License as published  by the Free Soft- --
@@ -16,8 +16,8 @@
 -- or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License --
 -- for  more details.  You should have  received  a copy of the GNU General --
 -- Public License  distributed with GNAT;  see file COPYING.  If not, write --
--- to  the Free Software Foundation,  59 Temple Place - Suite 330,  Boston, --
--- MA 02111-1307, USA.                                                      --
+-- to  the  Free Software Foundation,  51  Franklin  Street,  Fifth  Floor, --
+-- Boston, MA 02110-1301, USA.                                              --
 --                                                                          --
 -- GNAT was originally developed  by the GNAT team at  New York University. --
 -- Extensive contributions were provided by Ada Core Technologies Inc.      --
@@ -27,6 +27,7 @@
 with Atree;    use Atree;
 with Checks;   use Checks;
 with Einfo;    use Einfo;
+with Errout;   use Errout;
 with Exp_Dbug; use Exp_Dbug;
 with Exp_Util; use Exp_Util;
 with Nlists;   use Nlists;
@@ -469,8 +470,7 @@ package body Exp_Pakd is
 
    function RJ_Unchecked_Convert_To
      (Typ  : Entity_Id;
-      Expr : Node_Id)
-      return Node_Id;
+      Expr : Node_Id) return Node_Id;
    --  The packed array code does unchecked conversions which in some cases
    --  may involve non-discrete types with differing sizes. The semantics of
    --  such conversions is potentially endian dependent, and the effect we
@@ -674,7 +674,7 @@ package body Exp_Pakd is
 
    --  The PAT is always obtained from the actual subtype
 
-   procedure Convert_To_PAT_Type (Aexp : Entity_Id) is
+   procedure Convert_To_PAT_Type (Aexp : Node_Id) is
       Act_ST : Entity_Id;
 
    begin
@@ -682,11 +682,29 @@ package body Exp_Pakd is
       Act_ST := Underlying_Type (Etype (Aexp));
       Create_Packed_Array_Type (Act_ST);
 
-      --  Just replace the etype with the packed array type. This works
-      --  because the expression will not be further analyzed, and Gigi
-      --  considers the two types equivalent in any case.
+      --  Just replace the etype with the packed array type. This works because
+      --  the expression will not be further analyzed, and Gigi considers the
+      --  two types equivalent in any case.
+
+      --  This is not strictly the case ??? If the reference is an actual in
+      --  call, the expansion of the prefix is delayed, and must be reanalyzed,
+      --  see Reset_Packed_Prefix. On the other hand, if the prefix is a simple
+      --  array reference, reanalysis can produce spurious type errors when the
+      --  PAT type is replaced again with the original type of the array. Same
+      --  for the case of a dereference. The following is correct and minimal,
+      --  but the handling of more complex packed expressions in actuals is
+      --  confused. Probably the problem only remains for actuals in calls.
 
       Set_Etype (Aexp, Packed_Array_Type (Act_ST));
+
+      if Is_Entity_Name (Aexp)
+        or else
+           (Nkind (Aexp) = N_Indexed_Component
+             and then Is_Entity_Name (Prefix (Aexp)))
+        or else Nkind (Aexp) = N_Explicit_Dereference
+      then
+         Set_Analyzed (Aexp);
+      end if;
    end Convert_To_PAT_Type;
 
    ------------------------------
@@ -700,7 +718,7 @@ package body Exp_Pakd is
 
       Ancest   : Entity_Id;
       PB_Type  : Entity_Id;
-      Esiz     : Uint;
+      PASize   : Uint;
       Decl     : Node_Id;
       PAT      : Entity_Id;
       Len_Dim  : Node_Id;
@@ -770,10 +788,10 @@ package body Exp_Pakd is
          --  Do not reset RM_Size if already set, as happens in the case
          --  of a modular type.
 
-         Set_Esize (PAT, Esiz);
+         Set_Esize (PAT, PASize);
 
          if Unknown_RM_Size (PAT) then
-            Set_RM_Size (PAT, Esiz);
+            Set_RM_Size (PAT, PASize);
          end if;
 
          --  Set remaining fields of packed array type
@@ -791,6 +809,12 @@ package body Exp_Pakd is
 
          Set_Has_Delayed_Freeze (PAT, False);
          Set_Has_Delayed_Freeze (Etype (PAT), False);
+
+         --  If we did allocate a freeze node, then clear out the reference
+         --  since it is obsolete (should we delete the freeze node???)
+
+         Set_Freeze_Node (PAT, Empty);
+         Set_Freeze_Node (Etype (PAT), Empty);
       end Install_PAT;
 
       -----------------
@@ -829,12 +853,15 @@ package body Exp_Pakd is
 
       --  If our immediate ancestor subtype is constrained, and it already
       --  has a packed array type, then just share the same type, since the
-      --  bounds must be the same.
+      --  bounds must be the same. If the ancestor is not an array type but
+      --  a private type, as can happen with multiple instantiations, create
+      --  a new packed type, to avoid privacy issues.
 
       if Ekind (Typ) = E_Array_Subtype then
          Ancest := Ancestor_Subtype (Typ);
 
          if Present (Ancest)
+           and then Is_Array_Type (Ancest)
            and then Is_Constrained (Ancest)
            and then Present (Packed_Array_Type (Ancest))
          then
@@ -847,7 +874,7 @@ package body Exp_Pakd is
       --  type, since this size clearly belongs to the packed array type. The
       --  size of the conceptual unpacked type is always set to unknown.
 
-      Esiz := Esize (Typ);
+      PASize := Esize (Typ);
 
       --  Case of an array where at least one index is of an enumeration
       --  type with a non-standard representation, but the component size
@@ -1059,16 +1086,37 @@ package body Exp_Pakd is
          --  discriminants, so we treat it as a default/per-object expression.
 
          Set_Parent (Len_Expr, Typ);
-         Analyze_Per_Use_Expression (Len_Expr, Standard_Integer);
+         Analyze_Per_Use_Expression (Len_Expr, Standard_Long_Long_Integer);
 
-         --  Use a modular type if possible. We can do this if we are we
-         --  have static bounds, and the length is small enough, and the
-         --  length is not zero. We exclude the zero length case because the
-         --  size of things is always at least one, and the zero length object
-         --  would have an anomous size.
+         --  Use a modular type if possible. We can do this if we have
+         --  static bounds, and the length is small enough, and the length
+         --  is not zero. We exclude the zero length case because the size
+         --  of things is always at least one, and the zero length object
+         --  would have an anomalous size.
 
          if Compile_Time_Known_Value (Len_Expr) then
             Len_Bits := Expr_Value (Len_Expr) * Csize;
+
+            --  Check for size known to be too large
+
+            if Len_Bits >
+              Uint_2 ** (Standard_Integer_Size - 1) * System_Storage_Unit
+            then
+               if System_Storage_Unit = 8 then
+                  Error_Msg_N
+                    ("packed array size cannot exceed " &
+                     "Integer''Last bytes", Typ);
+               else
+                  Error_Msg_N
+                    ("packed array size cannot exceed " &
+                     "Integer''Last storage units", Typ);
+               end if;
+
+               --  Reset length to arbitrary not too high value to continue
+
+               Len_Expr := Make_Integer_Literal (Loc, 65535);
+               Analyze_And_Resolve (Len_Expr, Standard_Long_Long_Integer);
+            end if;
 
             --  We normally consider small enough to mean no larger than the
             --  value of System_Max_Binary_Modulus_Power, checking that in the
@@ -1093,7 +1141,8 @@ package body Exp_Pakd is
                --  We can use the modular type, it has the form:
 
                --    subtype tttPn is btyp
-               --      range 0 .. 2 ** (Esize (Typ) * Csize) - 1;
+               --      range 0 .. 2 ** ((Typ'Length (1)
+               --                * ... * Typ'Length (n)) * Csize) - 1;
 
                --  The bounds are statically known, and btyp is one
                --  of the unsigned types, depending on the length. If the
@@ -1134,8 +1183,8 @@ package body Exp_Pakd is
                                    Make_Integer_Literal (Loc, 0),
                                  High_Bound => Lit))));
 
-               if Esiz = Uint_0 then
-                  Esiz := Len_Bits;
+               if PASize = Uint_0 then
+                  PASize := Len_Bits;
                end if;
 
                Install_PAT;
@@ -1149,7 +1198,7 @@ package body Exp_Pakd is
          --    subtype tttPn is
          --      System.Packed_Bytes{1,2,4} (0 .. (Bits + 7) / 8 - 1);
 
-         --  Bits is the length of the array in bits.
+         --  Bits is the length of the array in bits
 
          Set_PB_Type;
 
@@ -1181,15 +1230,25 @@ package body Exp_Pakd is
                  Make_Subtype_Indication (Loc,
                    Subtype_Mark => New_Occurrence_Of (PB_Type, Loc),
                    Constraint =>
-
                      Make_Index_Or_Discriminant_Constraint (Loc,
                        Constraints => New_List (
                          Make_Range (Loc,
                            Low_Bound =>
                              Make_Integer_Literal (Loc, 0),
-                           High_Bound => PAT_High)))));
+                           High_Bound =>
+                             Convert_To (Standard_Integer, PAT_High))))));
 
          Install_PAT;
+
+         --  Currently the code in this unit requires that packed arrays
+         --  represented by non-modular arrays of bytes be on a byte
+         --  boundary for bit sizes handled by System.Pack_nn units.
+         --  That's because these units assume the array being accessed
+         --  starts on a byte boundary.
+
+         if Get_Id (UI_To_Int (Csize)) /= RE_Null then
+            Set_Must_Be_On_Byte_Boundary (Typ);
+         end if;
       end if;
    end Create_Packed_Array_Type;
 
@@ -1275,6 +1334,26 @@ package body Exp_Pakd is
       --  conversion is analyzed immediately so that subsequent processing
       --  can work with an analyzed Rhs (and e.g. look at its Etype)
 
+      --  If the right-hand side is a string literal, create a temporary for
+      --  it, constant-folding is not ready to wrap the bit representation
+      --  of a string literal.
+
+      if Nkind (Rhs) = N_String_Literal then
+         declare
+            Decl : Node_Id;
+         begin
+            Decl :=
+              Make_Object_Declaration (Loc,
+                Defining_Identifier =>
+                  Make_Defining_Identifier (Loc,  New_Internal_Name ('T')),
+                Object_Definition => New_Occurrence_Of (Ctyp, Loc),
+                Expression => New_Copy_Tree (Rhs));
+
+            Insert_Actions (N, New_List (Decl));
+            Rhs := New_Occurrence_Of (Defining_Identifier (Decl), Loc);
+         end;
+      end if;
+
       Rhs := Convert_To (Ctyp, Rhs);
       Set_Parent (Rhs, N);
       Analyze_And_Resolve (Rhs, Ctyp);
@@ -1298,7 +1377,7 @@ package body Exp_Pakd is
 
          --      the "or ..." is omitted if rhs is constant and all 0 bits
 
-         --      rhs is converted to the appropriate type.
+         --      rhs is converted to the appropriate type
 
          --      The result is converted back to the array type, since
          --      otherwise we lose knowledge of the packed nature.
@@ -1496,7 +1575,7 @@ package body Exp_Pakd is
 
          --    Set_nn (Arr'address, Subscr, Bits_nn!(Rhs))
 
-         --  where Subscr is the computed linear subscript.
+         --  where Subscr is the computed linear subscript
 
          declare
             Bits_nn : constant Entity_Id := RTE (Bits_Id (Csiz));
@@ -1507,7 +1586,7 @@ package body Exp_Pakd is
          begin
             if No (Bits_nn) then
 
-               --  Error, most likely High_Integrity_Mode restriction.
+               --  Error, most likely High_Integrity_Mode restriction
 
                return;
             end if;
@@ -1725,7 +1804,7 @@ package body Exp_Pakd is
       --  convert to the base type, since this would be unconstrained, and
       --  hence not have a corresponding packed array type set.
 
-      --  Note that both operands must be modular for this code to be used.
+      --  Note that both operands must be modular for this code to be used
 
       if Is_Modular_Integer_Type (PAT)
            and then
@@ -1867,7 +1946,7 @@ package body Exp_Pakd is
          return;
       end if;
 
-      --  Remaining processing is for the bit-packed case.
+      --  Remaining processing is for the bit-packed case
 
       Obj := Relocate_Node (Prefix (N));
       Convert_To_Actual_Subtype (Obj);
@@ -1918,7 +1997,7 @@ package body Exp_Pakd is
 
          --    Component_Type!(Get_nn (Arr'address, Subscr))
 
-         --  where Subscr is the computed linear subscript.
+         --  where Subscr is the computed linear subscript
 
          declare
             Get_nn : Entity_Id;
@@ -2377,8 +2456,7 @@ package body Exp_Pakd is
 
    function RJ_Unchecked_Convert_To
      (Typ  : Entity_Id;
-      Expr : Node_Id)
-      return Node_Id
+      Expr : Node_Id) return Node_Id
    is
       Source_Typ : constant Entity_Id := Etype (Expr);
       Target_Typ : constant Entity_Id := Typ;
@@ -2507,7 +2585,7 @@ package body Exp_Pakd is
       Csiz := Component_Size (Atyp);
 
       Convert_To_PAT_Type (Obj);
-      PAT  := Etype (Obj);
+      PAT := Etype (Obj);
 
       Cmask := 2 ** Csiz - 1;
 

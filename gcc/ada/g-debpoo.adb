@@ -6,7 +6,7 @@
 --                                                                          --
 --                                 B o d y                                  --
 --                                                                          --
---          Copyright (C) 1992-2003 Free Software Foundation, Inc.          --
+--          Copyright (C) 1992-2006, Free Software Foundation, Inc.         --
 --                                                                          --
 -- GNAT is free software;  you can  redistribute it  and/or modify it under --
 -- terms of the  GNU General Public License as published  by the Free Soft- --
@@ -16,16 +16,16 @@
 -- or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License --
 -- for  more details.  You should have  received  a copy of the GNU General --
 -- Public License  distributed with GNAT;  see file COPYING.  If not, write --
--- to  the Free Software Foundation,  59 Temple Place - Suite 330,  Boston, --
--- MA 02111-1307, USA.                                                      --
+-- to  the  Free Software Foundation,  51  Franklin  Street,  Fifth  Floor, --
+-- Boston, MA 02110-1301, USA.                                              --
 --                                                                          --
--- As a special exception,  if other files  instantiate  generics from this --
--- unit, or you link  this unit with other files  to produce an executable, --
--- this  unit  does not  by itself cause  the resulting  executable  to  be --
--- covered  by the  GNU  General  Public  License.  This exception does not --
--- however invalidate  any other reasons why  the executable file  might be --
--- covered by the  GNU Public License.                                      --
---                                                                          --
+--
+--
+--
+--
+--
+--
+--
 -- GNAT was originally developed  by the GNAT team at  New York University. --
 -- Extensive contributions were provided by Ada Core Technologies Inc.      --
 --                                                                          --
@@ -46,10 +46,8 @@ with GNAT.Traceback; use GNAT.Traceback;
 with Ada.Unchecked_Conversion;
 
 package body GNAT.Debug_Pools is
-   use System;
-   use System.Storage_Elements;
 
-   Default_Alignment : constant Storage_Offset := Standard'Maximum_Alignment;
+   Default_Alignment : constant := Standard'Maximum_Alignment;
    --  Alignment used for the memory chunks returned by Allocate. Using this
    --  value garantees that this alignment will be compatible with all types
    --  and at the same time makes it easy to find the location of the extra
@@ -65,14 +63,15 @@ package body GNAT.Debug_Pools is
    --  Maximum number of levels that will be ignored in backtraces. This is so
    --  that we still have enough significant levels in the tracebacks returned
    --  to the user.
+   --
    --  The value 10 is chosen as being greater than the maximum callgraph
    --  in this package. Its actual value is not really relevant, as long as it
    --  is high enough to make sure we still have enough frames to return to
    --  the user after we have hidden the frames internal to this package.
 
-   -----------------------
-   -- Tracebacks_Htable --
-   -----------------------
+   ---------------------------
+   -- Back Trace Hash Table --
+   ---------------------------
 
    --  This package needs to store one set of tracebacks for each allocation
    --  point (when was it allocated or deallocated). This would use too much
@@ -105,19 +104,28 @@ package body GNAT.Debug_Pools is
       Next      : Traceback_Htable_Elem_Ptr;
    end record;
 
+   --  Subprograms used for the Backtrace_Htable instantiation
+
    procedure Set_Next
      (E    : Traceback_Htable_Elem_Ptr;
       Next : Traceback_Htable_Elem_Ptr);
+   pragma Inline (Set_Next);
+
    function Next
-     (E    : Traceback_Htable_Elem_Ptr)
-      return Traceback_Htable_Elem_Ptr;
+     (E : Traceback_Htable_Elem_Ptr) return Traceback_Htable_Elem_Ptr;
+   pragma Inline (Next);
+
    function Get_Key
-     (E    : Traceback_Htable_Elem_Ptr)
-      return Tracebacks_Array_Access;
+     (E : Traceback_Htable_Elem_Ptr) return Tracebacks_Array_Access;
+   pragma Inline (Get_Key);
+
    function Hash (T : Tracebacks_Array_Access) return Header;
+   pragma Inline (Hash);
+
    function Equal (K1, K2 : Tracebacks_Array_Access) return Boolean;
-   pragma Inline (Set_Next, Next, Get_Key, Hash);
-   --  Subprograms required for instantiation of the htable. See GNAT.HTable.
+   --  Why is this not inlined???
+
+   --  The hash table for back traces
 
    package Backtrace_Htable is new GNAT.HTable.Static_HTable
      (Header_Num => Header,
@@ -138,23 +146,28 @@ package body GNAT.Debug_Pools is
    type Allocation_Header;
    type Allocation_Header_Access is access Allocation_Header;
 
-   --  The following record stores extra information that needs to be
-   --  memorized for each block allocated with the special debug pool.
-
    type Traceback_Ptr_Or_Address is new System.Address;
    --  A type that acts as a C union, and is either a System.Address or a
    --  Traceback_Htable_Elem_Ptr.
 
+   --  The following record stores extra information that needs to be
+   --  memorized for each block allocated with the special debug pool.
+
    type Allocation_Header is record
+      Allocation_Address : System.Address;
+      --  Address of the block returned by malloc, possibly unaligned
+
       Block_Size : Storage_Offset;
       --  Needed only for advanced freeing algorithms (traverse all allocated
       --  blocks for potential references). This value is negated when the
       --  chunk of memory has been logically freed by the application. This
       --  chunk has not been physically released yet.
 
-      Alloc_Traceback   : Traceback_Htable_Elem_Ptr;
+      Alloc_Traceback : Traceback_Htable_Elem_Ptr;
+      --  ??? comment required
+
       Dealloc_Traceback : Traceback_Ptr_Or_Address;
-      --  Pointer to the traceback for the allocation (if the memory chunck is
+      --  Pointer to the traceback for the allocation (if the memory chunk is
       --  still valid), or to the first deallocation otherwise. Make sure this
       --  is a thin pointer to save space.
       --
@@ -176,35 +189,39 @@ package body GNAT.Debug_Pools is
 
    function To_Address is new Ada.Unchecked_Conversion
      (Traceback_Ptr_Or_Address, System.Address);
+
    function To_Address is new Ada.Unchecked_Conversion
      (System.Address, Traceback_Ptr_Or_Address);
+
    function To_Traceback is new Ada.Unchecked_Conversion
      (Traceback_Ptr_Or_Address, Traceback_Htable_Elem_Ptr);
+
    function To_Traceback is new Ada.Unchecked_Conversion
      (Traceback_Htable_Elem_Ptr, Traceback_Ptr_Or_Address);
 
+   Header_Offset : constant Storage_Count :=
+                     Default_Alignment *
+                       ((Allocation_Header'Size / System.Storage_Unit
+                          + Default_Alignment - 1) / Default_Alignment);
+   --  Offset of user data after allocation header
+
    Minimum_Allocation : constant Storage_Count :=
-                          Default_Alignment *
-                            (Allocation_Header'Size /
-                               System.Storage_Unit /
-                                 Default_Alignment) +
-                                   Default_Alignment;
-   --  Extra bytes to allocate to store the header. The header needs to be
-   --  correctly aligned as well, so we have to allocate multiples of the
-   --  alignment.
+                          Default_Alignment - 1 + Header_Offset;
+   --  Minimal allocation: size of allocation_header rounded up to next
+   --  multiple of default alignment + worst-case padding.
 
    -----------------------
    -- Allocations table --
    -----------------------
 
-   --  This table is indexed on addresses modulo Minimum_Allocation, and
-   --  for each index it indicates whether that memory block is valid.
-   --  Its behavior is similar to GNAT.Table, except that we need to pack
-   --  the table to save space, so we cannot reuse GNAT.Table as is.
+   --  This table is indexed on addresses modulo Default_Alignment, and for
+   --  each index it indicates whether that memory block is valid. Its behavior
+   --  is similar to GNAT.Table, except that we need to pack the table to save
+   --  space, so we cannot reuse GNAT.Table as is.
 
-   --  This table is the reason why all alignments have to be forced to a
-   --  common value (Default_Alignment), so that this table can be
-   --  kept to a reasonnable size.
+   --  This table is the reason why all alignments have to be forced to common
+   --  value (Default_Alignment), so that this table can be kept to a
+   --  reasonnable size.
 
    type Byte is mod 2 ** System.Storage_Unit;
 
@@ -239,18 +256,17 @@ package body GNAT.Debug_Pools is
    --  These two variables represents a mapping of the currently allocated
    --  memory. Every time the pool works on an address, we first check that the
    --  index Address / Default_Alignment is True. If not, this means that this
-   --  address is not under control of the debug pool, and thus this is
-   --  probably an invalid memory access (it could also be a general access
-   --  type).
+   --  address is not under control of the debug pool and thus this is probably
+   --  an invalid memory access (it could also be a general access type).
    --
    --  Note that in fact we never allocate the full size of Big_Table, only a
    --  slice big enough to manage the currently allocated memory.
 
-   Edata  : System.Address := System.Null_Address;
+   Edata : System.Address := System.Null_Address;
    --  Address in memory that matches the index 0 in Valid_Blocks. It is named
    --  after the symbol _edata, which, on most systems, indicate the lowest
-   --  possible address returned by malloc (). Unfortunately, this symbol
-   --  doesn't exist on windows, so we cannot use it instead of this variable.
+   --  possible address returned by malloc. Unfortunately, this symbol doesn't
+   --  exist on windows, so we cannot use it instead of this variable.
 
    -----------------------
    -- Local subprograms --
@@ -261,16 +277,15 @@ package body GNAT.Debug_Pools is
       Kind                : Traceback_Kind;
       Size                : Storage_Count;
       Ignored_Frame_Start : System.Address;
-      Ignored_Frame_End   : System.Address)
-      return                Traceback_Htable_Elem_Ptr;
+      Ignored_Frame_End   : System.Address) return Traceback_Htable_Elem_Ptr;
    --  Return an element matching the current traceback (omitting the frames
    --  that are in the current package). If this traceback already existed in
    --  the htable, a pointer to this is returned to spare memory. Null is
    --  returned if the pool is set not to store tracebacks. If the traceback
    --  already existed in the table, the count is incremented so that
-   --  Dump_Tracebacks returns useful results.
-   --  All addresses up to, and including, an address between
-   --  Ignored_Frame_Start .. Ignored_Frame_End are ignored.
+   --  Dump_Tracebacks returns useful results. All addresses up to, and
+   --  including, an address between Ignored_Frame_Start .. Ignored_Frame_End
+   --  are ignored.
 
    procedure Put_Line
      (Depth               : Natural;
@@ -341,7 +356,7 @@ package body GNAT.Debug_Pools is
       function Convert is new Ada.Unchecked_Conversion
         (System.Address, Allocation_Header_Access);
    begin
-      return Convert (Address - Minimum_Allocation);
+      return Convert (Address - Header_Offset);
    end Header_Of;
 
    --------------
@@ -361,9 +376,7 @@ package body GNAT.Debug_Pools is
    ----------
 
    function Next
-     (E    : Traceback_Htable_Elem_Ptr)
-      return Traceback_Htable_Elem_Ptr
-   is
+     (E : Traceback_Htable_Elem_Ptr) return Traceback_Htable_Elem_Ptr is
    begin
       return E.Next;
    end Next;
@@ -383,8 +396,7 @@ package body GNAT.Debug_Pools is
    -------------
 
    function Get_Key
-     (E    : Traceback_Htable_Elem_Ptr)
-      return Tracebacks_Array_Access
+     (E : Traceback_Htable_Elem_Ptr) return Tracebacks_Array_Access
    is
    begin
       return E.Traceback;
@@ -396,10 +408,12 @@ package body GNAT.Debug_Pools is
 
    function Hash (T : Tracebacks_Array_Access) return Header is
       Result : Integer_Address := 0;
+
    begin
       for X in T'Range loop
          Result := Result + To_Integer (PC_For (T (X)));
       end loop;
+
       return Header (1 + Result mod Integer_Address (Header'Last));
    end Hash;
 
@@ -493,8 +507,7 @@ package body GNAT.Debug_Pools is
       Kind                : Traceback_Kind;
       Size                : Storage_Count;
       Ignored_Frame_Start : System.Address;
-      Ignored_Frame_End   : System.Address)
-      return                Traceback_Htable_Elem_Ptr
+      Ignored_Frame_End   : System.Address) return Traceback_Htable_Elem_Ptr
    is
    begin
       if Pool.Stack_Trace_Depth = 0 then
@@ -512,7 +525,7 @@ package body GNAT.Debug_Pools is
          Skip_Levels (Pool.Stack_Trace_Depth, Trace, Start, Len,
                       Ignored_Frame_Start, Ignored_Frame_End);
 
-         --  Check if the traceback is already in the table.
+         --  Check if the traceback is already in the table
 
          Elem :=
            Backtrace_Htable.Get (Trace (Start .. Len)'Unrestricted_Access);
@@ -542,8 +555,15 @@ package body GNAT.Debug_Pools is
    --------------
 
    function Is_Valid (Storage : System.Address) return Boolean is
+
+      --  We use the following constant declaration, instead of
+      --     Offset : constant Storage_Offset :=
+      --                (Storage - Edata) / Default_Alignment;
+      --  See comments in Set_Valid for details.
+
       Offset : constant Storage_Offset :=
-                 (Storage - Edata) / Default_Alignment;
+                 Storage_Offset ((To_Integer (Storage) - To_Integer (Edata)) /
+                                   Default_Alignment);
 
       Bit : constant Byte := 2 ** Natural (Offset mod System.Storage_Unit);
 
@@ -618,13 +638,27 @@ package body GNAT.Debug_Pools is
          Valid_Blocks_Size := Valid_Blocks_Size + Bytes;
 
          --  Take into the account the new start address
+
          Edata := Storage - Edata_Align + (Edata - Storage) mod Edata_Align;
       end if;
 
       --  Second case : the new address is outside of the current scope of
-      --  Valid_Blocks, so we have to grow the table as appropriate
+      --  Valid_Blocks, so we have to grow the table as appropriate.
 
-      Offset := (Storage - Edata) / Default_Alignment;
+      --  Note: it might seem more natural for the following statement to
+      --  be written:
+
+      --      Offset := (Storage - Edata) / Default_Alignment;
+
+      --  but that won't work since Storage_Offset is signed, and it is
+      --  possible to subtract a small address from a large address and
+      --  get a negative value. This may seem strange, but it is quite
+      --  specifically allowed in the RM, and is what most implementations
+      --  including GNAT actually do. Hence the conversion to Integer_Address
+      --  which is a full range modular type, not subject to this glitch.
+
+      Offset := Storage_Offset ((To_Integer (Storage) - To_Integer (Edata)) /
+                                              Default_Alignment);
 
       if Offset >= Valid_Blocks_Size * System.Storage_Unit then
          Bytes := Valid_Blocks_Size;
@@ -670,8 +704,6 @@ package body GNAT.Debug_Pools is
 
       type Local_Storage_Array is new Storage_Array
         (1 .. Size_In_Storage_Elements + Minimum_Allocation);
-      for Local_Storage_Array'Alignment use Standard'Maximum_Alignment;
-      --  For performance reasons, make sure the alignment is maximized.
 
       type Ptr is access Local_Storage_Array;
       --  On some systems, we might want to physically protect pages
@@ -716,7 +748,16 @@ package body GNAT.Debug_Pools is
             P := new Local_Storage_Array;
       end;
 
-      Storage_Address := P.all'Address + Minimum_Allocation;
+      Storage_Address :=
+        System.Null_Address + Default_Alignment
+          * (((P.all'Address + Default_Alignment - 1) - System.Null_Address)
+             / Default_Alignment)
+        + Header_Offset;
+
+      pragma Assert ((Storage_Address - System.Null_Address)
+                     mod Default_Alignment = 0);
+      pragma Assert (Storage_Address + Size_In_Storage_Elements
+                     <= P.all'Address + P'Length);
 
       Trace := Find_Or_Create_Traceback
         (Pool, Alloc, Size_In_Storage_Elements,
@@ -728,10 +769,11 @@ package body GNAT.Debug_Pools is
       --  Default_Alignment.
 
       Header_Of (Storage_Address).all :=
-        (Alloc_Traceback   => Trace,
-         Dealloc_Traceback => To_Traceback (null),
-         Next              => Pool.First_Used_Block,
-         Block_Size        => Size_In_Storage_Elements);
+        (Allocation_Address => P.all'Address,
+         Alloc_Traceback    => Trace,
+         Dealloc_Traceback  => To_Traceback (null),
+         Next               => Pool.First_Used_Block,
+         Block_Size         => Size_In_Storage_Elements);
 
       pragma Warnings (On);
 
@@ -769,6 +811,11 @@ package body GNAT.Debug_Pools is
       end if;
 
       Unlock_Task.all;
+
+   exception
+      when others =>
+         Unlock_Task.all;
+         raise;
    end Allocate;
 
    ------------------
@@ -923,10 +970,10 @@ package body GNAT.Debug_Pools is
                end;
 
                Next := Header.Next;
-               System.Memory.Free (Header.all'Address);
+               System.Memory.Free (Header.Allocation_Address);
                Set_Valid (Tmp, False);
 
-               --  Remove this block from the list.
+               --  Remove this block from the list
 
                if Previous = System.Null_Address then
                   Pool.First_Free_Block := Next;
@@ -1024,7 +1071,6 @@ package body GNAT.Debug_Pools is
       procedure Reset_Marks is
          Current : System.Address := Pool.First_Free_Block;
          Header  : Allocation_Header_Access;
-
       begin
          while Current /= System.Null_Address loop
             Header := Header_Of (Current);
@@ -1056,6 +1102,11 @@ package body GNAT.Debug_Pools is
       end if;
 
       Unlock_Task.all;
+
+   exception
+      when others =>
+         Unlock_Task.all;
+         raise;
    end Free_Physically;
 
    ----------------
@@ -1085,7 +1136,7 @@ package body GNAT.Debug_Pools is
          if Pool.Raise_Exceptions then
             raise Freeing_Not_Allocated_Storage;
          else
-            Put ("Freeing not allocated storage, at ");
+            Put ("error: Freeing not allocated storage, at ");
             Put_Line (Pool.Stack_Trace_Depth, null,
                       Deallocate_Label'Address,
                       Code_Address_For_Deallocate_End);
@@ -1096,16 +1147,18 @@ package body GNAT.Debug_Pools is
          if Pool.Raise_Exceptions then
             raise Freeing_Deallocated_Storage;
          else
-            Put ("Freeing already deallocated storage, at ");
+            Put ("error: Freeing already deallocated storage, at ");
             Put_Line (Pool.Stack_Trace_Depth, null,
                       Deallocate_Label'Address,
                       Code_Address_For_Deallocate_End);
             Put ("   Memory already deallocated at ");
             Put_Line (0, To_Traceback (Header.Dealloc_Traceback).Traceback);
+            Put ("   Memory was allocated at ");
+            Put_Line (0, Header.Alloc_Traceback.Traceback);
          end if;
 
       else
-         --  Remove this block from the list of used blocks.
+         --  Remove this block from the list of used blocks
 
          Previous :=
            To_Address (Header_Of (Storage_Address).Dealloc_Traceback);
@@ -1131,15 +1184,16 @@ package body GNAT.Debug_Pools is
          --  Update the header
 
          Header.all :=
-           (Alloc_Traceback   => Header.Alloc_Traceback,
-            Dealloc_Traceback => To_Traceback
-                                   (Find_Or_Create_Traceback
-                                      (Pool, Dealloc,
-                                       Size_In_Storage_Elements,
-                                       Deallocate_Label'Address,
-                                       Code_Address_For_Deallocate_End)),
-            Next              => System.Null_Address,
-            Block_Size        => -Size_In_Storage_Elements);
+           (Allocation_Address => Header.Allocation_Address,
+            Alloc_Traceback    => Header.Alloc_Traceback,
+            Dealloc_Traceback  => To_Traceback
+                                    (Find_Or_Create_Traceback
+                                       (Pool, Dealloc,
+                                        Size_In_Storage_Elements,
+                                        Deallocate_Label'Address,
+                                        Code_Address_For_Deallocate_End)),
+            Next               => System.Null_Address,
+            Block_Size         => -Size_In_Storage_Elements);
 
          if Pool.Reset_Content_On_Free then
             Set_Dead_Beef (Storage_Address, Size_In_Storage_Elements);
@@ -1166,6 +1220,11 @@ package body GNAT.Debug_Pools is
 
          Unlock_Task.all;
       end if;
+
+   exception
+      when others =>
+         Unlock_Task.all;
+         raise;
    end Deallocate;
 
    --------------------
@@ -1210,7 +1269,7 @@ package body GNAT.Debug_Pools is
          if Pool.Raise_Exceptions then
             raise Accessing_Not_Allocated_Storage;
          else
-            Put ("Accessing not allocated storage, at ");
+            Put ("error: Accessing not allocated storage, at ");
             Put_Line (Pool.Stack_Trace_Depth, null,
                       Dereference_Label'Address,
                       Code_Address_For_Dereference_End);
@@ -1223,13 +1282,15 @@ package body GNAT.Debug_Pools is
             if Pool.Raise_Exceptions then
                raise Accessing_Deallocated_Storage;
             else
-               Put ("Accessing deallocated storage, at ");
+               Put ("error: Accessing deallocated storage, at ");
                Put_Line
                  (Pool.Stack_Trace_Depth, null,
                   Dereference_Label'Address,
                   Code_Address_For_Dereference_End);
                Put ("  First deallocation at ");
                Put_Line (0, To_Traceback (Header.Dealloc_Traceback).Traceback);
+               Put ("  Initial allocation at ");
+               Put_Line (0, Header.Alloc_Traceback.Traceback);
             end if;
          end if;
       end if;
@@ -1258,7 +1319,6 @@ package body GNAT.Debug_Pools is
       Display_Slots : Boolean := False;
       Display_Leaks : Boolean := False)
    is
-      use System.Storage_Elements;
 
       package Backtrace_Htable_Cumulate is new GNAT.HTable.Static_HTable
         (Header_Num => Header,
@@ -1310,71 +1370,71 @@ package body GNAT.Debug_Pools is
 
       Put_Line ("");
 
-      Data := Backtrace_Htable.Get_First;
-      while Data /= null loop
-         if Data.Kind in Alloc .. Dealloc then
-            Elem :=
-              new Traceback_Htable_Elem'
-                   (Traceback => new Tracebacks_Array'(Data.Traceback.all),
-                    Count     => Data.Count,
-                    Kind      => Data.Kind,
-                    Total     => Data.Total,
-                    Next      => null);
-            Backtrace_Htable_Cumulate.Set (Elem);
+      if Display_Slots then
+         Data := Backtrace_Htable.Get_First;
+         while Data /= null loop
+            if Data.Kind in Alloc .. Dealloc then
+               Elem :=
+                 new Traceback_Htable_Elem'
+                      (Traceback => new Tracebacks_Array'(Data.Traceback.all),
+                       Count     => Data.Count,
+                       Kind      => Data.Kind,
+                       Total     => Data.Total,
+                       Next      => null);
+               Backtrace_Htable_Cumulate.Set (Elem);
 
-            if Cumulate then
-               if Data.Kind = Alloc then
-                  K := Indirect_Alloc;
-               else
-                  K := Indirect_Dealloc;
-               end if;
-
-               --  Propagate the direct call to all its parents
-
-               for T in Data.Traceback'First + 1 .. Data.Traceback'Last loop
-                  Elem := Backtrace_Htable_Cumulate.Get
-                    (Data.Traceback
-                       (T .. Data.Traceback'Last)'Unrestricted_Access);
-
-                  --  If not, insert it
-
-                  if Elem = null then
-                     Elem := new Traceback_Htable_Elem'
-                               (Traceback => new Tracebacks_Array'
-                                 (Data.Traceback (T .. Data.Traceback'Last)),
-                        Count     => Data.Count,
-                        Kind      => K,
-                        Total     => Data.Total,
-                        Next      => null);
-                     Backtrace_Htable_Cumulate.Set (Elem);
-
-                     --  Properly take into account that the subprograms
-                     --  indirectly called might be doing either allocations
-                     --  or deallocations. This needs to be reflected in the
-                     --  counts.
-
+               if Cumulate then
+                  if Data.Kind = Alloc then
+                     K := Indirect_Alloc;
                   else
-                     Elem.Count := Elem.Count + Data.Count;
+                     K := Indirect_Dealloc;
+                  end if;
 
-                     if K = Elem.Kind then
-                        Elem.Total := Elem.Total + Data.Total;
+                  --  Propagate the direct call to all its parents
 
-                     elsif Elem.Total > Data.Total then
-                        Elem.Total := Elem.Total - Data.Total;
+                  for T in Data.Traceback'First + 1 .. Data.Traceback'Last loop
+                     Elem := Backtrace_Htable_Cumulate.Get
+                       (Data.Traceback
+                          (T .. Data.Traceback'Last)'Unrestricted_Access);
+
+                     --  If not, insert it
+
+                     if Elem = null then
+                        Elem := new Traceback_Htable_Elem'
+                          (Traceback => new Tracebacks_Array'
+                             (Data.Traceback (T .. Data.Traceback'Last)),
+                           Count     => Data.Count,
+                           Kind      => K,
+                           Total     => Data.Total,
+                           Next      => null);
+                        Backtrace_Htable_Cumulate.Set (Elem);
+
+                        --  Properly take into account that the subprograms
+                        --  indirectly called might be doing either allocations
+                        --  or deallocations. This needs to be reflected in the
+                        --  counts.
 
                      else
-                        Elem.Kind  := K;
-                        Elem.Total := Data.Total - Elem.Total;
+                        Elem.Count := Elem.Count + Data.Count;
+
+                        if K = Elem.Kind then
+                           Elem.Total := Elem.Total + Data.Total;
+
+                        elsif Elem.Total > Data.Total then
+                           Elem.Total := Elem.Total - Data.Total;
+
+                        else
+                           Elem.Kind  := K;
+                           Elem.Total := Data.Total - Elem.Total;
+                        end if;
                      end if;
-                  end if;
-               end loop;
+                  end loop;
+               end if;
+
+               Data := Backtrace_Htable.Get_Next;
             end if;
+         end loop;
 
-            Data := Backtrace_Htable.Get_Next;
-         end if;
-      end loop;
-
-      if Display_Slots then
          Put_Line ("List of allocations/deallocations: ");
 
          Data := Backtrace_Htable_Cumulate.Get_First;
@@ -1397,6 +1457,8 @@ package body GNAT.Debug_Pools is
 
             Data := Backtrace_Htable_Cumulate.Get_Next;
          end loop;
+
+         Backtrace_Htable_Cumulate.Reset;
       end if;
 
       if Display_Leaks then
@@ -1421,8 +1483,6 @@ package body GNAT.Debug_Pools is
             Current := Header.Next;
          end loop;
       end if;
-
-      Backtrace_Htable_Cumulate.Reset;
    end Print_Info;
 
    ------------------
@@ -1431,7 +1491,6 @@ package body GNAT.Debug_Pools is
 
    function Storage_Size (Pool : Debug_Pool) return Storage_Count is
       pragma Unreferenced (Pool);
-
    begin
       return Storage_Count'Last;
    end Storage_Size;
@@ -1507,7 +1566,6 @@ package body GNAT.Debug_Pools is
       procedure Internal is new Print_Info
         (Put_Line => GNAT.IO.Put_Line,
          Put      => GNAT.IO.Put);
-
    begin
       Internal (Pool, Cumulate, Display_Slots, Display_Leaks);
    end Print_Info_Stdout;
@@ -1566,9 +1624,10 @@ package body GNAT.Debug_Pools is
          Tracebk := Header.Alloc_Traceback.Traceback;
          Num_Calls := Tracebk'Length;
 
-         --  Code taken from memtrack.adb in GNAT's sources
-         --  Logs allocation call
-         --  format is:
+         --  (Code taken from memtrack.adb in GNAT's sources)
+
+         --  Logs allocation call using the format:
+
          --   'A' <mem addr> <size chunk> <len backtrace> <addr1> ... <addrn>
 
          fputc (Character'Pos ('A'), File);

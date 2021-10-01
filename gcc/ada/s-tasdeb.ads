@@ -1,12 +1,12 @@
 ------------------------------------------------------------------------------
 --                                                                          --
---                 GNU ADA RUN-TIME LIBRARY (GNARL) COMPONENTS              --
+--                  GNAT RUN-TIME LIBRARY (GNARL) COMPONENTS                --
 --                                                                          --
 --                  S Y S T E M . T A S K I N G . D E B U G                 --
 --                                                                          --
 --                                  S p e c                                 --
 --                                                                          --
---          Copyright (C) 1997-2002, Free Software Foundation, Inc.         --
+--          Copyright (C) 1997-2005, Free Software Foundation, Inc.         --
 --                                                                          --
 -- GNARL is free software; you can  redistribute it  and/or modify it under --
 -- terms of the  GNU General Public License as published  by the Free Soft- --
@@ -16,16 +16,16 @@
 -- or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License --
 -- for  more details.  You should have  received  a copy of the GNU General --
 -- Public License  distributed with GNARL; see file COPYING.  If not, write --
--- to  the Free Software Foundation,  59 Temple Place - Suite 330,  Boston, --
--- MA 02111-1307, USA.                                                      --
+-- to  the  Free Software Foundation,  51  Franklin  Street,  Fifth  Floor, --
+-- Boston, MA 02110-1301, USA.                                              --
 --                                                                          --
--- As a special exception,  if other files  instantiate  generics from this --
--- unit, or you link  this unit with other files  to produce an executable, --
--- this  unit  does not  by itself cause  the resulting  executable  to  be --
--- covered  by the  GNU  General  Public  License.  This exception does not --
--- however invalidate  any other reasons why  the executable file  might be --
--- covered by the  GNU Public License.                                      --
---                                                                          --
+--
+--
+--
+--
+--
+--
+--
 -- GNARL was developed by the GNARL team at Florida State University.       --
 -- Extensive contributions were provided by Ada Core Technologies, Inc.     --
 --                                                                          --
@@ -38,6 +38,7 @@ with System.Tasking;
 with System.OS_Interface;
 
 package System.Tasking.Debug is
+   pragma Preelaborate;
 
    ------------------------------------------
    -- Application-level debugging routines --
@@ -51,7 +52,7 @@ package System.Tasking.Debug is
    --  Write information about current task, in hexadecimal, as one line, to
    --  the standard error file.
 
-   procedure Print_Task_Info (T : Task_ID);
+   procedure Print_Task_Info (T : Task_Id);
    --  Similar to Print_Current_Task, for a given task.
 
    procedure Set_User_State (Value : Long_Integer);
@@ -66,7 +67,7 @@ package System.Tasking.Debug is
    -- General GDB support --
    -------------------------
 
-   Known_Tasks : array (0 .. 999) of Task_ID;
+   Known_Tasks : array (0 .. 999) of Task_Id := (others => null);
    --  Global array of tasks read by gdb, and updated by
    --  Create_Task and Finalize_TCB
 
@@ -99,10 +100,10 @@ package System.Tasking.Debug is
    -------------------------------
 
    procedure Trace
-     (Self_Id  : Task_ID;
+     (Self_Id  : Task_Id;
       Msg      : String;
       Flag     : Character;
-      Other_Id : Task_ID := null);
+      Other_Id : Task_Id := null);
    --  If traces for Flag are enabled, display on Standard_Error a given
    --  message for the current task. Other_Id is an optional second task id
    --  to display.

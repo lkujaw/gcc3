@@ -1,0 +1,60 @@
+# This is the VMS Makefile.lib used to build an alternate ADALIB run-time
+# using GNATLbr and a custom gnat.adc file.
+
+vpath %.adb $(ADA_INCLUDE_PATH)
+vpath %.ads $(ADA_INCLUDE_PATH)
+vpath %.c $(ADA_INCLUDE_PATH)
+
+gccversion:=$(shell mcr gnu:[bin]gcc -dumpversion)
+gccmachine:=$(shell mcr gnu:[bin]gcc -dumpmachine)
+
+CC = gcc
+CFLAGS = -O
+ADAFLAGS = -gnatpg
+ALL_ADAFLAGS = $(CFLAGS) $(ADA_CFLAGS) $(ADAFLAGS) -I. 
+ALL_CFLAGS = $(CFLAGS) -I. 
+
+# Say how to compile Ada programs.
+.SUFFIXES: .ada .adb .ads .s .sym
+
+# Always use -Iconfig when compiling.
+.s.obj: 
+	$(CC) -c $< 
+.c.obj:
+	$(CC) -c $(ALL_CFLAGS) $(ADA_CFLAGS) $(ALL_CPPFLAGS) $(INCLUDES) $<
+.adb.obj:
+	$(CC) -c $(ALL_ADAFLAGS) $<
+.ads.obj:
+	$(CC) -c $(ALL_ADAFLAGS) $<
+
+GNAT_OBJS :=$(addsuffix .obj, $(filter-out prefix vmshandler,$(shell pipe lib/list libgnat.olb | mcr gnu:[bin]sed -e "1,8 d" -e "y/ABCDEFGHIJKLMNOPQRSTUVWXYZ/abcdefghijklmnopqrstuvwxyz/")))
+GNARL_OBJS:=$(addsuffix .obj, $(shell pipe lib/list libgnarl.olb | mcr gnu:[bin]sed -e "1,8 d" -e "y/ABCDEFGHIJKLMNOPQRSTUVWXYZ/abcdefghijklmnopqrstuvwxyz/"))
+OBJS := $(GNAT_OBJS) $(GNARL_OBJS)
+
+create:
+	create /dir [.adalib]
+	copy gnu:[lib.gcc-lib.adalib]libgnat.olb,libgnarl.olb [.adalib]
+	copy $(GNAT_ADC_FILE) [.adalib]gnat.adc
+	make -C adalib ADA_INCLUDE_PATH=$(ADA_INCLUDE_PATH) \
+	               ADA_OBJECTS_PATH=$(ADA_OBJECTS_PATH) \
+	               LIBRARY_VERSION=$(LIBRARY_VERSION) \
+                       -f $(ADA_OBJECTS_PATH)Makefile.lib gnatlib
+
+gnatlib: $(OBJS)
+	ar r libgnat.olb $(GNAT_OBJS)
+	ar r libgnarl.olb $(GNARL_OBJS)
+	set file/prot=(s:red,o:red,g:re,w:re) *.ali
+	del *.obj.*
+
+a-except.obj: a-except.adb a-except.ads
+	$(CC) -c -g $(ALL_ADAFLAGS) $<
+
+s-assert.obj: s-assert.adb s-assert.ads a-except.ads
+	$(CC) -c -g $(ALL_ADAFLAGS) $<
+
+s-tasdeb.obj: s-tasdeb.adb
+	$(CC) -c -g $(ALL_ADAFLAGS) $<
+
+s-vaflop.obj: s-vaflop.adb
+	$(CC) -c -g -O $(ALL_ADAFLAGS) $<
+

@@ -6,7 +6,7 @@
 --                                                                          --
 --                                 B o d y                                  --
 --                                                                          --
---          Copyright (C) 1992-2003 Free Software Foundation, Inc.          --
+--          Copyright (C) 1992-2006, Free Software Foundation, Inc.         --
 --                                                                          --
 -- GNAT is free software;  you can  redistribute it  and/or modify it under --
 -- terms of the  GNU General Public License as published  by the Free Soft- --
@@ -16,8 +16,8 @@
 -- or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License --
 -- for  more details.  You should have  received  a copy of the GNU General --
 -- Public License  distributed with GNAT;  see file COPYING.  If not, write --
--- to  the Free Software Foundation,  59 Temple Place - Suite 330,  Boston, --
--- MA 02111-1307, USA.                                                      --
+-- to  the  Free Software Foundation,  51  Franklin  Street,  Fifth  Floor, --
+-- Boston, MA 02110-1301, USA.                                              --
 --                                                                          --
 -- GNAT was originally developed  by the GNAT team at  New York University. --
 -- Extensive contributions were provided by Ada Core Technologies Inc.      --
@@ -37,8 +37,15 @@ package body Ch6 is
 
    function P_Defining_Designator        return Node_Id;
    function P_Defining_Operator_Symbol   return Node_Id;
+   function P_Return_Object_Declaration  return Node_Id;
+
+   procedure P_Return_Subtype_Indication (Decl_Node : Node_Id);
+   --  Decl_Node is a N_Object_Declaration.
+   --  Set the Null_Exclusion_Present and Object_Definition fields of
+   --  Decl_Node.
 
    procedure Check_Junk_Semicolon_Before_Return;
+
    --  Check for common error of junk semicolon before RETURN keyword of
    --  function specification. If present, skip over it with appropriate
    --  error message, leaving Scan_Ptr pointing to the RETURN after. This
@@ -58,7 +65,7 @@ package body Ch6 is
 
          if Token = Tok_Return then
             Restore_Scan_State (Scan_State);
-            Error_Msg_SC ("Unexpected semicolon ignored");
+            Error_Msg_SC ("unexpected semicolon ignored");
             Scan; -- rescan past junk semicolon
 
          else
@@ -109,6 +116,13 @@ package body Ch6 is
    --  | function DEFINING_DESIGNATOR is
    --      new generic_function_NAME [GENERIC_ACTUAL_PART];
 
+   --  NULL_PROCEDURE_DECLARATION ::=
+   --    SUBPROGRAM_SPECIFICATION is null;
+
+   --  Null procedures are an Ada 2005 feature. A null procedure declaration
+   --  is classified as a basic declarative item, but it is parsed here, with
+   --  other subprogram constructs.
+
    --  The value in Pf_Flags indicates which of these possible declarations
    --  is acceptable to the caller:
 
@@ -123,25 +137,34 @@ package body Ch6 is
    --  context is issued. The only possible values for Pf_Flags are those
    --  defined as constants in the Par package.
 
-   --  The caller has checked that the initial token is FUNCTION or PROCEDURE
+   --  The caller has checked that the initial token is FUNCTION, PROCEDURE,
+   --  NOT or OVERRIDING.
 
    --  Error recovery: cannot raise Error_Resync
 
    function P_Subprogram (Pf_Flags : Pf_Rec) return Node_Id is
       Specification_Node : Node_Id;
-      Name_Node   : Node_Id;
-      Fpart_List  : List_Id;
-      Fpart_Sloc  : Source_Ptr;
-      Return_Node : Node_Id;
-      Inst_Node   : Node_Id;
-      Body_Node   : Node_Id;
-      Decl_Node   : Node_Id;
-      Rename_Node : Node_Id;
-      Absdec_Node : Node_Id;
-      Stub_Node   : Node_Id;
-      Fproc_Sloc  : Source_Ptr;
-      Func        : Boolean;
-      Scan_State  : Saved_Scan_State;
+      Name_Node          : Node_Id;
+      Fpart_List         : List_Id;
+      Fpart_Sloc         : Source_Ptr;
+      Result_Not_Null    : Boolean := False;
+      Result_Node        : Node_Id;
+      Inst_Node          : Node_Id;
+      Body_Node          : Node_Id;
+      Decl_Node          : Node_Id;
+      Rename_Node        : Node_Id;
+      Absdec_Node        : Node_Id;
+      Stub_Node          : Node_Id;
+      Fproc_Sloc         : Source_Ptr;
+      Func               : Boolean;
+      Scan_State         : Saved_Scan_State;
+
+      --  Flags for optional overriding indication. Two flags are needed,
+      --  to distinguish positive and negative overriding indicators from
+      --  the absence of any indicator.
+
+      Is_Overriding  : Boolean := False;
+      Not_Overriding : Boolean := False;
 
    begin
       --  Set up scope stack entry. Note that the Labl field will be set later
@@ -153,6 +176,41 @@ package body Ch6 is
       Scope.Table (Scope.Last).Etyp := E_Name;
       Scope.Table (Scope.Last).Ecol := Start_Column;
       Scope.Table (Scope.Last).Lreq := False;
+
+      --  Ada2005: scan leading overriding indicator
+
+      if Token = Tok_Not then
+         Scan;  -- past NOT
+
+         if Token = Tok_Overriding then
+            Scan;  --  past OVERRIDING
+            Not_Overriding := True;
+         else
+            Error_Msg_SC ("OVERRIDING expected!");
+         end if;
+
+      elsif Token = Tok_Overriding then
+         Scan;  --  past OVERRIDING
+         Is_Overriding := True;
+      end if;
+
+      if (Is_Overriding or else Not_Overriding) then
+         if Ada_Version < Ada_05 then
+            Error_Msg_SP (" overriding indicator is an Ada 2005 extension");
+            Error_Msg_SP ("\unit must be compiled with -gnat05 switch");
+
+         --  An overriding indicator is allowed for subprogram declarations,
+         --  bodies, renamings, stubs, and instantiations.
+
+         elsif Pf_Flags /= Pf_Decl_Gins_Pbod_Rnam_Stub then
+            Error_Msg_SC ("overriding indicator not allowed here!");
+
+         elsif Token /= Tok_Function
+           and then Token /= Tok_Procedure
+         then
+            Error_Msg_SC ("FUNCTION or PROCEDURE expected!");
+         end if;
+      end if;
 
       Func := (Token = Tok_Function);
       Fproc_Sloc := Token_Ptr;
@@ -202,7 +260,7 @@ package body Ch6 is
 
       if Token = Tok_Is then
          Save_Scan_State (Scan_State); -- at the IS
-         T_Is; -- checks for redundant IS's
+         T_Is; -- checks for redundant IS
 
          if Token = Tok_New then
             if not Pf_Flags.Gins then
@@ -223,6 +281,14 @@ package body Ch6 is
             Set_Generic_Associations (Inst_Node, P_Generic_Actual_Part_Opt);
             TF_Semicolon;
             Pop_Scope_Stack; -- Don't need scope stack entry in this case
+
+            if Is_Overriding then
+               Set_Must_Override (Inst_Node);
+
+            elsif Not_Overriding then
+               Set_Must_Not_Override (Inst_Node);
+            end if;
+
             return Inst_Node;
 
          else
@@ -259,7 +325,7 @@ package body Ch6 is
       --  since later RETURN statements will be valid in either case.
 
       Check_Junk_Semicolon_Before_Return;
-      Return_Node := Error;
+      Result_Node := Error;
 
       if Token = Tok_Return then
          if not Func then
@@ -268,8 +334,24 @@ package body Ch6 is
          end if;
 
          Scan; -- past RETURN
-         Return_Node := P_Subtype_Mark;
-         No_Constraint;
+
+         Result_Not_Null := P_Null_Exclusion;     --  Ada 2005 (AI-231)
+
+         --  Ada 2005 (AI-318-02)
+
+         if Token = Tok_Access then
+            if Ada_Version < Ada_05 then
+               Error_Msg_SC
+                 ("anonymous access result type is an Ada 2005 extension");
+               Error_Msg_SC ("\unit must be compiled with -gnat05 switch");
+            end if;
+
+            Result_Node := P_Access_Definition (Result_Not_Null);
+
+         else
+            Result_Node := P_Subtype_Mark;
+            No_Constraint;
+         end if;
 
       else
          if Func then
@@ -281,7 +363,9 @@ package body Ch6 is
       if Func then
          Specification_Node :=
            New_Node (N_Function_Specification, Fproc_Sloc);
-         Set_Subtype_Mark (Specification_Node, Return_Node);
+
+         Set_Null_Exclusion_Present (Specification_Node, Result_Not_Null);
+         Set_Result_Definition (Specification_Node, Result_Node);
 
       else
          Specification_Node :=
@@ -290,6 +374,13 @@ package body Ch6 is
 
       Set_Defining_Unit_Name (Specification_Node, Name_Node);
       Set_Parameter_Specifications (Specification_Node, Fpart_List);
+
+      if Is_Overriding then
+         Set_Must_Override (Specification_Node);
+
+      elsif Not_Overriding then
+         Set_Must_Not_Override (Specification_Node);
+      end if;
 
       --  Error check: barriers not allowed on protected functions/procedures
 
@@ -383,6 +474,25 @@ package body Ch6 is
                Scan; -- past ABSTRACT
                TF_Semicolon;
                return Absdec_Node;
+
+            --  Ada 2005 (AI-248): Parse a null procedure declaration
+
+            elsif Token = Tok_Null then
+               if Ada_Version < Ada_05 then
+                  Error_Msg_SP ("null procedures are an Ada 2005 extension");
+                  Error_Msg_SP ("\unit must be compiled with -gnat05 switch");
+               end if;
+
+               Scan; -- past NULL
+
+               if Func then
+                  Error_Msg_SP ("only procedures can be null");
+               else
+                  Set_Null_Present (Specification_Node);
+               end if;
+
+               TF_Semicolon;
+               goto Subprogram_Declaration;
 
             --  Check for IS NEW with Formal_Part present and handle nicely
 
@@ -533,6 +643,8 @@ package body Ch6 is
 
    function P_Subprogram_Specification return Node_Id is
       Specification_Node : Node_Id;
+      Result_Not_Null    : Boolean;
+      Result_Node        : Node_Id;
 
    begin
       if Token = Tok_Function then
@@ -544,8 +656,27 @@ package body Ch6 is
            (Specification_Node, P_Parameter_Profile);
          Check_Junk_Semicolon_Before_Return;
          TF_Return;
-         Set_Subtype_Mark (Specification_Node, P_Subtype_Mark);
-         No_Constraint;
+
+         Result_Not_Null := P_Null_Exclusion;     --  Ada 2005 (AI-231)
+
+         --  Ada 2005 (AI-318-02)
+
+         if Token = Tok_Access then
+            if Ada_Version < Ada_05 then
+               Error_Msg_SC
+                 ("anonymous access result type is an Ada 2005 extension");
+               Error_Msg_SC ("\unit must be compiled with -gnat05 switch");
+            end if;
+
+            Result_Node := P_Access_Definition (Result_Not_Null);
+
+         else
+            Result_Node := P_Subtype_Mark;
+            No_Constraint;
+         end if;
+
+         Set_Null_Exclusion_Present (Specification_Node, Result_Not_Null);
+         Set_Result_Definition (Specification_Node, Result_Node);
          return Specification_Node;
 
       elsif Token = Tok_Procedure then
@@ -735,7 +866,7 @@ package body Ch6 is
             Error_Msg_SP ("child unit allowed only at library level");
             raise Error_Resync;
 
-         elsif Ada_83 then
+         elsif Ada_Version = Ada_83 then
             Error_Msg_SP ("(Ada 83) child unit not allowed!");
 
          end if;
@@ -839,7 +970,7 @@ package body Ch6 is
    --  FORMAL_PART ::= (PARAMETER_SPECIFICATION {; PARAMETER_SPECIFICATION})
 
    --  PARAMETER_SPECIFICATION ::=
-   --    DEFINING_IDENTIFIER_LIST : MODE SUBTYPE_MARK
+   --    DEFINING_IDENTIFIER_LIST : MODE [NULL_EXCLUSION] SUBTYPE_MARK
    --      [:= DEFAULT_EXPRESSION]
    --  | DEFINING_IDENTIFIER_LIST : ACCESS_DEFINITION
    --      [:= DEFAULT_EXPRESSION]
@@ -857,6 +988,7 @@ package body Ch6 is
       Num_Idents         : Nat;
       Ident              : Nat;
       Ident_Sloc         : Source_Ptr;
+      Not_Null_Present   : Boolean := False;
 
       Idents : array (Int range 1 .. 4096) of Entity_Id;
       --  This array holds the list of defining identifiers. The upper bound
@@ -865,7 +997,6 @@ package body Ch6 is
 
    begin
       Specification_List := New_List;
-
       Specification_Loop : loop
          begin
             if Token = Tok_Pragma then
@@ -953,17 +1084,32 @@ package body Ch6 is
                Specification_Node :=
                  New_Node (N_Parameter_Specification, Ident_Sloc);
                Set_Defining_Identifier (Specification_Node, Idents (Ident));
+               Not_Null_Present := P_Null_Exclusion;     --  Ada 2005 (AI-231)
 
                if Token = Tok_Access then
-                  if Ada_83 then
+                  Set_Null_Exclusion_Present
+                    (Specification_Node, Not_Null_Present);
+
+                  if Ada_Version = Ada_83 then
                      Error_Msg_SC ("(Ada 83) access parameters not allowed");
                   end if;
 
-                  Set_Parameter_Type
-                    (Specification_Node, P_Access_Definition);
+                  Set_Parameter_Type (Specification_Node,
+                    P_Access_Definition (Not_Null_Present));
 
                else
-                  P_Mode (Specification_Node);
+                  if Token = Tok_In or else Token = Tok_Out then
+                     if Not_Null_Present then
+                        Error_Msg_SC
+                          ("ACCESS must be placed after the parameter mode");
+                     end if;
+
+                     P_Mode (Specification_Node);
+                     Not_Null_Present := P_Null_Exclusion; -- Ada 2005 (AI-231)
+                  end if;
+
+                  Set_Null_Exclusion_Present
+                    (Specification_Node, Not_Null_Present);
 
                   if Token = Tok_Procedure
                        or else
@@ -1087,6 +1233,10 @@ package body Ch6 is
       if Token = Tok_In then
          Scan; -- past IN
          Set_In_Present (Node, True);
+
+         if Style.Mode_In_Check and then Token /= Tok_Out then
+            Error_Msg_SP ("(style) IN should be omitted");
+         end if;
       end if;
 
       if Token = Tok_Out then
@@ -1141,36 +1291,182 @@ package body Ch6 is
    -- 6.5  Return Statement --
    ---------------------------
 
+   --  SIMPLE_RETURN_STATEMENT ::= return [EXPRESSION];
+   --
+   --  EXTENDED_RETURN_STATEMENT ::=
+   --    return DEFINING_IDENTIFIER : [aliased] RETURN_SUBTYPE_INDICATION
+   --                                           [:= EXPRESSION] [do
+   --      HANDLED_SEQUENCE_OF_STATEMENTS
+   --    end return];
+   --
+   --  RETURN_SUBTYPE_INDICATION ::= SUBTYPE_INDICATION | ACCESS_DEFINITION
+
    --  RETURN_STATEMENT ::= return [EXPRESSION];
 
-   --  The caller has checked that the initial token is RETURN
+   --  Error recovery: can raise Error_Resync
+
+   procedure P_Return_Subtype_Indication (Decl_Node : Node_Id) is
+
+      --  Note: We don't need to check Ada_Version here, because this is
+      --  only called in >= Ada 2005 cases anyway.
+
+      Not_Null_Present : constant Boolean := P_Null_Exclusion;
+
+   begin
+      Set_Null_Exclusion_Present (Decl_Node, Not_Null_Present);
+
+      if Token = Tok_Access then
+         Set_Object_Definition
+           (Decl_Node, P_Access_Definition (Not_Null_Present));
+      else
+         Set_Object_Definition
+           (Decl_Node, P_Subtype_Indication (Not_Null_Present));
+      end if;
+   end P_Return_Subtype_Indication;
+
+   --  Error recovery: can raise Error_Resync
+
+   function P_Return_Object_Declaration return Node_Id is
+      Return_Obj : Node_Id;
+      Decl_Node  : Node_Id;
+
+   begin
+      Return_Obj := Token_Node;
+      Change_Identifier_To_Defining_Identifier (Return_Obj);
+      Decl_Node := New_Node (N_Object_Declaration, Token_Ptr);
+      Set_Defining_Identifier (Decl_Node, Return_Obj);
+
+      Scan; -- past identifier
+      Scan; -- past :
+
+      --  We're about to check for "aliased", but first see if we have two
+      --  identifiers in a row. If so, the first is likely a misspelling of
+      --  "aliased". See similar check in P_Identifier_Declarations.
+
+      if Token = Tok_Identifier then
+         declare
+            SS : Saved_Scan_State;
+            I2 : Boolean;
+
+         begin
+            Save_Scan_State (SS);
+            Scan; -- past initial identifier
+            I2 := (Token = Tok_Identifier);
+            Restore_Scan_State (SS);
+
+            if I2 and then Bad_Spelling_Of (Tok_Aliased) then
+               null;
+            end if;
+         end;
+      end if;
+
+      if Token = Tok_Aliased then
+         Scan; -- past ALIASED
+         Set_Aliased_Present (Decl_Node);
+      end if;
+
+      P_Return_Subtype_Indication (Decl_Node);
+
+      if Token = Tok_Colon_Equal then
+         Scan; -- past :=
+         Set_Expression (Decl_Node, P_Expression_No_Right_Paren);
+      end if;
+
+      return Decl_Node;
+   end P_Return_Object_Declaration;
 
    --  Error recovery: can raise Error_Resync
 
    function P_Return_Statement return Node_Id is
+      --  The caller has checked that the initial token is RETURN
+
+      function Is_Simple return Boolean;
+      --  Scan state is just after RETURN (and is left that way).
+      --  Determine whether this is a simple or extended return statement
+      --  by looking ahead for "identifier :", which implies extended.
+
+      ---------------
+      -- Is_Simple --
+      ---------------
+
+      function Is_Simple return Boolean is
+         Scan_State : Saved_Scan_State;
+         Result     : Boolean := True;
+
+      begin
+         if Token = Tok_Identifier then
+            Save_Scan_State (Scan_State); -- at identifier
+            Scan; -- past identifier
+
+            if Token = Tok_Colon then
+               Result := False; -- It's an extended_return_statement.
+            end if;
+            Restore_Scan_State (Scan_State); -- to identifier
+         end if;
+         return Result;
+      end Is_Simple;
+
+      Return_Sloc : constant Source_Ptr := Token_Ptr;
       Return_Node : Node_Id;
 
+   --  Start of processing for P_Return_Statement
+
    begin
-      Return_Node := New_Node (N_Return_Statement, Token_Ptr);
-
-      --  Sloc points to RETURN
-      --  Expression (Op3)
-
       Scan; -- past RETURN
 
-      if Token /= Tok_Semicolon then
+      --  Simple_return_statement, no expression:
 
-         --  If no semicolon, then scan an expression, except that
-         --  we avoid trying to scan an expression if we are at an
+      if Token = Tok_Semicolon then
+         Scan; -- past ;
+         Return_Node := New_Node (N_Return_Statement, Return_Sloc);
+
+         --  Leave Expression (Return_Node) Empty.
+
+      else
+         --  Simple_return_statement with expression
+
+         --  We avoid trying to scan an expression if we are at an
          --  expression terminator since in that case the best error
          --  message is probably that we have a missing semicolon.
 
-         if Token not in Token_Class_Eterm then
-            Set_Expression (Return_Node, P_Expression_No_Right_Paren);
+         if Is_Simple then
+            if Token not in Token_Class_Eterm then
+               Return_Node := New_Node (N_Return_Statement, Return_Sloc);
+               Set_Expression (Return_Node, P_Expression_No_Right_Paren);
+            end if;
+
+         --  Extended_return_statement (Ada 2005 only -- AI-318):
+
+         else
+            if Ada_Version < Ada_05 then
+               Error_Msg_SP
+                 (" extended_return_statement is an Ada 2005 extension");
+               Error_Msg_SP ("\unit must be compiled with -gnat05 switch");
+            end if;
+
+            Return_Node := New_Node (N_Extended_Return_Statement, Return_Sloc);
+            Set_Return_Object_Declarations
+              (Return_Node, New_List (P_Return_Object_Declaration));
+
+            if Token = Tok_Do then
+               Push_Scope_Stack;
+               Scope.Table (Scope.Last).Etyp := E_Return;
+               Scope.Table (Scope.Last).Ecol := Start_Column;
+               Scope.Table (Scope.Last).Sloc := Return_Sloc;
+
+               Scan; -- past DO
+               Set_Handled_Statement_Sequence
+                 (Return_Node, P_Handled_Sequence_Of_Statements);
+               End_Statements;
+
+               --  Do we need to handle Error_Resync here???
+            end if;
+
          end if;
+
+         TF_Semicolon;
       end if;
 
-      TF_Semicolon;
       return Return_Node;
    end P_Return_Statement;
 

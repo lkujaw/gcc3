@@ -6,7 +6,7 @@
 --                                                                          --
 --                                 B o d y                                  --
 --                                                                          --
---          Copyright (C) 2001-2004 Free Software Foundation, Inc.          --
+--          Copyright (C) 2001-2006, Free Software Foundation, Inc.         --
 --                                                                          --
 -- GNAT is free software;  you can  redistribute it  and/or modify it under --
 -- terms of the  GNU General Public License as published  by the Free Soft- --
@@ -16,8 +16,8 @@
 -- or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License --
 -- for  more details.  You should have  received  a copy of the GNU General --
 -- Public License  distributed with GNAT;  see file COPYING.  If not, write --
--- to  the Free Software Foundation,  59 Temple Place - Suite 330,  Boston, --
--- MA 02111-1307, USA.                                                      --
+-- to  the  Free Software Foundation,  51  Franklin  Street,  Fifth  Floor, --
+-- Boston, MA 02110-1301, USA.                                              --
 --                                                                          --
 -- GNAT was originally developed  by the GNAT team at  New York University. --
 -- Extensive contributions were provided by Ada Core Technologies Inc.      --
@@ -149,7 +149,6 @@ package body Exp_Imgv is
               Make_Aggregate (Loc,
                 Expressions => Ind))),
         Suppress => All_Checks);
-
    end Build_Enumeration_Image_Tables;
 
    ----------------------------
@@ -192,7 +191,11 @@ package body Exp_Imgv is
    --    For types whose root type is Wide_Character
    --      xx = Wide_Character
    --      tv = Wide_Character (Expr)
-   --      pm = Wide_Character_Encoding_Method
+   --      pm = Boolean, true if Ada 2005 mode, False otherwise
+
+   --    For types whose root type is Wide_Wide_Character
+   --      xx = Wide_Wide_haracter
+   --      tv = Wide_Wide_Character (Expr)
 
    --    For floating-point types
    --      xx = Floating_Point
@@ -252,6 +255,10 @@ package body Exp_Imgv is
 
       elsif Rtyp = Standard_Wide_Character then
          Imid := RE_Image_Wide_Character;
+         Tent := Rtyp;
+
+      elsif Rtyp = Standard_Wide_Wide_Character then
+         Imid := RE_Image_Wide_Wide_Character;
          Tent := Rtyp;
 
       elsif Is_Signed_Integer_Type (Rtyp) then
@@ -382,13 +389,6 @@ package body Exp_Imgv is
              Prefix         => New_Reference_To (Ptyp, Loc),
              Attribute_Name => Name_Aft));
 
-      --  For wide character, append encoding method
-
-      elsif Rtyp = Standard_Wide_Character then
-         Append_To (Arglist,
-           Make_Integer_Literal (Loc,
-             Intval => Int (Wide_Character_Encoding_Method)));
-
       --  For decimal, append Scale and also set to do literal conversion
 
       elsif Is_Decimal_Fixed_Point_Type (Rtyp) then
@@ -399,6 +399,12 @@ package body Exp_Imgv is
 
          Set_Conversion_OK (First (Arglist));
          Set_Etype (First (Arglist), Tent);
+
+         --  For Wide_Character, append Ada 2005 indication
+
+      elsif Rtyp = Standard_Wide_Character then
+         Append_To (Arglist,
+           New_Reference_To (Boolean_Literals (Ada_Version >= Ada_05), Loc));
       end if;
 
       Rewrite (N,
@@ -418,10 +424,16 @@ package body Exp_Imgv is
 
    --    btyp (Value_xx (X))
 
-   --  where btyp is he base type of the prefix, and
+   --  where btyp is he base type of the prefix
 
    --    For types whose root type is Character
    --      xx = Character
+
+   --    For types whose root type is Wide_Character
+   --      xx = Wide_Character
+
+   --    For types whose root type is Wide_Wide_Character
+   --      xx = Wide_Wide_Character
 
    --    For types whose root type is Boolean
    --      xx = Boolean
@@ -441,9 +453,11 @@ package body Exp_Imgv is
    --    For floating-point types and ordinary fixed-point types
    --      xx = Real
 
-   --  For types derived from Wide_Character, typ'Value (X) expands into
+   --  For Wide_[Wide_]Character types, typ'Value (X) expands into:
 
-   --    Value_Wide_Character (X, Wide_Character_Encoding_Method)
+   --    btyp (Value_xx (X, EM))
+
+   --  where btyp is the base type of the prefix, and EM is the encoding method
 
    --  For decimal types with size <= Integer'Size, typ'Value (X)
    --  expands into
@@ -455,7 +469,7 @@ package body Exp_Imgv is
    --    btyp?(Value_Long_Long_Decimal (X, typ'Scale))
 
    --  For enumeration types other than those derived from types Boolean,
-   --  Character, and Wide_Character in Standard, typ'Value (X) expands to:
+   --  Character, Wide_[Wide_]Character in Standard, typ'Value (X) expands to:
 
    --    Enum'Val (Value_Enumeration_NN (typS, typI'Address, Num, X))
 
@@ -489,6 +503,14 @@ package body Exp_Imgv is
 
       elsif Rtyp = Standard_Wide_Character then
          Vid := RE_Value_Wide_Character;
+
+         Append_To (Args,
+           Make_Integer_Literal (Loc,
+             Intval => Int (Wide_Character_Encoding_Method)));
+
+      elsif Rtyp = Standard_Wide_Wide_Character then
+         Vid := RE_Value_Wide_Wide_Character;
+
          Append_To (Args,
            Make_Integer_Literal (Loc,
              Intval => Int (Wide_Character_Encoding_Method)));
@@ -624,20 +646,28 @@ package body Exp_Imgv is
    -- Expand_Width_Attribute --
    ----------------------------
 
-   --  The processing here also handles the case of Wide_Width. With the
+   --  The processing here also handles the case of Wide_[Wide_]Width. With the
    --  exceptions noted, the processing is identical
 
    --  For scalar types derived from Boolean, character and integer types
    --  in package Standard. Note that the Width attribute is computed at
    --  compile time for all cases except those involving non-static sub-
-   --  types. For such subtypes, typ'Width and typ'Wide_Width expands into:
+   --  types. For such subtypes, typ'[Wide_[Wide_]]Width expands into:
 
    --    Result_Type (xx (yy (Ptyp'First), yy (Ptyp'Last)))
 
    --  where
 
    --    For types whose root type is Character
-   --      xx = Width_Character (Wide_Width_Character for Wide_Width case)
+   --      xx = Width_Character
+   --      yy = Character
+
+   --    For types whose root type is Wide_Character
+   --      xx = Wide_Width_Character
+   --      yy = Character
+
+   --    For types whose root type is Wide_Wide_Character
+   --      xx = Wide_Wide_Width_Character
    --      yy = Character
 
    --    For types whose root type is Boolean
@@ -657,7 +687,6 @@ package body Exp_Imgv is
    --    Result_Type (Width_Wide_Character (
    --      Wide_Character (typ'First),
    --      Wide_Character (typ'Last),
-   --      Wide_Character_Encoding_Method);
 
    --  and typ'Wide_Width expands into:
 
@@ -665,7 +694,31 @@ package body Exp_Imgv is
    --      Wide_Character (typ'First),
    --      Wide_Character (typ'Last));
 
-   --  For real types, typ'Width and typ'Wide_Width expand into
+   --  and typ'Wide_Wide_Width expands into
+
+   --    Result_Type (Wide_Wide_Width_Wide_Character (
+   --      Wide_Character (typ'First),
+   --      Wide_Character (typ'Last));
+
+   --  For types derived from Wide_Wide_Character, typ'Width expands into
+
+   --    Result_Type (Width_Wide_Wide_Character (
+   --      Wide_Wide_Character (typ'First),
+   --      Wide_Wide_Character (typ'Last),
+
+   --  and typ'Wide_Width expands into:
+
+   --    Result_Type (Wide_Width_Wide_Wide_Character (
+   --      Wide_Wide_Character (typ'First),
+   --      Wide_Wide_Character (typ'Last));
+
+   --  and typ'Wide_Wide_Width expands into
+
+   --    Result_Type (Wide_Wide_Width_Wide_Wide_Char (
+   --      Wide_Wide_Character (typ'First),
+   --      Wide_Wide_Character (typ'Last));
+
+   --  For real types, typ'Width and typ'Wide_[Wide_]Width expand into
 
    --    if Ptyp'First > Ptyp'Last then 0 else btyp'Width end if
 
@@ -690,11 +743,20 @@ package body Exp_Imgv is
    --                   typ'Pos (Typ'Last))
    --                   Wide_Character_Encoding_Method);
 
+   --  and typ'Wide_Wide_Width expands into:
+
+   --    Result_Type (Wide_Wide_Width_Enumeration_NN
+   --                  (typS,
+   --                   typI,
+   --                   typ'Pos (typ'First),
+   --                   typ'Pos (Typ'Last))
+   --                   Wide_Character_Encoding_Method);
+
    --  where typS and typI are the enumeration image strings and
    --  indexes table, as described in Build_Enumeration_Image_Tables.
    --  NN is 8/16/32 for depending on the element type for typI.
 
-   procedure Expand_Width_Attribute (N : Node_Id; Wide : Boolean) is
+   procedure Expand_Width_Attribute (N : Node_Id; Attr : Atype := Normal) is
       Loc     : constant Source_Ptr := Sloc (N);
       Typ     : constant Entity_Id  := Etype (N);
       Pref    : constant Node_Id    := Prefix (N);
@@ -715,22 +777,33 @@ package body Exp_Imgv is
       --  Types derived from Standard.Character
 
       elsif Rtyp = Standard_Character then
-         if not Wide then
-            XX := RE_Width_Character;
-         else
-            XX := RE_Wide_Width_Character;
-         end if;
+         case Attr is
+            when Normal    => XX := RE_Width_Character;
+            when Wide      => XX := RE_Wide_Width_Character;
+            when Wide_Wide => XX := RE_Wide_Wide_Width_Character;
+         end case;
 
          YY := Rtyp;
 
       --  Types derived from Standard.Wide_Character
 
       elsif Rtyp = Standard_Wide_Character then
-         if not Wide then
-            XX := RE_Width_Wide_Character;
-         else
-            XX := RE_Wide_Width_Wide_Character;
-         end if;
+         case Attr is
+            when Normal    => XX := RE_Width_Wide_Character;
+            when Wide      => XX := RE_Wide_Width_Wide_Character;
+            when Wide_Wide => XX := RE_Wide_Wide_Width_Wide_Character;
+         end case;
+
+         YY := Rtyp;
+
+      --  Types derived from Standard.Wide_Wide_Character
+
+      elsif Rtyp = Standard_Wide_Wide_Character then
+         case Attr is
+            when Normal    => XX := RE_Width_Wide_Wide_Character;
+            when Wide      => XX := RE_Wide_Width_Wide_Wide_Character;
+            when Wide_Wide => XX := RE_Wide_Wide_Width_Wide_Wide_Char;
+         end case;
 
          YY := Rtyp;
 
@@ -779,26 +852,52 @@ package body Exp_Imgv is
       else
          pragma Assert (Is_Enumeration_Type (Rtyp));
 
+         if Discard_Names (Rtyp) then
+
+            --  This is a configurable run-time, or else a restriction is in
+            --  effect. In either case the attribute cannot be supported. Force
+            --  a load error from Rtsfind to generate an appropriate message,
+            --  as is done with other ZFP violations.
+
+            declare
+               pragma Warnings (Off); -- since Discard is unreferenced
+               Discard : constant Entity_Id := RTE (RE_Null);
+               pragma Warnings (On);
+            begin
+               return;
+            end;
+         end if;
+
          Ttyp := Component_Type (Etype (Lit_Indexes (Rtyp)));
 
-         if not Wide then
-            if Ttyp = Standard_Integer_8 then
-               XX := RE_Width_Enumeration_8;
-            elsif Ttyp = Standard_Integer_16  then
-               XX := RE_Width_Enumeration_16;
-            else
-               XX := RE_Width_Enumeration_32;
-            end if;
+         case Attr is
+            when Normal =>
+               if Ttyp = Standard_Integer_8 then
+                  XX := RE_Width_Enumeration_8;
+               elsif Ttyp = Standard_Integer_16  then
+                  XX := RE_Width_Enumeration_16;
+               else
+                  XX := RE_Width_Enumeration_32;
+               end if;
 
-         else
-            if Ttyp = Standard_Integer_8 then
-               XX := RE_Wide_Width_Enumeration_8;
-            elsif Ttyp = Standard_Integer_16  then
-               XX := RE_Wide_Width_Enumeration_16;
-            else
-               XX := RE_Wide_Width_Enumeration_32;
-            end if;
-         end if;
+            when Wide =>
+               if Ttyp = Standard_Integer_8 then
+                  XX := RE_Wide_Width_Enumeration_8;
+               elsif Ttyp = Standard_Integer_16  then
+                  XX := RE_Wide_Width_Enumeration_16;
+               else
+                  XX := RE_Wide_Width_Enumeration_32;
+               end if;
+
+            when Wide_Wide =>
+               if Ttyp = Standard_Integer_8 then
+                  XX := RE_Wide_Wide_Width_Enumeration_8;
+               elsif Ttyp = Standard_Integer_16  then
+                  XX := RE_Wide_Wide_Width_Enumeration_16;
+               else
+                  XX := RE_Wide_Wide_Width_Enumeration_32;
+               end if;
+         end case;
 
          Arglist :=
            New_List (
@@ -826,14 +925,6 @@ package body Exp_Imgv is
                    Prefix => New_Reference_To (Ptyp, Loc),
                    Attribute_Name => Name_Last))));
 
-         --  For enumeration'Wide_Width, add encoding method parameter
-
-         if Wide then
-            Append_To (Arglist,
-              Make_Integer_Literal (Loc,
-                Intval => Int (Wide_Character_Encoding_Method)));
-         end if;
-
          Rewrite (N,
            Convert_To (Typ,
              Make_Function_Call (Loc,
@@ -856,14 +947,6 @@ package body Exp_Imgv is
           Make_Attribute_Reference (Loc,
             Prefix => New_Reference_To (Ptyp, Loc),
             Attribute_Name => Name_Last)));
-
-      --  For Wide_Character'Width, add encoding method parameter
-
-      if Rtyp = Standard_Wide_Character and then Wide then
-         Append_To (Arglist,
-           Make_Integer_Literal (Loc,
-             Intval => Int (Wide_Character_Encoding_Method)));
-      end if;
 
       Rewrite (N,
         Convert_To (Typ,

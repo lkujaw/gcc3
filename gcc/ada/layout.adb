@@ -6,7 +6,7 @@
 --                                                                          --
 --                                 B o d y                                  --
 --                                                                          --
---          Copyright (C) 2001-2003 Free Software Foundation, Inc.          --
+--          Copyright (C) 2001-2006, Free Software Foundation, Inc.         --
 --                                                                          --
 -- GNAT is free software;  you can  redistribute it  and/or modify it under --
 -- terms of the  GNU General Public License as published  by the Free Soft- --
@@ -16,8 +16,8 @@
 -- or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License --
 -- for  more details.  You should have  received  a copy of the GNU General --
 -- Public License  distributed with GNAT;  see file COPYING.  If not, write --
--- to  the Free Software Foundation,  59 Temple Place - Suite 330,  Boston, --
--- MA 02111-1307, USA.                                                      --
+-- to  the  Free Software Foundation,  51  Franklin  Street,  Fifth  Floor, --
+-- Boston, MA 02110-1301, USA.                                              --
 --                                                                          --
 -- GNAT was originally developed  by the GNAT team at  New York University. --
 -- Extensive contributions were provided by Ada Core Technologies Inc.      --
@@ -107,7 +107,7 @@ package body Layout is
    --  dynamic sizes in storage units. If the argument N is anything other
    --  than an integer literal, it is returned unchanged, but if it is an
    --  integer literal, then it is taken as a size in bits, and is replaced
-   --  by the corresponding size in bytes.
+   --  by the corresponding size in storage units.
 
    function Compute_Length (Lo : Node_Id; Hi : Node_Id) return Node_Id;
    --  Given expressions for the low bound (Lo) and the high bound (Hi),
@@ -154,7 +154,7 @@ package body Layout is
    --  resolved (which may not be the case yet if we build the expression
    --  in this unit).
 
-   function Get_Max_Size (E : Entity_Id) return Node_Id;
+   function Get_Max_SU_Size (E : Entity_Id) return Node_Id;
    --  E is an array type or subtype that has at least one index bound that
    --  is the value of a record discriminant. For such an array, the function
    --  computes an expression that yields the maximum possible size of the
@@ -222,7 +222,7 @@ package body Layout is
          Esize_Set := Has_Size_Clause (E);
       end if;
 
-      --  If size is known it must be a multiple of the byte size
+      --  If size is known it must be a multiple of the storage unit size
 
       if Esize (E) mod SSU /= 0 then
 
@@ -230,10 +230,11 @@ package body Layout is
 
          if Esize_Set then
             Error_Msg_NE
-              ("size for& not a multiple of byte size", Size_Clause (E), E);
+              ("size for& not a multiple of storage unit size",
+               Size_Clause (E), E);
             return;
 
-         --  Otherwise bump up size to a byte boundary
+         --  Otherwise bump up size to a storage unit boundary
 
          else
             Set_Esize (E, (Esize (E) + SSU - 1) / SSU * SSU);
@@ -270,7 +271,7 @@ package body Layout is
 
       --  In this situation, the initial alignment of t is 4, copied from
       --  the Integer base type, but it is safe to reduce it to 1 at this
-      --  stage, since we will only be loading a single byte.
+      --  stage, since we will only be loading a single storage unit.
 
       if Is_Discrete_Type (Etype (E))
         and then not Has_Alignment_Clause (E)
@@ -652,11 +653,11 @@ package body Layout is
       end if;
    end Expr_From_SO_Ref;
 
-   ------------------
-   -- Get_Max_Size --
-   ------------------
+   ---------------------
+   -- Get_Max_SU_Size --
+   ---------------------
 
-   function Get_Max_Size (E : Entity_Id) return Node_Id is
+   function Get_Max_SU_Size (E : Entity_Id) return Node_Id is
       Loc  : constant Source_Ptr := Sloc (E);
       Indx : Node_Id;
       Ityp : Entity_Id;
@@ -725,7 +726,7 @@ package body Layout is
          end if;
       end Min_Discrim;
 
-   --  Start of processing for Get_Max_Size
+   --  Start of processing for Get_Max_SU_Size
 
    begin
       pragma Assert (Size_Depends_On_Discriminant (E));
@@ -859,10 +860,10 @@ package body Layout is
       end loop;
 
       --  Here after processing all bounds to set sizes. If the value is
-      --  a constant, then it is bits, and we just return the value.
+      --  a constant, then it is bits, so we convert to storage units.
 
       if Size.Status = Const then
-         return Make_Integer_Literal (Loc, Size.Val);
+         return Bits_To_SU (Make_Integer_Literal (Loc, Size.Val));
 
       --  Case where the value is dynamic
 
@@ -884,7 +885,7 @@ package body Layout is
 
          return Size.Nod;
       end if;
-   end Get_Max_Size;
+   end Get_Max_SU_Size;
 
    -----------------------
    -- Layout_Array_Type --
@@ -950,7 +951,7 @@ package body Layout is
       --  is the expression so far (which will be the body of the function).
 
       Size : Val_Type;
-      --  Value of size computed so far. See comments above.
+      --  Value of size computed so far. See comments above
 
       Vtyp : Entity_Id := Empty;
       --  Variant record type for the formal parameter of the
@@ -1023,8 +1024,8 @@ package body Layout is
 
       --  Calculate proper type for insertions
 
-      if Is_Record_Type (Scope (E)) then
-         Insert_Typ := Scope (E);
+      if Is_Record_Type (Underlying_Type (Scope (E))) then
+         Insert_Typ := Underlying_Type (Scope (E));
       else
          Insert_Typ := E;
       end if;
@@ -1480,7 +1481,7 @@ package body Layout is
                --  Get maximum size of previous component
 
                if Size_Depends_On_Discriminant (Etype (Prev_Comp)) then
-                  Old_Maxsz := Get_Max_Size (Etype (Prev_Comp));
+                  Old_Maxsz := Get_Max_SU_Size (Etype (Prev_Comp));
                else
                   Old_Maxsz := Expr_From_SO_Ref (Loc, Old_Esiz, Prev_Comp);
                end if;
@@ -1980,11 +1981,13 @@ package body Layout is
 
             else
                declare
-                  EsizV   : SO_Ref;
-                  RM_SizV : Node_Id;
-                  Dchoice : Node_Id;
-                  Discrim : Node_Id;
-                  Dtest   : Node_Id;
+                  EsizV    : SO_Ref;
+                  RM_SizV  : Node_Id;
+                  Dchoice  : Node_Id;
+                  Discrim  : Node_Id;
+                  Dtest    : Node_Id;
+                  D_List   : List_Id;
+                  D_Entity : Entity_Id;
 
                begin
                   RM_Siz_Expr := Empty;
@@ -2052,16 +2055,6 @@ package body Layout is
                      --  Otherwise construct the appropriate test
 
                      else
-                        --  Discriminant to be tested
-
-                        Discrim :=
-                          Make_Selected_Component (Loc,
-                            Prefix        =>
-                              Make_Identifier (Loc, Chars => Vname),
-                            Selector_Name =>
-                              New_Occurrence_Of
-                                (Entity (Name (Vpart)), Loc));
-
                         --  The test to be used in general is a call to the
                         --  discriminant checking function. However, it is
                         --  definitely worth special casing the very common
@@ -2072,6 +2065,16 @@ package body Layout is
                         if No (Next (Dchoice))
                           and then Nkind (Dchoice) /= N_Range
                         then
+                           --  Discriminant to be tested
+
+                           Discrim :=
+                             Make_Selected_Component (Loc,
+                               Prefix        =>
+                                 Make_Identifier (Loc, Chars => Vname),
+                               Selector_Name =>
+                                 New_Occurrence_Of
+                                   (Entity (Name (Vpart)), Loc));
+
                            Dtest :=
                              Make_Op_Eq (Loc,
                                Left_Opnd  => Discrim,
@@ -2083,6 +2086,25 @@ package body Layout is
                         --  False when the passed discriminant value matches.
 
                         else
+                           --  The checking function takes all of the type's
+                           --  discriminants as parameters, so a list of all
+                           --  the selected discriminants must be constructed.
+
+                           D_List := New_List;
+                           D_Entity := First_Discriminant (E);
+                           while Present (D_Entity) loop
+                              Append (
+                                Make_Selected_Component (Loc,
+                                  Prefix        =>
+                                    Make_Identifier (Loc, Chars => Vname),
+                                  Selector_Name =>
+                                    New_Occurrence_Of
+                                      (D_Entity, Loc)),
+                                D_List);
+
+                              D_Entity := Next_Discriminant (D_Entity);
+                           end loop;
+
                            Dtest :=
                              Make_Op_Not (Loc,
                                Right_Opnd =>
@@ -2091,7 +2113,7 @@ package body Layout is
                                      New_Occurrence_Of
                                        (Dcheck_Function (Var), Loc),
                                    Parameter_Associations =>
-                                     New_List (Discrim)));
+                                     D_List));
                         end if;
 
                         RM_Siz_Expr :=
@@ -2320,7 +2342,29 @@ package body Layout is
             end;
          end if;
 
-         Set_Prim_Alignment (E);
+         --  On VMS, reset size to 32 for convention C access type if no
+         --  explicit size clause is given and the default size is 64. Really
+         --  we do not know the size, since depending on options for the VMS
+         --  compiler, the size of a pointer type can be 32 or 64, but choosing
+         --  32 as the default improves compatibility with legacy VMS code.
+
+         --  Note: we do not use Has_Size_Clause in the test below, because we
+         --  want to catch the case of a derived type inheriting a size clause.
+         --  We want to consider this to be an explicit size clause for this
+         --  purpose, since it would be weird not to inherit the size in this
+         --  case.
+
+         if OpenVMS_On_Target
+           and then (Convention (E) = Convention_C
+                      or else
+                     Convention (E) = Convention_CPP)
+           and then No (Get_Attribute_Definition_Clause (E, Attribute_Size))
+           and then Esize (E) = 64
+         then
+            Init_Size (E, 32);
+         end if;
+
+         Set_Elem_Alignment (E);
 
       --  Scalar types: set size and alignment
 
@@ -2335,7 +2379,7 @@ package body Layout is
 
          if Is_Discrete_Type (E) then
 
-            --  If the RM_Size is not set, then here is where we set it.
+            --  If the RM_Size is not set, then here is where we set it
 
             --  Note: an RM_Size of zero looks like not set here, but this
             --  is a rare case, and we can simply reset it without any harm.
@@ -2385,9 +2429,9 @@ package body Layout is
             end if;
          end if;
 
-         Set_Prim_Alignment (E);
+         Set_Elem_Alignment (E);
 
-      --  Non-primitive types
+      --  Non-elementary (composite) types
 
       else
          --  If RM_Size is known, set Esize if not known
@@ -2535,7 +2579,7 @@ package body Layout is
 
                --  For scalar types, increase Object_Size to power of 2,
                --  but not less than a storage unit in any case (i.e.,
-               --  normally this means it will be byte addressable).
+               --  normally this means it will be storage-unit addressable).
 
                if Is_Scalar_Type (E) then
                   if Size <= System_Storage_Unit then
@@ -2696,7 +2740,8 @@ package body Layout is
 
          --  Size is known, alignment is not set
 
-         --  Reset alignment to match size if size is exactly 2, 4, or 8 bytes
+         --  Reset alignment to match size if size is exactly 2, 4, or 8
+         --  storage units.
 
          if Siz = 2 * System_Storage_Unit then
             Align := 2;
@@ -2837,10 +2882,10 @@ package body Layout is
    end Set_Discrete_RM_Size;
 
    ------------------------
-   -- Set_Prim_Alignment --
+   -- Set_Elem_Alignment --
    ------------------------
 
-   procedure Set_Prim_Alignment (E : Entity_Id) is
+   procedure Set_Elem_Alignment (E : Entity_Id) is
    begin
       --  Do not set alignment for packed array types, unless we are doing
       --  front end layout, because otherwise this is always handled in the
@@ -2903,7 +2948,7 @@ package body Layout is
             Init_Alignment (E, A);
          end if;
       end;
-   end Set_Prim_Alignment;
+   end Set_Elem_Alignment;
 
    ----------------------
    -- SO_Ref_From_Expr --
@@ -2923,6 +2968,8 @@ package body Layout is
               Chars => New_Internal_Name ('K'));
 
       Decl : Node_Id;
+
+      Vtype_Primary_View : Entity_Id;
 
       function Check_Node_V_Ref (N : Node_Id) return Traverse_Result;
       --  Function used to check one node for reference to V
@@ -2965,6 +3012,21 @@ package body Layout is
       if Has_V_Ref (Expr) = Abandon then
 
          pragma Assert (Present (Vtype));
+
+         --  Check whether Vtype is a view of a private type and ensure that
+         --  we use the primary view of the type (which is denoted by its
+         --  Etype, whether it's the type's partial or full view entity).
+         --  This is needed to make sure that we use the same (primary) view
+         --  of the type for all V formals, whether the current view of the
+         --  type is the partial or full view, so that types will always
+         --  match on calls from one size function to another.
+
+         if  Has_Private_Declaration (Vtype) then
+            Vtype_Primary_View := Etype (Vtype);
+         else
+            Vtype_Primary_View := Vtype;
+         end if;
+
          Set_Is_Discrim_SO_Function (K);
 
          Decl :=
@@ -2978,8 +3040,8 @@ package body Layout is
                        Defining_Identifier =>
                          Make_Defining_Identifier (Loc, Chars => Vname),
                        Parameter_Type      =>
-                         New_Occurrence_Of (Vtype, Loc))),
-                   Subtype_Mark =>
+                         New_Occurrence_Of (Vtype_Primary_View, Loc))),
+                   Result_Definition =>
                      New_Occurrence_Of (Standard_Unsigned, Loc)),
 
              Declarations => Empty_List,
@@ -3001,7 +3063,8 @@ package body Layout is
                Make_Function_Specification (Loc,
                  Defining_Unit_Name => K,
                    Parameter_Specifications => Empty_List,
-                   Subtype_Mark => New_Occurrence_Of (Standard_Unsigned, Loc)),
+                   Result_Definition =>
+                     New_Occurrence_Of (Standard_Unsigned, Loc)),
 
              Declarations => Empty_List,
 

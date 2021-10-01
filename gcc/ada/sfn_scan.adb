@@ -6,7 +6,7 @@
 --                                                                          --
 --                                 B o d y                                  --
 --                                                                          --
---          Copyright (C) 2000-2002 Free Software Foundation, Inc.          --
+--          Copyright (C) 2000-2005, Free Software Foundation, Inc.         --
 --                                                                          --
 -- GNAT is free software;  you can  redistribute it  and/or modify it under --
 -- terms of the  GNU General Public License as published  by the Free Soft- --
@@ -16,16 +16,16 @@
 -- or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License --
 -- for  more details.  You should have  received  a copy of the GNU General --
 -- Public License  distributed with GNAT;  see file COPYING.  If not, write --
--- to  the Free Software Foundation,  59 Temple Place - Suite 330,  Boston, --
--- MA 02111-1307, USA.                                                      --
+-- to  the  Free Software Foundation,  51  Franklin  Street,  Fifth  Floor, --
+-- Boston, MA 02110-1301, USA.                                              --
 --                                                                          --
--- As a special exception,  if other files  instantiate  generics from this --
--- unit, or you link  this unit with other files  to produce an executable, --
--- this  unit  does not  by itself cause  the resulting  executable  to  be --
--- covered  by the  GNU  General  Public  License.  This exception does not --
--- however invalidate  any other reasons why  the executable file  might be --
--- covered by the  GNU Public License.                                      --
---                                                                          --
+--
+--
+--
+--
+--
+--
+--
 -- GNAT was originally developed  by the GNAT team at  New York University. --
 -- Extensive contributions were provided by Ada Core Technologies Inc.      --
 --                                                                          --
@@ -62,6 +62,11 @@ package body SFN_Scan is
    ----------------------
    -- Local Procedures --
    ----------------------
+
+   function Acquire_Integer return Natural;
+   --  This function skips white space, and then scans and returns
+   --  an unsigned integer. Raises Error if no integer is present
+   --  or if the integer is greater than 999.
 
    function Acquire_String (B : Natural; E : Natural) return String;
    --  This function takes a string scanned out by Scan_String, strips
@@ -127,6 +132,33 @@ package body SFN_Scan is
    procedure Skip_WS;
    --  Skips P past any white space characters (end of line
    --  characters, spaces, comments, horizontal tab characters).
+
+   ---------------------
+   -- Acquire_Integer --
+   ---------------------
+
+   function Acquire_Integer return Natural is
+      N : Natural := 0;
+
+   begin
+      Skip_WS;
+
+      if S (P) not in '0' .. '9' then
+         Error ("missing index parameter");
+      end if;
+
+      while S (P) in '0' .. '9' loop
+         N := N * 10 + Character'Pos (S (P)) - Character'Pos ('0');
+
+         if N > 999 then
+            Error ("index value greater than 999");
+         end if;
+
+         P := P + 1;
+      end loop;
+
+      return N;
+   end Acquire_Integer;
 
    --------------------
    -- Acquire_String --
@@ -310,6 +342,10 @@ package body SFN_Scan is
       procedure Add_Nat (N : Natural);
       --  Add chars of integer to error msg buffer
 
+      -------------
+      -- Add_Nat --
+      -------------
+
       procedure Add_Nat (N : Natural) is
       begin
          if N > 9 then
@@ -415,7 +451,10 @@ package body SFN_Scan is
 
          --  Source_File_Name pragma case
 
-         if Check_Token ("source_file_name") then
+         if Check_Token ("source_file_name")
+              or else
+             Check_Token ("source_file_name_project")
+         then
             Require_Token ("(");
 
             Typ := Check_File_Type;
@@ -443,11 +482,24 @@ package body SFN_Scan is
 
                   declare
                      F : constant String := Acquire_String (B, E);
+                     X : Natural;
 
                   begin
+                     --  Scan Index parameter if present
+
+                     if Check_Token (",") then
+                        if Check_Token ("index") then
+                           Require_Token ("=>");
+                        end if;
+
+                        X := Acquire_Integer;
+                     else
+                        X := 0;
+                     end if;
+
                      Require_Token (")");
                      Require_Token (";");
-                     SFN_Ptr.all (Typ, U, F);
+                     SFN_Ptr.all (Typ, U, F, X);
                   end;
                end;
 

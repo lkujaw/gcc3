@@ -1,12 +1,13 @@
 ------------------------------------------------------------------------------
 --                                                                          --
---               GNU ADA RUN-TIME LIBRARY (GNARL) COMPONENTS                --
+--                GNAT RUN-TIME LIBRARY (GNARL) COMPONENTS                  --
 --                                                                          --
---              SYSTEM.TASKING.PROTECTED_OBJECTS.SINGLE_ENTRY               --
+--     S Y S T E M . T A S K I N G . P R O T E C T E D _ O B J E C T S .    --
+--                          S I N G L E _ E N T R Y                         --
 --                                                                          --
 --                                  S p e c                                 --
 --                                                                          --
---          Copyright (C) 1992-2003 Free Software Foundation, Inc.          --
+--          Copyright (C) 1992-2005 Free Software Foundation, Inc.          --
 --                                                                          --
 -- GNARL is free software; you can  redistribute it  and/or modify it under --
 -- terms of the  GNU General Public License as published  by the Free Soft- --
@@ -16,16 +17,16 @@
 -- or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License --
 -- for  more details.  You should have  received  a copy of the GNU General --
 -- Public License  distributed with GNARL; see file COPYING.  If not, write --
--- to  the Free Software Foundation,  59 Temple Place - Suite 330,  Boston, --
--- MA 02111-1307, USA.                                                      --
+-- to  the  Free Software Foundation,  51  Franklin  Street,  Fifth  Floor, --
+-- Boston, MA 02110-1301, USA.                                              --
 --                                                                          --
--- As a special exception,  if other files  instantiate  generics from this --
--- unit, or you link  this unit with other files  to produce an executable, --
--- this  unit  does not  by itself cause  the resulting  executable  to  be --
--- covered  by the  GNU  General  Public  License.  This exception does not --
--- however invalidate  any other reasons why  the executable file  might be --
--- covered by the  GNU Public License.                                      --
---                                                                          --
+--
+--
+--
+--
+--
+--
+--
 -- GNARL was developed by the GNARL team at Florida State University.       --
 -- Extensive contributions were provided by Ada Core Technologies, Inc.     --
 --                                                                          --
@@ -222,8 +223,9 @@ package System.Tasking.Protected_Objects.Single_Entry is
    --  barrier. This is used when the state of a protected object may have
    --  changed, in particular after the execution of the statement sequence of
    --  a protected procedure.
-   --  This must be called with abortion deferred and with the corresponding
-   --  object locked.
+   --
+   --  This must be called with abort deferred and with the corresponding
+   --  object locked. Object is unlocked on return.
 
    procedure Protected_Single_Entry_Call
      (Object              : Protection_Entry_Access;
@@ -269,19 +271,40 @@ package System.Tasking.Protected_Objects.Single_Entry is
    --  Return the number of entry calls on Object (0 or 1).
 
    function Protected_Single_Entry_Caller (Object : Protection_Entry)
-     return Task_ID;
+     return Task_Id;
    --  Return value of E'Caller, where E is the protected entry currently
    --  being handled. This will only work if called from within an
    --  entry body, as required by the LRM (C.7.1(14)).
 
 private
    type Protection_Entry is record
-      L                 : aliased Task_Primitives.Lock;
-      Compiler_Info     : System.Address;
-      Call_In_Progress  : Entry_Call_Link;
-      Ceiling           : System.Any_Priority;
-      Entry_Body        : Entry_Body_Access;
-      Entry_Queue       : Entry_Call_Link;
+      L : aliased Task_Primitives.Lock;
+      --  The underlying lock associated with a Protection_Entries. Note that
+      --  you should never (un)lock Object.L directly, but instead use
+      --  Lock_Entry/Unlock_Entry.
+
+      Compiler_Info : System.Address;
+      --  Pointer to compiler-generated record representing protected object
+
+      Call_In_Progress : Entry_Call_Link;
+      --  Pointer to the entry call being executed (if any)
+
+      Ceiling : System.Any_Priority;
+      --  Ceiling priority associated to the protected object
+
+      Owner : Task_Id;
+      --  This field contains the protected object's owner. Null_Task
+      --  indicates that the protected object is not currently being used.
+      --  This information is used for detecting the type of potentially
+      --  blocking operations described in the ARM 9.5.1, par. 15 (external
+      --  calls on a protected subprogram with the same target object as that
+      --  of the protected action).
+
+      Entry_Body : Entry_Body_Access;
+      --  Pointer to executable code for the entry body of the protected type
+
+      Entry_Queue : Entry_Call_Link;
+      --  Place to store the waiting entry call (if any)
    end record;
 
 end System.Tasking.Protected_Objects.Single_Entry;

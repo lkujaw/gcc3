@@ -6,7 +6,7 @@
 --                                                                          --
 --                                 B o d y                                  --
 --                                                                          --
---          Copyright (C) 1992-2003 Free Software Foundation, Inc.          --
+--          Copyright (C) 1992-2006, Free Software Foundation, Inc.         --
 --                                                                          --
 -- GNAT is free software;  you can  redistribute it  and/or modify it under --
 -- terms of the  GNU General Public License as published  by the Free Soft- --
@@ -16,16 +16,16 @@
 -- or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License --
 -- for  more details.  You should have  received  a copy of the GNU General --
 -- Public License  distributed with GNAT;  see file COPYING.  If not, write --
--- to  the Free Software Foundation,  59 Temple Place - Suite 330,  Boston, --
--- MA 02111-1307, USA.                                                      --
+-- to  the  Free Software Foundation,  51  Franklin  Street,  Fifth  Floor, --
+-- Boston, MA 02110-1301, USA.                                              --
 --                                                                          --
--- As a special exception,  if other files  instantiate  generics from this --
--- unit, or you link  this unit with other files  to produce an executable, --
--- this  unit  does not  by itself cause  the resulting  executable  to  be --
--- covered  by the  GNU  General  Public  License.  This exception does not --
--- however invalidate  any other reasons why  the executable file  might be --
--- covered by the  GNU Public License.                                      --
---                                                                          --
+--
+--
+--
+--
+--
+--
+--
 -- GNAT was originally developed  by the GNAT team at  New York University. --
 -- Extensive contributions were provided by Ada Core Technologies Inc.      --
 --                                                                          --
@@ -50,7 +50,7 @@ package body Uintp is
    --  value, since the issue is host representation of integer values.
 
    Uint_Int_Last : Uint;
-   --  Uint value containing Int'Last value set by Initialize.
+   --  Uint value containing Int'Last value set by Initialize
 
    UI_Power_2 : array (Int range 0 .. 64) of Uint;
    --  This table is used to memoize exponentiations by powers of 2. The Nth
@@ -134,6 +134,7 @@ package body Uintp is
    --  digit of Vec contains the sign, all other digits are always non-
    --  negative. Note that the input may be directly represented, and in
    --  this case Vec will contain the corresponding one or two digit value.
+   --  The low bound of Vec is always 1.
 
    function Least_Sig_Digit (Arg : Uint) return Int;
    pragma Inline (Least_Sig_Digit);
@@ -422,6 +423,8 @@ package body Uintp is
    procedure Init_Operand (UI : Uint; Vec : out UI_Vector) is
       Loc : Int;
 
+      pragma Assert (Vec'First = Int'(1));
+
    begin
       if Direct (UI) then
          Vec (1) := Direct_Val (UI);
@@ -590,14 +593,27 @@ package body Uintp is
       Num  : Nat;
 
    begin
-      if UI_Is_In_Int_Range (Input) then
+      --  Largest negative number has to be handled specially, since it is in
+      --  Int_Range, but we cannot take the absolute value.
+
+      if Input = Uint_Int_First then
+         return Int'Size;
+
+      --  For any other number in Int_Range, get absolute value of number
+
+      elsif UI_Is_In_Int_Range (Input) then
          Num := abs (UI_To_Int (Input));
          Bits := 0;
+
+      --  If not in Int_Range then initialize bit count for all low order
+      --  words, and set number to high order digit.
 
       else
          Bits := Base_Bits * (Uints.Table (Input).Length - 1);
          Num  := abs (Udigits.Table (Uints.Table (Input).Loc));
       end if;
+
+      --  Increase bit count for remaining value in Num
 
       while Types.">" (Num, 0) loop
          Num := Num / 2;
@@ -727,9 +743,9 @@ package body Uintp is
    --  Mathematically: assume base congruent to 1 and compute an equivelent
    --  integer to Left.
 
-   --  If Sign = -1 return the alternating sum of the "digits".
+   --  If Sign = -1 return the alternating sum of the "digits"
 
-   --     D1 - D2 + D3 - D4 + D5 . . .
+   --     D1 - D2 + D3 - D4 + D5 ...
 
    --  (where D1 is Least Significant Digit)
 
@@ -761,7 +777,7 @@ package body Uintp is
 
                if Tmp_Int >= Base then
 
-                  --  Sign must be 1.
+                  --  Sign must be 1
 
                   Tmp_Int := (Tmp_Int / Base) + 1;
 
@@ -1328,7 +1344,7 @@ package body Uintp is
                   Carry        := Tmp_Int / Base;
                end loop;
 
-               --  Multiply Divisor by d.
+               --  Multiply Divisor by d
 
                Carry := 0;
                for J in reverse Divisor'Range loop
@@ -1338,14 +1354,14 @@ package body Uintp is
                end loop;
             end if;
 
-            --  Main loop of long division algorithm.
+            --  Main loop of long division algorithm
 
             Divisor_Dig1 := Divisor (1);
             Divisor_Dig2 := Divisor (2);
 
             for J in Quotient'Range loop
 
-               --  [ CALCULATE Q (hat) ] (step D3 in the algorithm).
+               --  [ CALCULATE Q (hat) ] (step D3 in the algorithm)
 
                Tmp_Int := Dividend (J) * Base + Dividend (J + 1);
 
@@ -1474,7 +1490,7 @@ package body Uintp is
       if Right = Uint_0 then
          return Uint_1;
 
-      --  0 to any positive power is 0.
+      --  0 to any positive power is 0
 
       elsif Left = Uint_0 then
          return Uint_0;
@@ -1558,6 +1574,15 @@ package body Uintp is
          return Result;
       end;
    end UI_Expon;
+
+   ----------------
+   -- UI_From_CC --
+   ----------------
+
+   function UI_From_CC (Input : Char_Code) return Uint is
+   begin
+      return UI_From_Dint (Dint (Input));
+   end UI_From_CC;
 
    ------------------
    -- UI_From_Dint --
@@ -1655,7 +1680,7 @@ package body Uintp is
    -- UI_GCD --
    ------------
 
-   --  Lehmer's algorithm for GCD.
+   --  Lehmer's algorithm for GCD
 
    --  The idea is to avoid using multiple precision arithmetic wherever
    --  possible, substituting Int arithmetic instead. See Knuth volume II,
@@ -1703,7 +1728,7 @@ package body Uintp is
 
          loop
             --  We might overflow and get division by zero here. This just
-            --  means we can not take the single precision step
+            --  means we cannot take the single precision step
 
             Den1 := V_Hat + C;
             Den2 := V_Hat + D;
@@ -1736,14 +1761,14 @@ package body Uintp is
 
          if B = Int_0 then
 
-            --  No single precision steps take a regular Euclid step.
+            --  No single precision steps take a regular Euclid step
 
             Tmp_UI := U rem V;
             U := V;
             V := Tmp_UI;
 
          else
-            --  Use prior single precision steps to compute this Euclid step.
+            --  Use prior single precision steps to compute this Euclid step
 
             --  Fixed bug 1415-008 spends 80% of its time working on this
             --  step. Perhaps we need a special case Int / Uint dot
@@ -2248,7 +2273,7 @@ package body Uintp is
                   --  and replace the rem with simpler operations where
                   --  possible.
 
-                  --  Least_Sig_Digit might return Negative numbers.
+                  --  Least_Sig_Digit might return Negative numbers
 
                   when 2 =>
                      return UI_From_Int (
@@ -2348,7 +2373,7 @@ package body Uintp is
 
             end if;
 
-            --  Else fall through to general case.
+            --  Else fall through to general case
 
             --  ???This needs to be improved. We have the Rem when we do the
             --  Div. Div throws it away!
@@ -2383,6 +2408,39 @@ package body Uintp is
          return UI_Add (Left, -Right);
       end if;
    end UI_Sub;
+
+   --------------
+   -- UI_To_CC --
+   --------------
+
+   function UI_To_CC (Input : Uint) return Char_Code is
+   begin
+      if Direct (Input) then
+         return Char_Code (Direct_Val (Input));
+
+      --  Case of input is more than one digit
+
+      else
+         declare
+            In_Length : constant Int := N_Digits (Input);
+            In_Vec    : UI_Vector (1 .. In_Length);
+            Ret_CC    : Char_Code;
+
+         begin
+            Init_Operand (Input, In_Vec);
+
+            --  We assume value is positive
+
+            Ret_CC := 0;
+            for Idx in In_Vec'Range loop
+               Ret_CC := Ret_CC * Char_Code (Base) +
+                                  Char_Code (abs In_Vec (Idx));
+            end loop;
+
+            return Ret_CC;
+         end;
+      end if;
+   end UI_To_CC;
 
    ----------------
    -- UI_To_Int --

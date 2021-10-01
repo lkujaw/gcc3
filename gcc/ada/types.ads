@@ -6,7 +6,7 @@
 --                                                                          --
 --                                 S p e c                                  --
 --                                                                          --
---          Copyright (C) 1992-2003 Free Software Foundation, Inc.          --
+--          Copyright (C) 1992-2006, Free Software Foundation, Inc.         --
 --                                                                          --
 -- GNAT is free software;  you can  redistribute it  and/or modify it under --
 -- terms of the  GNU General Public License as published  by the Free Soft- --
@@ -16,25 +16,20 @@
 -- or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License --
 -- for  more details.  You should have  received  a copy of the GNU General --
 -- Public License  distributed with GNAT;  see file COPYING.  If not, write --
--- to  the Free Software Foundation,  59 Temple Place - Suite 330,  Boston, --
--- MA 02111-1307, USA.                                                      --
+-- to  the  Free Software Foundation,  51  Franklin  Street,  Fifth  Floor, --
+-- Boston, MA 02110-1301, USA.                                              --
 --                                                                          --
--- As a special exception,  if other files  instantiate  generics from this --
--- unit, or you link  this unit with other files  to produce an executable, --
--- this  unit  does not  by itself cause  the resulting  executable  to  be --
--- covered  by the  GNU  General  Public  License.  This exception does not --
--- however invalidate  any other reasons why  the executable file  might be --
--- covered by the  GNU Public License.                                      --
---                                                                          --
+--
+--
+--
+--
+--
+--
+--
 -- GNAT was originally developed  by the GNAT team at  New York University. --
 -- Extensive contributions were provided by Ada Core Technologies Inc.      --
 --                                                                          --
 ------------------------------------------------------------------------------
-
-with Unchecked_Deallocation;
-
-package Types is
-pragma Preelaborate (Types);
 
 --  This package contains host independent type definitions which are used
 --  in more than one unit in the compiler. They are gathered here for easy
@@ -45,12 +40,17 @@ pragma Preelaborate (Types);
 --  dependencies would have to be dealt with.
 
 --  WARNING: There is a C version of this package. Any changes to this
---  source file must be properly reflected in the C header file a-types.h
+--  source file must be properly reflected in the C header file types.h
 
 --  Note: the declarations in this package reflect an expectation that the
 --  host machine has an efficient integer base type with a range at least
 --  32 bits 2s-complement. If there are any machines for which this is not
 --  a correct assumption, a significant number of changes will be required!
+
+with Unchecked_Deallocation;
+
+package Types is
+   pragma Preelaborate;
 
    -------------------------------
    -- General Use Integer Types --
@@ -106,6 +106,11 @@ pragma Preelaborate (Types);
 
    subtype Line_Terminator is Character range ASCII.LF .. ASCII.CR;
    --  Line terminator characters (LF, VT, FF, CR)
+   --
+   --  This definition is dubious now that we have two more wide character
+   --  sequences that constitute a line terminator. Every reference to
+   --  this subtype needs checking to make sure the wide character case
+   --  is handled appropriately. ???
 
    subtype Upper_Half_Character is
      Character range Character'Val (16#80#) .. Character'Val (16#FF#);
@@ -168,8 +173,9 @@ pragma Preelaborate (Types);
 
    type Column_Number is range 0 .. 32767;
    for Column_Number'Size use 16;
-   --  Column number (assume that 2**15 is large enough, see declaration of
-   --  Hostparm.Max_Line_Length, and also processing for -gnatyM in Stylesw)
+   --  Column number (assume that 2**15 - 1 is large enough). The range for
+   --  this type is used to compute Hostparm.Max_Line_Length. See also the
+   --  processing for -gnatyM in Stylesw).
 
    No_Column_Number : constant Column_Number := 0;
    --  Special value used to indicate no column number
@@ -201,7 +207,7 @@ pragma Preelaborate (Types);
 
    No_Location : constant Source_Ptr := -1;
    --  Value used to indicate no source position set in a node. A test for
-   --  a Source_Ptr value being >= No_Location is the apporoved way to test
+   --  a Source_Ptr value being > No_Location is the approved way to test
    --  for a standard value that does not include No_Location or any of the
    --  following special definitions.
 
@@ -234,7 +240,6 @@ pragma Preelaborate (Types);
    --    Strings (type String_Id)
    --    Universal integers (type Uint)
    --    Universal reals (type Ureal)
-   --    Character codes (type Char_Code stored with a bias)
 
    --  In most contexts, the strongly typed interface determines which of
    --  these types is present. However, there are some situations (involving
@@ -308,14 +313,14 @@ pragma Preelaborate (Types);
    --  is in practice infinite and there is no need to check the range.
 
    Ureal_Low_Bound : constant := 500_000_000;
-   --  Low bound for Ureal values.
+   --  Low bound for Ureal values
 
    Ureal_High_Bound : constant := 599_999_999;
    --  Maximum number of Ureal values stored is 100_000_000 which is in
    --  practice infinite so that no check is required.
 
    Uint_Low_Bound : constant := 600_000_000;
-   --  Low bound for Uint values.
+   --  Low bound for Uint values
 
    Uint_Table_Start : constant := 2_000_000_000;
    --  Location where table entries for universal integers start (see
@@ -324,10 +329,6 @@ pragma Preelaborate (Types);
    Uint_High_Bound : constant := 2_099_999_999;
    --  The range of Uint values is very large, since a substantial part
    --  of this range is used to store direct values, see Uintp for details.
-
-   Char_Code_Bias : constant := 2_100_000_000;
-   --  A bias value added to character code values stored in the tree which
-   --  ensures that they have different values from any of the above types.
 
    --  The following subtype definitions are used to provide convenient names
    --  for membership tests on Int values to see what data type range they
@@ -356,9 +357,6 @@ pragma Preelaborate (Types);
 
    subtype Ureal_Range     is Union_Id
      range Ureal_Low_Bound    .. Ureal_High_Bound;
-
-   subtype Char_Code_Range is Union_Id
-     range Char_Code_Bias    .. Char_Code_Bias + 2**16 - 1;
 
    -----------------------------
    -- Types for Namet Package --
@@ -483,7 +481,7 @@ pragma Preelaborate (Types);
    --  are not valid.
 
    First_Elist_Id : constant Elist_Id := No_Elist + 1;
-   --  Subscript of first allocated Elist header.
+   --  Subscript of first allocated Elist header
 
    --  Element Id values are used to identify individual elements of an
    --  element list (see package Elists for further details).
@@ -525,16 +523,19 @@ pragma Preelaborate (Types);
    --  The type Char is used for character data internally in the compiler,
    --  but character codes in the source are represented by the Char_Code
    --  type. Each character literal in the source is interpreted as being one
-   --  of the 2**16 possible Wide_Character codes, and a unique integer value
-   --  is assigned, corresponding to the POS value in the Wide_Character type.
-   --  String literals are similarly interpreted as a sequence of such codes.
+   --  of the 16#8000_0000 possible Wide_Wide_Character codes, and a unique
+   --  Integer Value is assigned, corresponding to the UTF_32 value, which
+   --  also correspondds to the POS value in the Wide_Wide_Character type,
+   --  and also corresponds to the POS value in the Wide_Character and
+   --  Character types for values that are in appropriate range. String
+   --  literals are similarly interpreted as a sequence of such codes.
 
-   --  Note: when character code values are stored in the tree, they are stored
-   --  by adding a bias value (Char_Code_Bias) that results in values that can
-   --  be distinguished from other types of values stored in the tree.
+   type Char_Code_Base is mod 2 ** 32;
+   for Char_Code_Base'Size use 32;
 
-   type Char_Code is mod 2 ** 16;
-   for Char_Code'Size use 16;
+   subtype Char_Code is Char_Code_Base range 0 .. 16#7FFF_FFFF#;
+   for Char_Code'Value_Size use 32;
+   for Char_Code'Object_Size use 32;
 
    function Get_Char_Code (C : Character) return Char_Code;
    pragma Inline (Get_Char_Code);
@@ -548,11 +549,21 @@ pragma Preelaborate (Types);
    --  Determines if the given character code is in range of type Character,
    --  and if so, returns True. If not, returns False.
 
+   function In_Wide_Character_Range (C : Char_Code) return Boolean;
+   pragma Inline (In_Wide_Character_Range);
+   --  Determines if the given character code is in range of the type
+   --  Wide_Character, and if so, returns True. If not, returns False.
+
    function Get_Character (C : Char_Code) return Character;
    pragma Inline (Get_Character);
-   --  For a character C that is in character range (see above function), this
+   --  For a character C that is in Character range (see above function), this
    --  function returns the corresponding Character value. It is an error to
-   --  call Get_Character if C is not in character range
+   --  call Get_Character if C is not in C haracter range
+
+   function Get_Wide_Character (C : Char_Code) return Wide_Character;
+   --  For a character C that is in Wide_Character range (see above function),
+   --  this function returns the corresponding Wide_Character value. It is an
+   --  error to call Get_Wide_Character if C is not in Wide_Character range.
 
    ---------------------------------------
    -- Types used for Library Management --
@@ -673,9 +684,10 @@ pragma Preelaborate (Types);
    -- Types used for Pragma Suppress Management --
    -----------------------------------------------
 
-   type Check_Id is (
-      Access_Check,
+   type Check_Id is
+     (Access_Check,
       Accessibility_Check,
+      Alignment_Check,
       Discriminant_Check,
       Division_Check,
       Elaboration_Check,
@@ -687,12 +699,19 @@ pragma Preelaborate (Types);
       Tag_Check,
       All_Checks);
 
-   --  The following record contains an entry for each recognized check name
+   --  The following array contains an entry for each recognized check name
    --  for pragma Suppress. It is used to represent current settings of scope
    --  based suppress actions from pragma Suppress or command line settings.
 
-   type Suppress_Array is
-     array (Check_Id range Access_Check .. Tag_Check) of Boolean;
+   --  Note: when Suppress_Array (All_Checks) is True, then generally all other
+   --  specific check entries are set True, except for the Elaboration_Check
+   --  entry which is set only if an explicit Suppress for this check is given.
+   --  The reason for this non-uniformity is that we do not want All_Checks to
+   --  suppress elaboration checking when using the static elaboration model.
+   --  We recognize only an explicit suppress of Elaboration_Check as a signal
+   --  that the static elaboration checking should skip a compile time check.
+
+   type Suppress_Array is array (Check_Id) of Boolean;
    pragma Pack (Suppress_Array);
 
    --  To add a new check type to GNAT, the following steps are required:
@@ -708,7 +727,7 @@ pragma Preelaborate (Types);
    -----------------------------------
 
    --  This section contains declarations of exceptions that are used
-   --  throughout the compiler.
+   --  throughout the compiler or in other GNAT tools.
 
    Unrecoverable_Error : exception;
    --  This exception is raised to immediately terminate the compilation
@@ -716,6 +735,14 @@ pragma Preelaborate (Types);
    --  bad enough that it doesn't seem worth continuing (e.g. max errors
    --  reached, or a required file is not found). Also raised when the
    --  compiler finds itself in trouble after an error (see Comperr).
+
+   Terminate_Program : exception;
+   --  This exception is raised to immediately terminate the tool being
+   --  executed. Each tool where this exception may be raised must have
+   --  a single exception handler that contains only a null statement and
+   --  that is the last statement of the program. If needed, procedure
+   --  Set_Exit_Status is called with the appropriate exit status before
+   --  raising Terminate_Program.
 
    ---------------------------------
    -- Parameter Mechanism Control --
@@ -757,40 +784,45 @@ pragma Preelaborate (Types);
    --       the definition of last_reason_code.
 
    --    3. Add a new routine in Ada.Exceptions with the appropriate call
-   --       and static string constant
+   --       and static string constant. Note that there is more than one
+   --       version of a-except.adb which must be modified.
 
-   type RT_Exception_Code is (
-     CE_Access_Check_Failed,
-     CE_Access_Parameter_Is_Null,
-     CE_Discriminant_Check_Failed,
-     CE_Divide_By_Zero,
-     CE_Explicit_Raise,
-     CE_Index_Check_Failed,
-     CE_Invalid_Data,
-     CE_Length_Check_Failed,
-     CE_Overflow_Check_Failed,
-     CE_Partition_Check_Failed,
-     CE_Range_Check_Failed,
-     CE_Tag_Check_Failed,
+   type RT_Exception_Code is
+     (CE_Access_Check_Failed,            -- 00
+      CE_Access_Parameter_Is_Null,       -- 01
+      CE_Discriminant_Check_Failed,      -- 02
+      CE_Divide_By_Zero,                 -- 03
+      CE_Explicit_Raise,                 -- 04
+      CE_Index_Check_Failed,             -- 05
+      CE_Invalid_Data,                   -- 06
+      CE_Length_Check_Failed,            -- 07
+      CE_Null_Exception_Id,              -- 08
+      CE_Null_Not_Allowed,               -- 09
+      CE_Overflow_Check_Failed,          -- 10
+      CE_Partition_Check_Failed,         -- 11
+      CE_Range_Check_Failed,             -- 12
+      CE_Tag_Check_Failed,               -- 13
 
-     PE_Access_Before_Elaboration,
-     PE_Accessibility_Check_Failed,
-     PE_All_Guards_Closed,
-     PE_Duplicated_Entry_Address,
-     PE_Explicit_Raise,
-     PE_Finalize_Raised_Exception,
-     PE_Misaligned_Address_Value,
-     PE_Missing_Return,
-     PE_Overlaid_Controlled_Object,
-     PE_Potentially_Blocking_Operation,
-     PE_Stubbed_Subprogram_Called,
-     PE_Unchecked_Union_Restriction,
+      PE_Access_Before_Elaboration,      -- 14
+      PE_Accessibility_Check_Failed,     -- 15
+      PE_All_Guards_Closed,              -- 16
+      PE_Duplicated_Entry_Address,       -- 17
+      PE_Explicit_Raise,                 -- 18
+      PE_Finalize_Raised_Exception,      -- 19
+      PE_Implicit_Return,                -- 20
+      PE_Misaligned_Address_Value,       -- 21
+      PE_Missing_Return,                 -- 22
+      PE_Overlaid_Controlled_Object,     -- 23
+      PE_Potentially_Blocking_Operation, -- 24
+      PE_Stubbed_Subprogram_Called,      -- 25
+      PE_Unchecked_Union_Restriction,    -- 26
+      PE_Illegal_RACW_E_4_18,            -- 27
 
-     SE_Empty_Storage_Pool,
-     SE_Explicit_Raise,
-     SE_Infinite_Recursion,
-     SE_Object_Too_Large,
-     SE_Restriction_Violation);
+      SE_Empty_Storage_Pool,             -- 28
+      SE_Explicit_Raise,                 -- 29
+      SE_Infinite_Recursion,             -- 30
+      SE_Object_Too_Large,               -- 31
+      SE_Restriction_Violation);         -- 32
 
    subtype RT_CE_Exceptions is RT_Exception_Code range
      CE_Access_Check_Failed ..
@@ -798,7 +830,7 @@ pragma Preelaborate (Types);
 
    subtype RT_PE_Exceptions is RT_Exception_Code range
      PE_Access_Before_Elaboration ..
-     PE_Unchecked_Union_Restriction;
+     PE_Illegal_RACW_E_4_18;
 
    subtype RT_SE_Exceptions is RT_Exception_Code range
      SE_Empty_Storage_Pool ..

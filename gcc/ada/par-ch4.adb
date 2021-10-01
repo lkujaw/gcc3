@@ -6,7 +6,7 @@
 --                                                                          --
 --                                 B o d y                                  --
 --                                                                          --
---          Copyright (C) 1992-2003 Free Software Foundation, Inc.          --
+--          Copyright (C) 1992-2006, Free Software Foundation, Inc.         --
 --                                                                          --
 -- GNAT is free software;  you can  redistribute it  and/or modify it under --
 -- terms of the  GNU General Public License as published  by the Free Soft- --
@@ -16,8 +16,8 @@
 -- or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License --
 -- for  more details.  You should have  received  a copy of the GNU General --
 -- Public License  distributed with GNAT;  see file COPYING.  If not, write --
--- to  the Free Software Foundation,  59 Temple Place - Suite 330,  Boston, --
--- MA 02111-1307, USA.                                                      --
+-- to  the  Free Software Foundation,  51  Franklin  Street,  Fifth  Floor, --
+-- Boston, MA 02110-1301, USA.                                              --
 --                                                                          --
 -- GNAT was originally developed  by the GNAT team at  New York University. --
 -- Extensive contributions were provided by Ada Core Technologies Inc.      --
@@ -27,8 +27,6 @@
 pragma Style_Checks (All_Checks);
 --  Turn off subprogram body ordering check. Subprograms are in order
 --  by RM section rather than alphabetical
-
-with Hostparm; use Hostparm;
 
 separate (Par)
 package body Ch4 is
@@ -404,8 +402,25 @@ package body Ch4 is
                   if Apostrophe_Should_Be_Semicolon then
                      Expr_Form := EF_Name;
                      return Name_Node;
+
+                  --  Here for a bad attribute name
+
                   else
                      Signal_Bad_Attribute;
+                     Scan; -- past bad identifier
+
+                     if Token = Tok_Left_Paren then
+                        Scan; -- past left paren
+
+                        loop
+                           Discard_Junk_Node (P_Expression);
+                           exit when not Comma_Present;
+                        end loop;
+
+                        T_Right_Paren;
+                     end if;
+
+                     return Error;
                   end if;
                end if;
 
@@ -426,6 +441,9 @@ package body Ch4 is
 
                elsif Token = Tok_Access then
                   Attr_Name := Name_Access;
+
+               elsif Token = Tok_Mod and then Ada_Version = Ada_05 then
+                  Attr_Name := Name_Mod;
 
                elsif Apostrophe_Should_Be_Semicolon then
                   Expr_Form := EF_Name;
@@ -489,7 +507,7 @@ package body Ch4 is
 
          --   (discrete_range)
 
-         --      This is a slice. This case is handled in LP_State_Init.
+         --      This is a slice. This case is handled in LP_State_Init
 
          --   (expression, expression, ..)
 
@@ -1128,7 +1146,7 @@ package body Ch4 is
    --  Error recovery: can raise Error_Resync
 
    --  Note: POSITIONAL_ARRAY_AGGREGATE rule has been extended to give support
-   --        to Ada0Y limited aggregates (AI-287)
+   --        to Ada 2005 limited aggregates (AI-287)
 
    function P_Aggregate_Or_Paren_Expr return Node_Id is
       Aggregate_Node : Node_Id;
@@ -1167,14 +1185,14 @@ package body Ch4 is
             end if;
          end if;
 
-         --  Ada0Y (AI-287): The box notation is allowed only with named
+         --  Ada 2005 (AI-287): The box notation is allowed only with named
          --  notation because positional notation might be error prone. For
          --  example, in "(X, <>, Y, <>)", there is no type associated with
          --  the boxes, so you might not be leaving out the components you
          --  thought you were leaving out.
 
-         if Extensions_Allowed and then Token = Tok_Box then
-            Error_Msg_SC ("(Ada 0Y) box notation only allowed with "
+         if Ada_Version >= Ada_05 and then Token = Tok_Box then
+            Error_Msg_SC ("(Ada 2005) box notation only allowed with "
                           & "named notation");
             Scan; --  past BOX
             Aggregate_Node := New_Node (N_Aggregate, Lparen_Sloc);
@@ -1194,7 +1212,7 @@ package body Ch4 is
                return Error;
             end if;
 
-            if Ada_83 then
+            if Ada_Version = Ada_83 then
                Error_Msg_SC ("(Ada 83) extension aggregate not allowed");
             end if;
 
@@ -1391,7 +1409,7 @@ package body Ch4 is
    --  Error recovery: can raise Error_Resync
 
    --  Note: RECORD_COMPONENT_ASSOCIATION and ARRAY_COMPONENT_ASSOCIATION
-   --        rules have been extended to give support to Ada0Y limited
+   --        rules have been extended to give support to Ada 2005 limited
    --        aggregates (AI-287)
 
    function P_Record_Or_Array_Component_Association return Node_Id is
@@ -1405,21 +1423,13 @@ package body Ch4 is
 
       if Token = Tok_Box then
 
-         --  Ada0Y (AI-287): The box notation is used to indicate the default
-         --  initialization of limited aggregate components
+         --  Ada 2005(AI-287): The box notation is used to indicate the
+         --  default initialization of limited aggregate components
 
-         if not Extensions_Allowed then
+         if Ada_Version < Ada_05 then
             Error_Msg_SP
-              ("(Ada 0Y) limited aggregates are an Ada0X extension");
-
-            if OpenVMS then
-               Error_Msg_SP
-                 ("\unit must be compiled with " &
-                  "'/'E'X'T'E'N'S'I'O'N'S'_'A'L'L'O'W'E'D qualifier");
-            else
-               Error_Msg_SP
-                 ("\unit must be compiled with -gnatX switch");
-            end if;
+              ("limited aggregate is an Ada 2005 extension");
+            Error_Msg_SP ("\unit must be compiled with -gnat05 switch");
          end if;
 
          Set_Box_Present (Assoc_Node);
@@ -1552,6 +1562,8 @@ package body Ch4 is
    --  checks that the expression scan did not stop on a right paren. It is
    --  called in all contexts where a right parenthesis cannot legitimately
    --  follow an expression.
+
+   --  Error recovery: can raise Error_Resync
 
    function P_Expression_No_Right_Paren return Node_Id is
    begin
@@ -2318,7 +2330,6 @@ package body Ch4 is
 
    function  P_Qualified_Expression (Subtype_Mark : Node_Id) return Node_Id is
       Qual_Node : Node_Id;
-
    begin
       Qual_Node := New_Node (N_Qualified_Expression, Prev_Token_Ptr);
       Set_Subtype_Mark (Qual_Node, Check_Subtype_Mark (Subtype_Mark));
@@ -2331,26 +2342,34 @@ package body Ch4 is
    --------------------
 
    --  ALLOCATOR ::=
-   --   new SUBTYPE_INDICATION | new QUALIFIED_EXPRESSION
+   --    new [NULL_EXCLUSION] SUBTYPE_INDICATION | new QUALIFIED_EXPRESSION
 
    --  The caller has checked that the initial token is NEW
 
    --  Error recovery: can raise Error_Resync
 
    function P_Allocator return Node_Id is
-      Alloc_Node  : Node_Id;
-      Type_Node   : Node_Id;
+      Alloc_Node             : Node_Id;
+      Type_Node              : Node_Id;
+      Null_Exclusion_Present : Boolean;
 
    begin
       Alloc_Node := New_Node (N_Allocator, Token_Ptr);
       T_New;
+
+      --  Scan Null_Exclusion if present (Ada 2005 (AI-231))
+
+      Null_Exclusion_Present := P_Null_Exclusion;
+      Set_Null_Exclusion_Present (Alloc_Node, Null_Exclusion_Present);
       Type_Node := P_Subtype_Mark_Resync;
 
       if Token = Tok_Apostrophe then
          Scan; -- past apostrophe
          Set_Expression (Alloc_Node, P_Qualified_Expression (Type_Node));
       else
-         Set_Expression (Alloc_Node, P_Subtype_Indication (Type_Node));
+         Set_Expression
+           (Alloc_Node,
+            P_Subtype_Indication (Type_Node, Null_Exclusion_Present));
       end if;
 
       return Alloc_Node;

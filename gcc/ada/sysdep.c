@@ -6,7 +6,7 @@
  *                                                                          *
  *                          C Implementation File                           *
  *                                                                          *
- *          Copyright (C) 1992-2003 Free Software Foundation, Inc.          *
+ *         Copyright (C) 1992-2006, Free Software Foundation, Inc.          *
  *                                                                          *
  * GNAT is free software;  you can  redistribute it  and/or modify it under *
  * terms of the  GNU General Public License as published  by the Free Soft- *
@@ -16,15 +16,15 @@
  * or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License *
  * for  more details.  You should have  received  a copy of the GNU General *
  * Public License  distributed with GNAT;  see file COPYING.  If not, write *
- * to  the Free Software Foundation,  59 Temple Place - Suite 330,  Boston, *
- * MA 02111-1307, USA.                                                      *
+ * to  the  Free Software Foundation,  51  Franklin  Street,  Fifth  Floor, *
+ * Boston, MA 02110-1301, USA.                                              *
  *                                                                          *
- * As a  special  exception,  if you  link  this file  with other  files to *
- * produce an executable,  this file does not by itself cause the resulting *
- * executable to be covered by the GNU General Public License. This except- *
- * ion does not  however invalidate  any other reasons  why the  executable *
- * file might be covered by the  GNU Public License.                        *
- *                                                                          *
+--
+--
+--
+--
+--
+--
  * GNAT was originally developed  by the GNAT team at  New York University. *
  * Extensive contributions were provided by Ada Core Technologies Inc.      *
  *                                                                          *
@@ -44,13 +44,20 @@
 #include "tsystem.h"
 #include <fcntl.h>
 #include <sys/stat.h>
-#include <time.h>
 #ifdef VMS
 #include <unixio.h>
 #endif
 #else
 #include "config.h"
 #include "system.h"
+#endif
+
+#include <time.h>
+
+#if defined (sun) && defined (__SVR4) && !defined (__vxworks)
+/* The declaration is present in <time.h> but conditionalized
+   on a couple of macros we don't define.  */
+extern struct tm *localtime_r(const time_t *, struct tm *);
 #endif
 
 #include "adaint.h"
@@ -212,6 +219,8 @@ static void winflush_95 (void);
 
 static void winflush_nt (void);
 
+int __gnat_is_windows_xp (void);
+
 /* winflusfunction is set first to the winflushinit function which will check
    the OS version 95/98 or NT/2000 */
 
@@ -234,15 +243,40 @@ winflush_init (void)
 
 }
 
-static void winflush_95 (void)
+static void
+winflush_95 (void)
 {
   FlushConsoleInputBuffer (GetStdHandle (STD_INPUT_HANDLE));
 }
 
-static void winflush_nt (void)
+static void
+winflush_nt (void)
 {
   /* Does nothing as there is no problem under NT.  */
 }
+
+int
+__gnat_is_windows_xp (void)
+{
+  static int is_win_xp=0, is_win_xp_checked=0;
+
+  if (!is_win_xp_checked)
+    {
+      OSVERSIONINFO version;
+
+      is_win_xp_checked = 1;
+
+      memset (&version, 0, sizeof (version));
+      version.dwOSVersionInfoSize = sizeof (version);
+
+      is_win_xp = GetVersionEx (&version)
+        && version.dwPlatformId == VER_PLATFORM_WIN32_NT
+        && (version.dwMajorVersion > 5
+            || (version.dwMajorVersion == 5 && version.dwMinorVersion >= 1));
+    }
+  return is_win_xp;
+}
+
 #endif
 
 #else
@@ -289,7 +323,7 @@ __gnat_ttyname (int filedes)
 
 #if defined (linux) || defined (sun) || defined (sgi) || defined (__EMX__) \
   || (defined (__osf__) && ! defined (__alpha_vxworks)) || defined (WINNT) \
-  || defined (__MACHTEN__) || defined (hpux) || defined (_AIX) \
+  || defined (__MACHTEN__) || defined (__hpux__) || defined (_AIX) \
   || (defined (__svr4__) && defined (i386)) || defined (__Lynx__) \
   || defined (__CYGWIN__) || defined (__FreeBSD__)
 
@@ -346,7 +380,7 @@ getc_immediate_common (FILE *stream,
 {
 #if defined (linux) || defined (sun) || defined (sgi) || defined (__EMX__) \
     || (defined (__osf__) && ! defined (__alpha_vxworks)) \
-    || defined (__CYGWIN32__) || defined (__MACHTEN__) || defined (hpux) \
+    || defined (__CYGWIN32__) || defined (__MACHTEN__) || defined (__hpux__) \
     || defined (_AIX) || (defined (__svr4__) && defined (i386)) \
     || defined (__Lynx__) || defined (__FreeBSD__)
   char c;
@@ -365,7 +399,7 @@ getc_immediate_common (FILE *stream,
       termios_rec.c_lflag = termios_rec.c_lflag & ~ICANON & ~ECHO;
 
 #if defined(linux) || defined (sun) || defined (sgi) || defined (__EMX__) \
-    || defined (__osf__) || defined (__MACHTEN__) || defined (hpux) \
+    || defined (__osf__) || defined (__MACHTEN__) || defined (__hpux__) \
     || defined (_AIX) || (defined (__svr4__) && defined (i386)) \
     || defined (__Lynx__) || defined (__FreeBSD__)
       eof_ch = termios_rec.c_cc[VEOF];
@@ -637,8 +671,6 @@ rts_get_nShowCmd (void)
 
 /* This gets around a problem with using the old threads library on VMS 7.0. */
 
-#include <time.h>
-
 extern long get_gmtoff (void);
 
 long
@@ -655,16 +687,30 @@ get_gmtoff (void)
 
 /* Definition of __gnat_locatime_r used by a-calend.adb */
 
-#if defined (_AIX) || defined (__EMX__)
+#if defined (__EMX__) || defined (__MINGW32__)
+
+#ifdef CERT
+
+/* For the Cert run times on native Windows we use dummy functions
+   for locking and unlocking tasks since we do not support multiple
+   threads on this configuration (Cert run time on native Windows). */
+
+void dummy (void) {}
+
+void (*Lock_Task) ()   = &dummy;
+void (*Unlock_Task) () = &dummy;
+
+#else
+
 #define Lock_Task system__soft_links__lock_task
 extern void (*Lock_Task) (void);
 
 #define Unlock_Task system__soft_links__unlock_task
 extern void (*Unlock_Task) (void);
 
-/* Provide reentrant version of localtime on Aix and OS/2. Note that AiX does
-   provide localtime_r, but in the library libc_r which doesn't get included
-   systematically, so we can't use it. */
+#endif
+
+/* Provide reentrant version of localtime on OS/2 and Windows. */
 
 extern struct tm *__gnat_localtime_r (const time_t *, struct tm *);
 
@@ -699,9 +745,9 @@ __gnat_localtime_r (const time_t *timer, struct tm *tp)
 }
 
 #else
-#if defined (VMS) || defined (__MINGW32__)
+#if defined (VMS)
 
-/* __gnat_localtime_r is not needed on NT and VMS */
+/* __gnat_localtime_r is not needed on VMS */
 
 #else
 

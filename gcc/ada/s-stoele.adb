@@ -6,7 +6,7 @@
 --                                                                          --
 --                                 B o d y                                  --
 --                                                                          --
---        Copyright (C) 1992,1993,1994 Free Software Foundation, Inc.       --
+--          Copyright (C) 1992-2005, Free Software Foundation, Inc.         --
 --                                                                          --
 -- GNAT is free software;  you can  redistribute it  and/or modify it under --
 -- terms of the  GNU General Public License as published  by the Free Soft- --
@@ -16,16 +16,16 @@
 -- or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License --
 -- for  more details.  You should have  received  a copy of the GNU General --
 -- Public License  distributed with GNAT;  see file COPYING.  If not, write --
--- to  the Free Software Foundation,  59 Temple Place - Suite 330,  Boston, --
--- MA 02111-1307, USA.                                                      --
+-- to  the  Free Software Foundation,  51  Franklin  Street,  Fifth  Floor, --
+-- Boston, MA 02110-1301, USA.                                              --
 --                                                                          --
--- As a special exception,  if other files  instantiate  generics from this --
--- unit, or you link  this unit with other files  to produce an executable, --
--- this  unit  does not  by itself cause  the resulting  executable  to  be --
--- covered  by the  GNU  General  Public  License.  This exception does not --
--- however invalidate  any other reasons why  the executable file  might be --
--- covered by the  GNU Public License.                                      --
---                                                                          --
+--
+--
+--
+--
+--
+--
+--
 -- GNAT was originally developed  by the GNAT team at  New York University. --
 -- Extensive contributions were provided by Ada Core Technologies Inc.      --
 --                                                                          --
@@ -43,31 +43,35 @@ package body System.Storage_Elements is
 
    function "+" (Left : Address; Right : Storage_Offset) return Address is
    begin
-      return Left + To_Address (Right);
+      return To_Address (To_Integer (Left) + To_Integer (To_Address (Right)));
    end "+";
 
    function "+" (Left : Storage_Offset; Right : Address) return Address is
    begin
-      return To_Address (Left) + Right;
+      return To_Address (To_Integer (To_Address (Left)) + To_Integer (Right));
    end "+";
 
    function "-" (Left : Address; Right : Storage_Offset) return Address is
    begin
-      return Left - To_Address (Right);
+      return To_Address (To_Integer (Left) - To_Integer (To_Address (Right)));
    end "-";
 
    function "-" (Left, Right : Address) return Storage_Offset is
    begin
-      return To_Offset (Left - Right);
+      return To_Offset (To_Address (To_Integer (Left) - To_Integer (Right)));
    end "-";
 
-   function "mod" (Left : Address; Right : Storage_Offset)
-     return Storage_Offset is
+   function "mod"
+     (Left  : Address;
+      Right : Storage_Offset) return Storage_Offset
+   is
    begin
       if Right >= 0 then
-         return Storage_Offset (Address'(Left mod Address (Right)));
+         return Storage_Offset
+                  (To_Integer (Left) mod Integer_Address (Right));
       else
-         return -Storage_Offset (Address'(Left mod Address (-Right)));
+         return -Storage_Offset
+                  ((-To_Integer (Left)) mod Integer_Address (-Right));
       end if;
    end "mod";
 

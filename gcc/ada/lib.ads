@@ -6,7 +6,7 @@
 --                                                                          --
 --                                 S p e c                                  --
 --                                                                          --
---          Copyright (C) 1992-2003 Free Software Foundation, Inc.          --
+--          Copyright (C) 1992-2006, Free Software Foundation, Inc.         --
 --                                                                          --
 -- GNAT is free software;  you can  redistribute it  and/or modify it under --
 -- terms of the  GNU General Public License as published  by the Free Soft- --
@@ -16,16 +16,16 @@
 -- or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License --
 -- for  more details.  You should have  received  a copy of the GNU General --
 -- Public License  distributed with GNAT;  see file COPYING.  If not, write --
--- to  the Free Software Foundation,  59 Temple Place - Suite 330,  Boston, --
--- MA 02111-1307, USA.                                                      --
+-- to  the  Free Software Foundation,  51  Franklin  Street,  Fifth  Floor, --
+-- Boston, MA 02110-1301, USA.                                              --
 --                                                                          --
--- As a special exception,  if other files  instantiate  generics from this --
--- unit, or you link  this unit with other files  to produce an executable, --
--- this  unit  does not  by itself cause  the resulting  executable  to  be --
--- covered  by the  GNU  General  Public  License.  This exception does not --
--- however invalidate  any other reasons why  the executable file  might be --
--- covered by the  GNU Public License.                                      --
---                                                                          --
+--
+--
+--
+--
+--
+--
+--
 -- GNAT was originally developed  by the GNAT team at  New York University. --
 -- Extensive contributions were provided by Ada Core Technologies Inc.      --
 --                                                                          --
@@ -239,11 +239,6 @@ package Lib is
    --  Main_Unit is a body with a separate spec, in which case it is the
    --  entity for the spec.
 
-   Unit_Exception_Table_Present : Boolean;
-   --  Set true if a unit exception table is present for the unit (i.e.
-   --  zero cost exception handling is active and there is at least one
-   --  subprogram in the extended unit).
-
    -----------------
    -- Units Table --
    -----------------
@@ -261,6 +256,10 @@ package Lib is
    --      The index in the source file table of the corresponding source file.
    --      Set when the entry is created by a call to Lib.Load and then cannot
    --      be changed.
+
+   --    Munit_Index
+   --      The index of the unit within the file for multiple unit per file
+   --      mode. Set to zero in normal single unit per file mode.
 
    --    Error_Location
    --      This is copied from the Sloc field of the Enode argument passed
@@ -357,14 +356,6 @@ package Lib is
    --      then called to reflect the contributions of any unit on which this
    --      unit is semantically dependent.
 
-   --    Dependent_Unit
-   --      This is a Boolean flag, which is set True to indicate that this
-   --      entry is for a semantically dependent unit. This flag is nearly
-   --      always set True, the only exception is for a unit that is loaded
-   --      by an Rtsfind request in High_Integrity_Mode, where the entity that
-   --      is obtained by Rtsfind.RTE is for an inlined subprogram or other
-   --      entity for which a dependency need not be created.
-
    --  The units table is reset to empty at the start of the compilation of
    --  each main unit by Lib.Initialize. Entries are then added by calls to
    --  the Lib.Load procedure. The following subprograms are used to access
@@ -377,7 +368,6 @@ package Lib is
 
    function Cunit            (U : Unit_Number_Type) return Node_Id;
    function Cunit_Entity     (U : Unit_Number_Type) return Entity_Id;
-   function Dependent_Unit   (U : Unit_Number_Type) return Boolean;
    function Dependency_Num   (U : Unit_Number_Type) return Nat;
    function Dynamic_Elab     (U : Unit_Number_Type) return Boolean;
    function Error_Location   (U : Unit_Number_Type) return Source_Ptr;
@@ -388,6 +378,7 @@ package Lib is
    function Has_RACW         (U : Unit_Number_Type) return Boolean;
    function Loading          (U : Unit_Number_Type) return Boolean;
    function Main_Priority    (U : Unit_Number_Type) return Int;
+   function Munit_Index      (U : Unit_Number_Type) return Nat;
    function Source_Index     (U : Unit_Number_Type) return Source_File_Index;
    function Unit_File_Name   (U : Unit_Number_Type) return File_Name_Type;
    function Unit_Name        (U : Unit_Number_Type) return Unit_Name_Type;
@@ -433,10 +424,10 @@ package Lib is
    --  Return unit number of file identified by given source pointer value.
    --  This call must always succeed, since any valid source pointer value
    --  belongs to some previously loaded module. If the given source pointer
-   --  value is within an instantiation, this function returns the unit
-   --  number of the templace, i.e. the unit containing the source code
-   --  corresponding to the given Source_Ptr value. The version taking
-   --  a Node_Id argument, N, simply applies the function to Sloc (N).
+   --  value is within an instantiation, this function returns the unit number
+   --  of the template, i.e. the unit containing the source code corresponding
+   --  to the given Source_Ptr value. The version taking a Node_Id argument, N,
+   --  simply applies the function to Sloc (N).
 
    function Get_Code_Unit (N : Node_Or_Entity_Id) return Unit_Number_Type;
    pragma Inline (Get_Code_Unit);
@@ -453,15 +444,24 @@ package Lib is
    --  same value for each argument.
 
    function In_Same_Code_Unit (N1, N2 : Node_Or_Entity_Id) return Boolean;
-   pragma Inline (In_Same_Source_Unit);
+   pragma Inline (In_Same_Code_Unit);
    --  Determines if the two nodes or entities N1 and N2 are in the same
    --  code unit, the criterion being that Get_Code_Unit yields the same
    --  value for each argument.
 
+   function In_Same_Extended_Unit (N1, N2 : Node_Or_Entity_Id) return Boolean;
+   pragma Inline (In_Same_Extended_Unit);
+   --  Determines if two nodes or entities N1 and N2 are in the same
+   --  extended unit, where an extended unit is defined as a unit and all
+   --  its subunits (considered recursively, i.e. subunits of subunits are
+   --  included). Returns true if S1 and S2 are in the same extended unit
+   --  and False otherwise.
+
    function In_Same_Extended_Unit (S1, S2 : Source_Ptr) return Boolean;
+   pragma Inline (In_Same_Extended_Unit);
    --  Determines if the two source locations S1 and S2 are in the same
    --  extended unit, where an extended unit is defined as a unit and all
-   --  its subunits (considered recursively, i.e. subunits or subunits are
+   --  its subunits (considered recursively, i.e. subunits of subunits are
    --  included). Returns true if S1 and S2 are in the same extended unit
    --  and False otherwise.
 
@@ -491,8 +491,15 @@ package Lib is
    --  and the parent unit spec if it is separate.
 
    function In_Extended_Main_Source_Unit (Loc : Source_Ptr) return Boolean;
-   --  Same function as above, but argument is a source pointer rather
-   --  than a node.
+   --  Same function as above, but argument is a source pointer
+
+   function In_Predefined_Unit (N : Node_Or_Entity_Id) return Boolean;
+   --  Returns True if the given node or entity appears within the source text
+   --  of a predefined unit (i.e. within Ada, Interfaces, System or within one
+   --  of the descendent packages of one of these three packages).
+
+   function In_Predefined_Unit (S : Source_Ptr) return Boolean;
+   --  Same function as above but argument is a source pointer
 
    function Earlier_In_Extended_Unit (S1, S2 : Source_Ptr) return Boolean;
    --  Given two Sloc values  for which In_Same_Extended_Unit is true,
@@ -522,14 +529,29 @@ package Lib is
    --  Increment Serial_Number field for current unit, and return the
    --  incremented value.
 
+   procedure Synchronize_Serial_Number;
+   --  This function increments the Serial_Number field for the current
+   --  unit but does not return the incremented value. This is used when
+   --  there is a situation where one path of control increments a serial
+   --  number (using Increment_Serial_Number), and the other path does not
+   --  and it is important to keep the serial numbers synchronized in the
+   --  two cases (e.g. when the references in a package and a client must
+   --  be kept consistent).
+
    procedure Replace_Linker_Option_String
-     (S : String_Id; Match_String : String);
+     (S            : String_Id;
+      Match_String : String);
    --  Replace an existing Linker_Option if the prefix Match_String
    --  matches, otherwise call Store_Linker_Option_String.
 
    procedure Store_Compilation_Switch (Switch : String);
    --  Called to register a compilation switch, either front-end or
    --  back-end, which may influence the generated output file(s).
+
+   procedure Disable_Switch_Storing;
+   --  Disable the registration of compilation switches with
+   --  Store_Compilation_Switch. This is used to not register switches added
+   --  automatically by the gcc driver.
 
    procedure Store_Linker_Option_String (S : String_Id);
    --  This procedure is called to register the string from a pragma
@@ -541,11 +563,13 @@ package Lib is
    procedure Lock;
    --  Lock internal tables before calling back end
 
-   procedure Tree_Write;
-   --  Writes out internal tables to current tree file using Tree_Write
-
    procedure Tree_Read;
-   --  Initializes internal tables from current tree file using Tree_Read
+   --  Initializes internal tables from current tree file using the relevant
+   --  Table.Tree_Read routines.
+
+   procedure Tree_Write;
+   --  Writes out internal tables to current tree file using the relevant
+   --  Table.Tree_Write routines.
 
    function Is_Loaded (Uname : Unit_Name_Type) return Boolean;
    --  Determines if unit with given name is already loaded, i.e. there is
@@ -601,19 +625,19 @@ package Lib is
 
    function Generic_Separately_Compiled
      (Sfile : File_Name_Type) return  Boolean;
-   --  Same as the previous function, but works directly on a unit file name.
+   --  Same as the previous function, but works directly on a unit file name
 
 private
    pragma Inline (Cunit);
    pragma Inline (Cunit_Entity);
    pragma Inline (Dependency_Num);
-   pragma Inline (Dependent_Unit);
    pragma Inline (Fatal_Error);
    pragma Inline (Generate_Code);
    pragma Inline (Has_RACW);
    pragma Inline (Increment_Serial_Number);
    pragma Inline (Loading);
    pragma Inline (Main_Priority);
+   pragma Inline (Munit_Index);
    pragma Inline (Set_Cunit);
    pragma Inline (Set_Cunit_Entity);
    pragma Inline (Set_Fatal_Error);
@@ -629,12 +653,12 @@ private
    type Unit_Record is record
       Unit_File_Name   : File_Name_Type;
       Unit_Name        : Unit_Name_Type;
+      Munit_Index      : Nat;
       Expected_Unit    : Unit_Name_Type;
       Source_Index     : Source_File_Index;
       Cunit            : Node_Id;
       Cunit_Entity     : Entity_Id;
       Dependency_Num   : Int;
-      Dependent_Unit   : Boolean;
       Fatal_Error      : Boolean;
       Generate_Code    : Boolean;
       Has_RACW         : Boolean;
@@ -700,16 +724,23 @@ private
    type Unit_Ref_Table is array (Pos range <>) of Unit_Number_Type;
    --  Type to hold list of indirect references to unit number table
 
-   --  The Load_Stack table contains a list of unit numbers (indexes into the
-   --  unit table) of units being loaded on a single dependency chain. The
-   --  First entry is the main unit. The second entry, if present is a unit
-   --  on which the first unit depends, etc. This stack is used to generate
-   --  error messages showing the dependency chain if a file is not found.
-   --  The Load function makes an entry in this table when it is called, and
-   --  removes the entry just before it returns.
+   type Load_Stack_Entry is record
+      Unit_Number       : Unit_Number_Type;
+      From_Limited_With : Boolean;
+   end record;
+
+   --  The Load_Stack table contains a list of unit numbers (indices into the
+   --  unit table) of units being loaded on a single dependency chain, and a
+   --  flag to indicate whether this unit is loaded through a limited_with
+   --  clause. The First entry is the main unit. The second entry, if present
+   --  is a unit on which the first unit depends, etc. This stack is used to
+   --  generate error messages showing the dependency chain if a file is not
+   --  found, or whether a true circular dependency exists.  The Load_Unit
+   --  function makes an entry in this table when it is called, and removes
+   --  the entry just before it returns.
 
    package Load_Stack is new Table.Table (
-     Table_Component_Type => Unit_Number_Type,
+     Table_Component_Type => Load_Stack_Entry,
      Table_Index_Type     => Nat,
      Table_Low_Bound      => 0,
      Table_Initial        => Alloc.Load_Stack_Initial,

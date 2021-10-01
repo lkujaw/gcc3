@@ -6,7 +6,7 @@
  *                                                                          *
  *                              C Header File                               *
  *                                                                          *
- *          Copyright (C) 1992-2004 Free Software Foundation, Inc.          *
+ *          Copyright (C) 1992-2006, Free Software Foundation, Inc.         *
  *                                                                          *
  * GNAT is free software;  you can  redistribute it  and/or modify it under *
  * terms of the  GNU General Public License as published  by the Free Soft- *
@@ -16,15 +16,15 @@
  * or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License *
  * for  more details.  You should have  received  a copy of the GNU General *
  * Public License  distributed with GNAT;  see file COPYING.  If not, write *
- * to  the Free Software Foundation,  59 Temple Place - Suite 330,  Boston, *
- * MA 02111-1307, USA.                                                      *
+ * to  the  Free Software Foundation,  51  Franklin  Street,  Fifth  Floor, *
+ * Boston, MA 02110-1301, USA.                                              *
  *                                                                          *
- * As a  special  exception,  if you  link  this file  with other  files to *
- * produce an executable,  this file does not by itself cause the resulting *
- * executable to be covered by the GNU General Public License. This except- *
- * ion does not  however invalidate  any other reasons  why the  executable *
- * file might be covered by the  GNU Public License.                        *
- *                                                                          *
+--
+--
+--
+--
+--
+--
  * GNAT was originally developed  by the GNAT team at  New York University. *
  * Extensive contributions were provided by Ada Core Technologies Inc.      *
  *                                                                          *
@@ -57,17 +57,19 @@ extern Boolean Debug_Flag_NN;
    Present_Expr for N_Variant nodes.  */
 
 #define Set_Alignment			einfo__set_alignment
-#define Set_Esize			einfo__set_esize
-#define Set_RM_Size			einfo__set_rm_size
 #define Set_Component_Bit_Offset	einfo__set_component_bit_offset
 #define Set_Component_Size		einfo__set_component_size
+#define Set_Esize			einfo__set_esize
+#define Set_Mechanism			einfo__set_mechanism
+#define Set_RM_Size			einfo__set_rm_size
 #define Set_Present_Expr		sinfo__set_present_expr
 
 extern void Set_Alignment		(Entity_Id, Uint);
+extern void Set_Component_Bit_Offset	(Entity_Id, Uint);
 extern void Set_Component_Size		(Entity_Id, Uint);
 extern void Set_Esize			(Entity_Id, Uint);
+extern void Set_Mechanism		(Entity_Id, Mechanism_Type);
 extern void Set_RM_Size			(Entity_Id, Uint);
-extern void Set_Component_Bit_Offset	(Entity_Id, Uint);
 extern void Set_Present_Expr		(Node_Id, Uint);
 
 /* Test if the node N is the name of an entity (i.e. is an identifier,
@@ -139,20 +141,24 @@ extern void Get_External_Name_With_Suffix (Entity_Id, Fat_Pointer);
 #define Cunit 				lib__cunit
 #define Ident_String			lib__ident_string
 #define In_Extended_Main_Code_Unit	lib__in_extended_main_code_unit
+#define In_Same_Source_Unit             lib__in_same_source_unit
 
 extern Node_Id Cunit				(Unit_Number_Type);
 extern Node_Id Ident_String			(Unit_Number_Type);
 extern Boolean In_Extended_Main_Code_Unit	(Entity_Id);
+extern Boolean In_Same_Source_Unit              (Node_Id, Node_Id);
 
 /* opt: */
 
-#define Global_Discard_Names   opt__global_discard_names
-#define Exception_Mechanism    opt__exception_mechanism
-#define Back_Annotate_Rep_Info opt__back_annotate_rep_info
+#define Global_Discard_Names           opt__global_discard_names
+#define Exception_Locations_Suppressed opt__exception_locations_suppressed
+#define Exception_Mechanism            opt__exception_mechanism
+#define Back_Annotate_Rep_Info         opt__back_annotate_rep_info
 
-typedef enum {Setjmp_Longjmp, Front_End_ZCX, GCC_ZCX} Exception_Mechanism_Type;
+typedef enum {Setjmp_Longjmp, Back_End_Exceptions} Exception_Mechanism_Type;
 
 extern Boolean Global_Discard_Names;
+extern Boolean Exception_Locations_Suppressed;
 extern Exception_Mechanism_Type Exception_Mechanism;
 extern Boolean Back_Annotate_Rep_Info;
 
@@ -161,12 +167,10 @@ extern Boolean Back_Annotate_Rep_Info;
 #define No_Exception_Handlers_Set      restrict__no_exception_handlers_set
 #define Check_No_Implicit_Heap_Alloc   restrict__check_no_implicit_heap_alloc
 #define Check_Elaboration_Code_Allowed restrict__check_elaboration_code_allowed
-#define Check_No_Implicit_Heap_Alloc   restrict__check_no_implicit_heap_alloc
 
 extern Boolean No_Exception_Handlers_Set   (void);
 extern void Check_No_Implicit_Heap_Alloc   (Node_Id);
 extern void Check_Elaboration_Code_Allowed (Node_Id);
-extern void Check_No_Implicit_Heap_Alloc   (Node_Id);
 
 /* sem_elim: */
 

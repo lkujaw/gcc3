@@ -1,12 +1,12 @@
 ------------------------------------------------------------------------------
 --                                                                          --
---                         GNAT RUNTIME COMPONENTS                          --
+--                         GNAT RUN-TIME COMPONENTS                         --
 --                                                                          --
---                            G N A T .  T A B L E                          --
+--                            G N A T . T A B L E                           --
 --                                                                          --
 --                                 B o d y                                  --
 --                                                                          --
---            Copyright (C) 1998-2003 Ada Core Technologies, Inc.           --
+--                     Copyright (C) 1998-2005, AdaCore                     --
 --                                                                          --
 -- GNAT is free software;  you can  redistribute it  and/or modify it under --
 -- terms of the  GNU General Public License as published  by the Free Soft- --
@@ -16,16 +16,16 @@
 -- or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License --
 -- for  more details.  You should have  received  a copy of the GNU General --
 -- Public License  distributed with GNAT;  see file COPYING.  If not, write --
--- to  the Free Software Foundation,  59 Temple Place - Suite 330,  Boston, --
--- MA 02111-1307, USA.                                                      --
+-- to  the  Free Software Foundation,  51  Franklin  Street,  Fifth  Floor, --
+-- Boston, MA 02110-1301, USA.                                              --
 --                                                                          --
--- As a special exception,  if other files  instantiate  generics from this --
--- unit, or you link  this unit with other files  to produce an executable, --
--- this  unit  does not  by itself cause  the resulting  executable  to  be --
--- covered  by the  GNU  General  Public  License.  This exception does not --
--- however invalidate  any other reasons why  the executable file  might be --
--- covered by the  GNU Public License.                                      --
---                                                                          --
+--
+--
+--
+--
+--
+--
+--
 -- GNAT was originally developed  by the GNAT team at  New York University. --
 -- Extensive contributions were provided by Ada Core Technologies Inc.      --
 --                                                                          --
@@ -49,7 +49,7 @@ package body GNAT.Table is
    --  ensures that we initially allocate the table.
 
    Last_Val : Integer;
-   --  Current value of Last.
+   --  Current value of Last
 
    -----------------------
    -- Local Subprograms --
@@ -60,8 +60,15 @@ package body GNAT.Table is
    --  in Max. Works correctly to do an initial allocation if the table
    --  is currently null.
 
+   pragma Warnings (Off);
+   --  Turn off warnings. The following unchecked conversions are only used
+   --  internally in this package, and cannot never result in any instances
+   --  of improperly aliased pointers for the client of the package.
+
    function To_Address is new Unchecked_Conversion (Table_Ptr, Address);
    function To_Pointer is new Unchecked_Conversion (Address, Table_Ptr);
+
+   pragma Warnings (On);
 
    --------------
    -- Allocate --

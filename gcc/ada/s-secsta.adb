@@ -6,7 +6,7 @@
 --                                                                          --
 --                                 B o d y                                  --
 --                                                                          --
---          Copyright (C) 1992-2004 Free Software Foundation, Inc.          --
+--          Copyright (C) 1992-2006, Free Software Foundation, Inc.         --
 --                                                                          --
 -- GNAT is free software;  you can  redistribute it  and/or modify it under --
 -- terms of the  GNU General Public License as published  by the Free Soft- --
@@ -16,16 +16,16 @@
 -- or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License --
 -- for  more details.  You should have  received  a copy of the GNU General --
 -- Public License  distributed with GNAT;  see file COPYING.  If not, write --
--- to  the Free Software Foundation,  59 Temple Place - Suite 330,  Boston, --
--- MA 02111-1307, USA.                                                      --
+-- to  the  Free Software Foundation,  51  Franklin  Street,  Fifth  Floor, --
+-- Boston, MA 02110-1301, USA.                                              --
 --                                                                          --
--- As a special exception,  if other files  instantiate  generics from this --
--- unit, or you link  this unit with other files  to produce an executable, --
--- this  unit  does not  by itself cause  the resulting  executable  to  be --
--- covered  by the  GNU  General  Public  License.  This exception does not --
--- however invalidate  any other reasons why  the executable file  might be --
--- covered by the  GNU Public License.                                      --
---                                                                          --
+--
+--
+--
+--
+--
+--
+--
 -- GNAT was originally developed  by the GNAT team at  New York University. --
 -- Extensive contributions were provided by Ada Core Technologies Inc.      --
 --                                                                          --
@@ -54,7 +54,7 @@ package body System.Secondary_Stack is
    --  then the secondary stack is allocated statically by grabbing a
    --  section of the primary stack and using it for this purpose.
 
-   type Memory is array (Mark_Id range <>) of SSE.Storage_Element;
+   type Memory is array (SS_Ptr range <>) of SSE.Storage_Element;
    for Memory'Alignment use Standard'Maximum_Alignment;
    --  This is the type used for actual allocation of secondary stack
    --  areas. We require maximum alignment for all such allocations.
@@ -98,16 +98,16 @@ package body System.Secondary_Stack is
    --    +-----------------+               +------------------+
    --
 
-   type Chunk_Id (First, Last : Mark_Id);
+   type Chunk_Id (First, Last : SS_Ptr);
    type Chunk_Ptr is access all Chunk_Id;
 
-   type Chunk_Id (First, Last : Mark_Id) is record
+   type Chunk_Id (First, Last : SS_Ptr) is record
       Prev, Next : Chunk_Ptr;
       Mem        : Memory (First .. Last);
    end record;
 
    type Stack_Id is record
-      Top           : Mark_Id;
+      Top           : SS_Ptr;
       Default_Size  : SSE.Storage_Count;
       Current_Chunk : Chunk_Ptr;
    end record;
@@ -134,16 +134,16 @@ package body System.Secondary_Stack is
    --  by the following data strcuture
 
    type Fixed_Stack_Id is record
-      Top : Mark_Id;
+      Top : SS_Ptr;
       --  Index of next available location in Mem. This is initialized to
       --  0, and then incremented on Allocate, and Decremented on Release.
 
-      Last : Mark_Id;
+      Last : SS_Ptr;
       --  Length of usable Mem array, which is thus the index past the
       --  last available location in Mem. Mem (Last-1) can be used. This
       --  is used to check that the stack does not overflow.
 
-      Max : Mark_Id;
+      Max : SS_Ptr;
       --  Maximum value of Top. Initialized to 0, and then may be incremented
       --  on Allocate, but is never Decremented. The last used location will
       --  be Mem (Max - 1), so Max is the maximum count of used stack space.
@@ -177,9 +177,9 @@ package body System.Secondary_Stack is
      (Addr         : out Address;
       Storage_Size : SSE.Storage_Count)
    is
-      Max_Align    : constant Mark_Id := Mark_Id (Standard'Maximum_Alignment);
-      Max_Size     : constant Mark_Id :=
-                       ((Mark_Id (Storage_Size) + Max_Align - 1) / Max_Align)
+      Max_Align    : constant SS_Ptr := SS_Ptr (Standard'Maximum_Alignment);
+      Max_Size     : constant SS_Ptr :=
+                       ((SS_Ptr (Storage_Size) + Max_Align - 1) / Max_Align)
                          * Max_Align;
 
    begin
@@ -256,7 +256,7 @@ package body System.Secondary_Stack is
                   Chunk.Next :=
                     new Chunk_Id
                       (First => Chunk.Last + 1,
-                       Last  => Chunk.Last + Mark_Id (Stack.Default_Size));
+                       Last  => Chunk.Last + SS_Ptr (Stack.Default_Size));
 
                   Chunk.Next.Prev := Chunk;
 
@@ -359,12 +359,12 @@ package body System.Secondary_Stack is
          begin
             Put_Line (
                       "  Total size              : "
-                      & Mark_Id'Image (Fixed_Stack.Last)
+                      & SS_Ptr'Image (Fixed_Stack.Last)
                       & " bytes");
 
             Put_Line (
                       "  Current allocated space : "
-                      & Mark_Id'Image (Fixed_Stack.Top - 1)
+                      & SS_Ptr'Image (Fixed_Stack.Top - 1)
                       & " bytes");
          end;
 
@@ -391,12 +391,12 @@ package body System.Secondary_Stack is
 
             Put_Line (
                       "  Total size              : "
-                      & Mark_Id'Image (Chunk.Last)
+                      & SS_Ptr'Image (Chunk.Last)
                       & " bytes");
 
             Put_Line (
                       "  Current allocated space : "
-                      & Mark_Id'Image (Stack.Top - 1)
+                      & SS_Ptr'Image (Stack.Top - 1)
                       & " bytes");
 
             Put_Line (
@@ -423,7 +423,8 @@ package body System.Secondary_Stack is
 
       if not SS_Ratio_Dynamic then
          declare
-            Fixed_Stack : Fixed_Stack_Ptr := To_Fixed_Stack_Ptr (Stk);
+            Fixed_Stack : constant Fixed_Stack_Ptr :=
+                            To_Fixed_Stack_Ptr (Stk);
 
          begin
             Fixed_Stack.Top  := 0;
@@ -433,7 +434,7 @@ package body System.Secondary_Stack is
                Fixed_Stack.Last := 0;
             else
                Fixed_Stack.Last :=
-                 Mark_Id (Size) - Dummy_Fixed_Stack.Mem'Position;
+                 SS_Ptr (Size) - Dummy_Fixed_Stack.Mem'Position;
             end if;
          end;
 
@@ -444,7 +445,7 @@ package body System.Secondary_Stack is
             Stack : Stack_Ptr;
          begin
             Stack               := new Stack_Id;
-            Stack.Current_Chunk := new Chunk_Id (1, Mark_Id (Size));
+            Stack.Current_Chunk := new Chunk_Id (1, SS_Ptr (Size));
             Stack.Top           := 1;
             Stack.Default_Size  := SSE.Storage_Count (Size);
             Stk := To_Addr (Stack);
@@ -457,11 +458,12 @@ package body System.Secondary_Stack is
    -------------
 
    function SS_Mark return Mark_Id is
+      Sstk : constant System.Address := SSL.Get_Sec_Stack_Addr.all;
    begin
       if SS_Ratio_Dynamic then
-         return To_Stack_Ptr (SSL.Get_Sec_Stack_Addr.all).Top;
+         return (Sstk => Sstk, Sptr => To_Stack_Ptr (Sstk).Top);
       else
-         return To_Fixed_Stack_Ptr (SSL.Get_Sec_Stack_Addr.all).Top;
+         return (Sstk => Sstk, Sptr => To_Fixed_Stack_Ptr (Sstk).Top);
       end if;
    end SS_Mark;
 
@@ -472,9 +474,9 @@ package body System.Secondary_Stack is
    procedure SS_Release (M : Mark_Id) is
    begin
       if SS_Ratio_Dynamic then
-         To_Stack_Ptr (SSL.Get_Sec_Stack_Addr.all).Top := M;
+         To_Stack_Ptr (M.Sstk).Top := M.Sptr;
       else
-         To_Fixed_Stack_Ptr (SSL.Get_Sec_Stack_Addr.all).Top := M;
+         To_Fixed_Stack_Ptr (M.Sstk).Top := M.Sptr;
       end if;
    end SS_Release;
 
@@ -485,12 +487,12 @@ package body System.Secondary_Stack is
    --  Allocate a secondary stack for the main program to use
 
    --  We make sure that the stack has maximum alignment. Some systems require
-   --  this (e.g. Sun), and in any case it is a good idea for efficiency.
+   --  this (e.g. Sparc), and in any case it is a good idea for efficiency.
 
    Stack : aliased Stack_Id;
    for Stack'Alignment use Standard'Maximum_Alignment;
 
-   Chunk : aliased Chunk_Id (1, Mark_Id (Default_Secondary_Stack_Size));
+   Chunk : aliased Chunk_Id (1, SS_Ptr (Default_Secondary_Stack_Size));
    for Chunk'Alignment use Standard'Maximum_Alignment;
 
    Chunk_Address : Address;

@@ -6,7 +6,7 @@
 --                                                                          --
 --                                B o d y                                   --
 --                                                                          --
---          Copyright (C) 1992-2004, Free Software Foundation, Inc.         --
+--          Copyright (C) 1992-2006, Free Software Foundation, Inc.         --
 --                                                                          --
 -- GNAT is free software;  you can  redistribute it  and/or modify it under --
 -- terms of the  GNU General Public License as published  by the Free Soft- --
@@ -16,8 +16,8 @@
 -- or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License --
 -- for  more details.  You should have  received  a copy of the GNU General --
 -- Public License  distributed with GNAT;  see file COPYING.  If not, write --
--- to  the Free Software Foundation,  59 Temple Place - Suite 330,  Boston, --
--- MA 02111-1307, USA.                                                      --
+-- to  the  Free Software Foundation,  51  Franklin  Street,  Fifth  Floor, --
+-- Boston, MA 02110-1301, USA.                                              --
 --                                                                          --
 -- GNAT was originally developed  by the GNAT team at  New York University. --
 -- Extensive contributions were provided by Ada Core Technologies Inc.      --
@@ -26,6 +26,7 @@
 
 with Hostparm;
 with Namet;          use Namet;
+with Opt;            use Opt;
 with Osint;          use Osint;
 with Output;         use Output;
 with System.WCh_Con; use System.WCh_Con;
@@ -134,9 +135,6 @@ begin
    Write_Switch_Char ("c");
    Write_Line ("Check syntax and semantics only (no code generation)");
 
-   Write_Switch_Char ("C");
-   Write_Line ("Compress names in external names and debug info tables");
-
    --  Line for -gnatd switch
 
    Write_Switch_Char ("d?");
@@ -161,6 +159,11 @@ begin
 
    Write_Switch_Char ("ef");
    Write_Line ("Full source path in brief error messages");
+
+   --  Line for -gnateI switch
+
+   Write_Switch_Char ("eInn");
+   Write_Line ("Index in multi-unit source, e.g. -gnateI2");
 
    --  Line for -gnatem switch
 
@@ -207,10 +210,15 @@ begin
    Write_Switch_Char ("i?");
    Write_Line ("Identifier char set (?=1/2/3/4/5/8/9/p/f/n/w)");
 
+   --  Line for -gnatj switch
+
+   Write_Switch_Char ("jnn");
+   Write_Line ("Format error and warning messages to fit nn character lines");
+
    --  Line for -gnatk switch
 
    Write_Switch_Char ("k");
-   Write_Line ("Limit file names to nnn characters (k = krunch)");
+   Write_Line ("Limit file names to nn characters (k = krunch)");
 
    --  Line for -gnatl switch
 
@@ -220,12 +228,12 @@ begin
    --  Line for -gnatL switch
 
    Write_Switch_Char ("L");
-   Write_Line ("Use longjmp/setjmp for exception handling");
+   Write_Line ("List corresponding source text in -gnatG or -gnatD output");
 
    --  Line for -gnatm switch
 
-   Write_Switch_Char ("mnnn");
-   Write_Line ("Limit number of detected errors to nnn (1-999999)");
+   Write_Switch_Char ("mnn");
+   Write_Line ("Limit number of detected errors to nn (1-999999)");
 
    --  Line for -gnatn switch
 
@@ -267,10 +275,12 @@ begin
    Write_Switch_Char ("Q");
    Write_Line ("Don't quit, write ali/tree file even if compile errors");
 
-   --  Line for -gnatR switch
+   --  Lines for -gnatR switch
 
    Write_Switch_Char ("R?");
-   Write_Line ("List rep inf (?=0/1/2/3 for none/types/all/variable)");
+   Write_Line ("List rep info (?=0/1/2/3 for none/types/all/variable)");
+   Write_Switch_Char ("R?s");
+   Write_Line ("List rep info to file.rep instead of standard output");
 
    --  Lines for -gnats switch
 
@@ -289,8 +299,8 @@ begin
 
    --  Line for -gnatT switch
 
-   Write_Switch_Char ("Tnnn");
-   Write_Line ("All compiler tables start at nnn times usual starting size");
+   Write_Switch_Char ("Tnn");
+   Write_Line ("All compiler tables start at nn times usual starting size");
 
    --  Line for -gnatu switch
 
@@ -317,6 +327,8 @@ begin
    Write_Line ("        C    turn off checking for copies");
    Write_Line ("        d    turn on default (RM) checking");
    Write_Line ("        D    turn off default (RM) checking");
+   Write_Line ("        e    turn on checking for elementary components");
+   Write_Line ("        E    turn off checking for elementary components");
    Write_Line ("        f    turn on checking for floating-point");
    Write_Line ("        F    turn off checking for floating-point");
    Write_Line ("        i    turn on checking for in params");
@@ -339,8 +351,12 @@ begin
 
    Write_Switch_Char ("wxx");
    Write_Line ("Enable selected warning modes, xx = list of parameters:");
-   Write_Line ("        a    turn on all optional warnings (except d,h,l)");
+   Write_Line ("        a    turn on all optional warnings (except d,h,l,t)");
    Write_Line ("        A    turn off all optional warnings");
+   Write_Line ("        b    turn on warnings for bad fixed value " &
+                                                  "(not multiple of small)");
+   Write_Line ("        B*   turn off warnings for bad fixed value " &
+                                                  "(not multiple of small)");
    Write_Line ("        c    turn on warnings for constant conditional");
    Write_Line ("        C*   turn off warnings for constant conditional");
    Write_Line ("        d    turn on warnings for implicit dereference");
@@ -371,17 +387,24 @@ begin
    Write_Line ("        n*   normal warning mode (cancels -gnatws/-gnatwe)");
    Write_Line ("        o*   turn on warnings for address clause overlay");
    Write_Line ("        O    turn off warnings for address clause overlay");
-   Write_Line ("        p    turn on warnings for ineffective pragma inline");
-   Write_Line ("        P*   turn off warnings for ineffective pragma inline");
+   Write_Line ("        p    turn on warnings for ineffective pragma Inline");
+   Write_Line ("        P*   turn off warnings for ineffective pragma Inline");
    Write_Line ("        r    turn on warnings for redundant construct");
    Write_Line ("        R*   turn off warnings for redundant construct");
    Write_Line ("        s    suppress all warnings");
+   Write_Line ("        t    turn on warnings for tracking deleted code");
+   Write_Line ("        T*   turn off warnings for tracking deleted code");
    Write_Line ("        u    turn on warnings for unused entity");
    Write_Line ("        U*   turn off warnings for unused entity");
    Write_Line ("        v*   turn on warnings for unassigned variable");
    Write_Line ("        V    turn off warnings for unassigned variable");
+   Write_Line ("        w*   turn on warnings for wrong low bound assumption");
+   Write_Line ("        W    turn off warnings for wrong low bound " &
+                                                  "assumption");
    Write_Line ("        x*   turn on warnings for export/import");
-   Write_Line ("        X*   turn off warnings for export/import");
+   Write_Line ("        X    turn off warnings for export/import");
+   Write_Line ("        y*   turn on warnings for Ada 2005 incompatibility");
+   Write_Line ("        Y    turn off warnings for Ada 2005 incompatibility");
    Write_Line ("        z*   turn on size/align warnings for " &
                                                   "unchecked conversion");
    Write_Line ("        Z    turn off size/align warnings for " &
@@ -418,42 +441,66 @@ begin
    --  Lines for -gnaty switch
 
    Write_Switch_Char ("y");
-   Write_Line ("Enable all style checks except 'o', indent=3");
-
+   Write_Line ("Enable default style checks (same as -gnaty3abcefhiklmnprst)");
    Write_Switch_Char ("yxx");
    Write_Line ("Enable selected style checks xx = list of parameters:");
    Write_Line ("        1-9  check indentation");
    Write_Line ("        a    check attribute casing");
    Write_Line ("        b    check no blanks at end of lines");
    Write_Line ("        c    check comment format");
+   Write_Line ("        d    check no DOS line terminators");
    Write_Line ("        e    check end/exit labels present");
    Write_Line ("        f    check no form feeds/vertical tabs in source");
    Write_Line ("        h    check no horizontal tabs in source");
    Write_Line ("        i    check if-then layout");
+   Write_Line ("        I    check mode in");
    Write_Line ("        k    check casing rules for keywords");
    Write_Line ("        l    check reference manual layout");
+   Write_Line ("        Lnn  check max nest level < nn ");
    Write_Line ("        m    check line length <= 79 characters");
    Write_Line ("        n    check casing of package Standard identifiers");
-   Write_Line ("        Mnnn check line length <= nnn characters");
+   Write_Line ("        Mnn  check line length <= nn  characters");
    Write_Line ("        o    check subprogram bodies in alphabetical order");
    Write_Line ("        p    check pragma casing");
    Write_Line ("        r    check casing for identifier references");
    Write_Line ("        s    check separate subprogram specs present");
    Write_Line ("        t    check token separation rules");
+   Write_Line ("        u    check no unnecessary blank lines");
+   Write_Line ("        x    check extra parens around conditionals");
+
+   --  Lines for -gnatyN switch
+
+   Write_Switch_Char ("yN");
+   Write_Line ("Cancel all previously set style checks");
 
    --  Lines for -gnatz switch
 
    Write_Switch_Char ("z");
    Write_Line ("Distribution stub generation (r/c for receiver/caller stubs)");
 
-   --  Line for -gnatZ switch
-
-   Write_Switch_Char ("Z");
-   Write_Line ("Use zero cost exception handling");
-
    --  Line for -gnat83 switch
 
    Write_Switch_Char ("83");
    Write_Line ("Enforce Ada 83 restrictions");
+
+   --  Line for -gnat95 switch
+
+   Write_Switch_Char ("95");
+
+   if Ada_Version_Default = Ada_95 then
+      Write_Line ("Ada 95 mode (default)");
+   else
+      Write_Line ("Enforce Ada 95 restrictions");
+   end if;
+
+   --  Line for -gnat05 switch
+
+   Write_Switch_Char ("05");
+
+   if Ada_Version_Default = Ada_05 then
+      Write_Line ("Ada 2005 mode (default)");
+   else
+      Write_Line ("Allow Ada 2005 extensions");
+   end if;
 
 end Usage;

@@ -6,7 +6,7 @@
 --                                                                          --
 --                                 B o d y                                  --
 --                                                                          --
---          Copyright (C) 1992-2003 Free Software Foundation, Inc.          --
+--          Copyright (C) 1992-2006, Free Software Foundation, Inc.         --
 --                                                                          --
 -- GNAT is free software;  you can  redistribute it  and/or modify it under --
 -- terms of the  GNU General Public License as published  by the Free Soft- --
@@ -16,8 +16,8 @@
 -- or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License --
 -- for  more details.  You should have  received  a copy of the GNU General --
 -- Public License  distributed with GNAT;  see file COPYING.  If not, write --
--- to  the Free Software Foundation,  59 Temple Place - Suite 330,  Boston, --
--- MA 02111-1307, USA.                                                      --
+-- to  the  Free Software Foundation,  51  Franklin  Street,  Fifth  Floor, --
+-- Boston, MA 02110-1301, USA.                                              --
 --                                                                          --
 -- GNAT was originally developed  by the GNAT team at  New York University. --
 -- Extensive contributions were provided by Ada Core Technologies Inc.      --
@@ -29,8 +29,10 @@ with Debug;    use Debug;
 with Einfo;    use Einfo;
 with Errout;   use Errout;
 with Exp_Ch2;  use Exp_Ch2;
+with Exp_Pakd; use Exp_Pakd;
 with Exp_Util; use Exp_Util;
 with Elists;   use Elists;
+with Eval_Fat; use Eval_Fat;
 with Freeze;   use Freeze;
 with Lib;      use Lib;
 with Nlists;   use Nlists;
@@ -38,9 +40,11 @@ with Nmake;    use Nmake;
 with Opt;      use Opt;
 with Output;   use Output;
 with Restrict; use Restrict;
+with Rident;   use Rident;
 with Rtsfind;  use Rtsfind;
 with Sem;      use Sem;
 with Sem_Eval; use Sem_Eval;
+with Sem_Ch3;  use Sem_Ch3;
 with Sem_Ch8;  use Sem_Ch8;
 with Sem_Res;  use Sem_Res;
 with Sem_Util; use Sem_Util;
@@ -186,6 +190,14 @@ package body Checks is
    -- Local Subprograms --
    -----------------------
 
+   procedure Apply_Float_Conversion_Check
+     (Ck_Node    : Node_Id;
+      Target_Typ : Entity_Id);
+   --  The checks on a conversion from a floating-point type to an integer
+   --  type are delicate. They have to be performed before conversion, they
+   --  have to raise an exception when the operand is a NaN, and rounding must
+   --  be taken into account to determine the safe bounds of the operand.
+
    procedure Apply_Selected_Length_Checks
      (Ck_Node    : Node_Id;
       Target_Typ : Entity_Id;
@@ -205,6 +217,30 @@ package body Checks is
    --  Expr, Target_Typ and Source_Typ are as described for the above
    --  routine. The Do_Static flag indicates that only a static check is
    --  to be done.
+
+   type Check_Type is (Access_Check, Division_Check);
+   function Check_Needed (Nod : Node_Id; Check : Check_Type) return Boolean;
+   --  This function is used to see if an access or division by zero check is
+   --  needed. The check is to be applied to a single variable appearing in the
+   --  source, and N is the node for the reference. If N is not of this form,
+   --  True is returned with no further processing. If N is of the right form,
+   --  then further processing determines if the given Check is needed.
+   --
+   --  The particular circuit is to see if we have the case of a check that is
+   --  not needed because it appears in the right operand of a short circuited
+   --  conditional where the left operand guards the check. For example:
+   --
+   --    if Var = 0 or else Q / Var > 12 then
+   --       ...
+   --    end if;
+   --
+   --  In this example, the division check is not required. At the same time
+   --  we can issue warnings for suspicious use of non-short-circuited forms,
+   --  such as:
+   --
+   --    if Var = 0 or Q / Var > 12 then
+   --       ...
+   --    end if;
 
    procedure Find_Check
      (Expr        : Node_Id;
@@ -232,13 +268,16 @@ package body Checks is
    --  of the enclosing protected operation). This clumsy transformation is
    --  needed because privals are created too late and their actual subtypes
    --  are not available when analysing the bodies of the protected operations.
+   --  This function is called whenever the bound is an entity and the scope
+   --  indicates a protected operation. If the bound is an in-parameter of
+   --  a protected operation that is not a prival, the function returns the
+   --  bound itself.
    --  To be cleaned up???
 
    function Guard_Access
      (Cond    : Node_Id;
       Loc     : Source_Ptr;
-      Ck_Node : Node_Id)
-      return    Node_Id;
+      Ck_Node : Node_Id) return Node_Id;
    --  In the access type case, guard the test with a test to ensure
    --  that the access value is non-null, since the checks do not
    --  not apply to null access values.
@@ -251,8 +290,7 @@ package body Checks is
      (Ck_Node    : Node_Id;
       Target_Typ : Entity_Id;
       Source_Typ : Entity_Id;
-      Warn_Node  : Node_Id)
-      return       Check_Result;
+      Warn_Node  : Node_Id) return Check_Result;
    --  Like Apply_Selected_Length_Checks, except it doesn't modify
    --  anything, just returns a list of nodes as described in the spec of
    --  this package for the Range_Check function.
@@ -261,8 +299,7 @@ package body Checks is
      (Ck_Node    : Node_Id;
       Target_Typ : Entity_Id;
       Source_Typ : Entity_Id;
-      Warn_Node  : Node_Id)
-      return       Check_Result;
+      Warn_Node  : Node_Id) return Check_Result;
    --  Like Apply_Selected_Range_Checks, except it doesn't modify anything,
    --  just returns a list of nodes as described in the spec of this package
    --  for the Range_Check function.
@@ -292,6 +329,19 @@ package body Checks is
          return Scope_Suppress (Accessibility_Check);
       end if;
    end Accessibility_Checks_Suppressed;
+
+   ---------------------------------
+   -- Alignment_Checks_Suppressed --
+   ---------------------------------
+
+   function Alignment_Checks_Suppressed (E : Entity_Id) return Boolean is
+   begin
+      if Present (E) and then Checks_May_Be_Suppressed (E) then
+         return Is_Check_Suppressed (E, Alignment_Check);
+      else
+         return Scope_Suppress (Alignment_Check);
+      end if;
+   end Alignment_Checks_Suppressed;
 
    -------------------------
    -- Append_Range_Checks --
@@ -349,61 +399,24 @@ package body Checks is
       P : constant Node_Id := Prefix (N);
 
    begin
-      if Inside_A_Generic then
+      --  We do not need checks if we are not generating code (i.e. the
+      --  expander is not active). This is not just an optimization, there
+      --  are cases (e.g. with pragma Debug) where generating the checks
+      --  can cause real trouble).
+
+      if not Expander_Active then
          return;
       end if;
 
-      if Is_Entity_Name (P) then
-         Check_Unset_Reference (P);
-      end if;
+      --  No check if short circuiting makes check unnecessary
 
-      --  Don't need access check if prefix is known to be non-null
-
-      if Known_Non_Null (P) then
-         return;
-
-      --  Don't need access checks if they are suppressed on the type
-
-      elsif Access_Checks_Suppressed (Etype (P)) then
+      if not Check_Needed (P, Access_Check) then
          return;
       end if;
 
-      --  Case where P is an entity name
+      --  Otherwise go ahead and install the check
 
-      if Is_Entity_Name (P) then
-         declare
-            Ent : constant Entity_Id := Entity (P);
-
-         begin
-            if Access_Checks_Suppressed (Ent) then
-               return;
-            end if;
-
-            --  Otherwise we are going to generate an access check, and
-            --  are we have done it, the entity will now be known non null
-            --  But we have to check for safe sequential semantics here!
-
-            if Safe_To_Capture_Value (N, Ent) then
-               Set_Is_Known_Non_Null (Ent);
-            end if;
-         end;
-      end if;
-
-      --  Access check is required
-
-      declare
-         Loc : constant Source_Ptr := Sloc (N);
-
-      begin
-         Insert_Action (N,
-           Make_Raise_Constraint_Error (Sloc (N),
-              Condition =>
-                Make_Op_Eq (Loc,
-                  Left_Opnd => Duplicate_Subexpr_Move_Checks (P),
-                  Right_Opnd =>
-                    Make_Null (Loc)),
-              Reason => CE_Access_Check_Failed));
-      end;
+      Install_Null_Excluding_Check (P);
    end Apply_Access_Check;
 
    -------------------------------
@@ -438,9 +451,8 @@ package body Checks is
          Type_Level :=
            Make_Integer_Literal (Loc, Type_Access_Level (Typ));
 
-         --  Raise Program_Error if the accessibility level of the
-         --  the access parameter is deeper than the level of the
-         --  target access type.
+         --  Raise Program_Error if the accessibility level of the the access
+         --  parameter is deeper than the level of the target access type.
 
          Insert_Action (N,
            Make_Raise_Program_Error (Loc,
@@ -454,93 +466,232 @@ package body Checks is
       end if;
    end Apply_Accessibility_Check;
 
-   ---------------------------
-   -- Apply_Alignment_Check --
-   ---------------------------
+   --------------------------------
+   -- Apply_Address_Clause_Check --
+   --------------------------------
 
-   procedure Apply_Alignment_Check (E : Entity_Id; N : Node_Id) is
-      AC   : constant Node_Id := Address_Clause (E);
+   procedure Apply_Address_Clause_Check (E : Entity_Id; N : Node_Id) is
+      AC   : constant Node_Id    := Address_Clause (E);
+      Loc  : constant Source_Ptr := Sloc (AC);
+      Typ  : constant Entity_Id  := Etype (E);
+      Aexp : constant Node_Id    := Expression (AC);
+
       Expr : Node_Id;
-      Loc  : Source_Ptr;
+      --  Address expression (not necessarily the same as Aexp, for example
+      --  when Aexp is a reference to a constant, in which case Expr gets
+      --  reset to reference the value expression of the constant.
 
-      Alignment_Required : constant Boolean := Maximum_Alignment > 1;
-      --  Constant to show whether target requires alignment checks
+      Size_Warning_Output : Boolean := False;
+      --  If we output a size warning we set this True, to stop generating
+      --  what is likely to be an unuseful redundant alignment warning.
+
+      procedure Compile_Time_Bad_Alignment;
+      --  Post error warnings when alignment is known to be incompatible. Note
+      --  that we do not go as far as inserting a raise of Program_Error since
+      --  this is an erroneous case, and it may happen that we are lucky and an
+      --  underaligned address turns out to be OK after all. Also this warning
+      --  is suppressed if we already complained about the size.
+
+      --------------------------------
+      -- Compile_Time_Bad_Alignment --
+      --------------------------------
+
+      procedure Compile_Time_Bad_Alignment is
+      begin
+         if not Size_Warning_Output
+           and then Address_Clause_Overlay_Warnings
+         then
+            Error_Msg_FE
+              ("?specified address for& may be inconsistent with alignment ",
+               Aexp, E);
+            Error_Msg_FE
+              ("\?program execution may be erroneous ('R'M 13.3(27))",
+               Aexp, E);
+         end if;
+      end Compile_Time_Bad_Alignment;
+
+   --  Start of processing for Apply_Address_Check
 
    begin
-      --  See if check needed. Note that we never need a check if the
-      --  maximum alignment is one, since the check will always succeed
+      --  First obtain expression from address clause
+
+      Expr := Expression (AC);
+
+      --  The following loop digs for the real expression to use in the check
+
+      loop
+         --  For constant, get constant expression
+
+         if Is_Entity_Name (Expr)
+           and then Ekind (Entity (Expr)) = E_Constant
+         then
+            Expr := Constant_Value (Entity (Expr));
+
+         --  For unchecked conversion, get result to convert
+
+         elsif Nkind (Expr) = N_Unchecked_Type_Conversion then
+            Expr := Expression (Expr);
+
+         --  For (common case) of To_Address call, get argument
+
+         elsif Nkind (Expr) = N_Function_Call
+           and then Is_Entity_Name (Name (Expr))
+           and then Is_RTE (Entity (Name (Expr)), RE_To_Address)
+         then
+            Expr := First (Parameter_Associations (Expr));
+
+            if Nkind (Expr) = N_Parameter_Association then
+               Expr := Explicit_Actual_Parameter (Expr);
+            end if;
+
+         --  We finally have the real expression
+
+         else
+            exit;
+         end if;
+      end loop;
+
+      --  Output a warning if we have the situation of
+
+      --      for X'Address use Y'Address
+
+      --  and X and Y both have known object sizes, and Y is smaller than X
+
+      if Nkind (Expr) = N_Attribute_Reference
+        and then Attribute_Name (Expr) = Name_Address
+        and then Is_Entity_Name (Prefix (Expr))
+      then
+         declare
+            Exp_Ent  : constant Entity_Id := Entity (Prefix (Expr));
+            Obj_Size : Uint := No_Uint;
+            Exp_Size : Uint := No_Uint;
+
+         begin
+            if Known_Esize (E) then
+               Obj_Size := Esize (E);
+            elsif Known_Esize (Etype (E)) then
+               Obj_Size := Esize (Etype (E));
+            end if;
+
+            if Known_Esize (Exp_Ent) then
+               Exp_Size := Esize (Exp_Ent);
+            elsif Known_Esize (Etype (Exp_Ent)) then
+               Exp_Size := Esize (Etype (Exp_Ent));
+            end if;
+
+            if Obj_Size /= No_Uint
+              and then Exp_Size /= No_Uint
+              and then Obj_Size > Exp_Size
+              and then not Warnings_Off (E)
+            then
+               if Address_Clause_Overlay_Warnings then
+                  Error_Msg_FE
+                    ("?& overlays smaller object", Aexp, E);
+                  Error_Msg_FE
+                    ("\?program execution may be erroneous", Aexp, E);
+                  Size_Warning_Output := True;
+               end if;
+            end if;
+         end;
+      end if;
+
+      --  See if alignment check needed. Note that we never need a check if the
+      --  maximum alignment is one, since the check will always succeed.
+
+      --  Note: we do not check for checks suppressed here, since that check
+      --  was done in Sem_Ch13 when the address clause was proceeds. We are
+      --  only called if checks were not suppressed. The reason for this is
+      --  that we have to delay the call to Apply_Alignment_Check till freeze
+      --  time (so that all types etc are elaborated), but we have to check
+      --  the status of check suppressing at the point of the address clause.
 
       if No (AC)
         or else not Check_Address_Alignment (AC)
-        or else not Alignment_Required
+        or else Maximum_Alignment = 1
       then
          return;
       end if;
 
-      Loc  := Sloc (AC);
-      Expr := Expression (AC);
-
-      if Nkind (Expr) = N_Unchecked_Type_Conversion then
-         Expr := Expression (Expr);
-
-      elsif Nkind (Expr) = N_Function_Call
-        and then Is_RTE (Entity (Name (Expr)), RE_To_Address)
-      then
-         Expr := First (Parameter_Associations (Expr));
-
-         if Nkind (Expr) = N_Parameter_Association then
-            Expr := Explicit_Actual_Parameter (Expr);
-         end if;
-      end if;
-
-      --  Here Expr is the address value. See if we know that the
-      --  value is unacceptable at compile time.
+      --  See if we know that Expr is a bad alignment at compile time
 
       if Compile_Time_Known_Value (Expr)
-        and then Known_Alignment (E)
+        and then (Known_Alignment (E) or else Known_Alignment (Typ))
       then
-         if Expr_Value (Expr) mod Alignment (E) /= 0 then
-            Insert_Action (N,
-               Make_Raise_Program_Error (Loc,
-                 Reason => PE_Misaligned_Address_Value));
-            Error_Msg_NE
-              ("?specified address for& not " &
-               "consistent with alignment", Expr, E);
-         end if;
+         declare
+            AL : Uint := Alignment (Typ);
 
-      --  Here we do not know if the value is acceptable, generate
-      --  code to raise PE if alignment is inappropriate.
+         begin
+            --  The object alignment might be more restrictive than the
+            --  type alignment.
 
-      else
-         --  Skip generation of this code if we don't want elab code
+            if Known_Alignment (E) then
+               AL := Alignment (E);
+            end if;
 
-         if not Restrictions (No_Elaboration_Code) then
-            Insert_After_And_Analyze (N,
-              Make_Raise_Program_Error (Loc,
-                Condition =>
-                  Make_Op_Ne (Loc,
-                    Left_Opnd =>
-                      Make_Op_Mod (Loc,
-                        Left_Opnd =>
-                          Unchecked_Convert_To
-                           (RTE (RE_Integer_Address),
-                            Duplicate_Subexpr_No_Checks (Expr)),
-                        Right_Opnd =>
-                          Make_Attribute_Reference (Loc,
-                            Prefix => New_Occurrence_Of (E, Loc),
-                            Attribute_Name => Name_Alignment)),
-                    Right_Opnd => Make_Integer_Literal (Loc, Uint_0)),
-                Reason => PE_Misaligned_Address_Value),
-              Suppress => All_Checks);
-         end if;
+            if Expr_Value (Expr) mod AL /= 0 then
+               Compile_Time_Bad_Alignment;
+            else
+               return;
+            end if;
+         end;
+
+      --  If the expression has the form X'Address, then we can find out if
+      --  the object X has an alignment that is compatible with the object E.
+
+      elsif Nkind (Expr) = N_Attribute_Reference
+        and then Attribute_Name (Expr) = Name_Address
+      then
+         declare
+            AR : constant Alignment_Result :=
+                   Has_Compatible_Alignment (E, Prefix (Expr));
+         begin
+            if AR = Known_Compatible then
+               return;
+            elsif AR = Known_Incompatible then
+               Compile_Time_Bad_Alignment;
+            end if;
+         end;
       end if;
 
-      return;
+      --  Here we do not know if the value is acceptable. Stricly we don't have
+      --  to do anything, since if the alignment is bad, we have an erroneous
+      --  program. However we are allowed to check for erroneous conditions and
+      --  we decide to do this by default if the check is not suppressed.
+
+      --  However, don't do the check if elaboration code is unwanted
+
+      if Restriction_Active (No_Elaboration_Code) then
+         return;
+
+      --  Generate a check to raise PE if alignment may be inappropriate
+
+      else
+         Insert_After_And_Analyze (N,
+           Make_Raise_Program_Error (Loc,
+             Condition =>
+               Make_Op_Ne (Loc,
+                 Left_Opnd =>
+                   Make_Op_Mod (Loc,
+                     Left_Opnd =>
+                       Unchecked_Convert_To
+                         (RTE (RE_Integer_Address), Expr),
+                     Right_Opnd =>
+                       Make_Attribute_Reference (Loc,
+                         Prefix => New_Occurrence_Of (E, Loc),
+                         Attribute_Name => Name_Alignment)),
+                 Right_Opnd => Make_Integer_Literal (Loc, Uint_0)),
+             Reason => PE_Misaligned_Address_Value),
+           Suppress => All_Checks);
+         return;
+      end if;
 
    exception
+      --  If we have some missing run time component in configurable run time
+      --  mode then just skip the check (it is not required in any case).
+
       when RE_Not_Available =>
          return;
-   end Apply_Alignment_Check;
+   end Apply_Address_Clause_Check;
 
    -------------------------------------
    -- Apply_Arithmetic_Overflow_Check --
@@ -569,8 +720,8 @@ package body Checks is
       --  flag is not set anyway, or we are not doing code expansion.
 
       if Backend_Overflow_Checks_On_Target
-        or not Do_Overflow_Check (N)
-        or not Expander_Active
+        or else not Do_Overflow_Check (N)
+        or else not Expander_Active
       then
          return;
       end if;
@@ -692,9 +843,16 @@ package body Checks is
    -- Apply_Array_Size_Check --
    ----------------------------
 
-   --  Note: Really of course this entre check should be in the backend,
-   --  and perhaps this is not quite the right value, but it is good
-   --  enough to catch the normal cases (and the relevant ACVC tests!)
+   --  The situation is as follows. In GNAT 3 (GCC 2.x), the size in bits
+   --  is computed in 32 bits without an overflow check. That's a real
+   --  problem for Ada. So what we do in GNAT 3 is to approximate the
+   --  size of an array by manually multiplying the element size by the
+   --  number of elements, and comparing that against the allowed limits.
+
+   --  In GNAT 5, the size in byte is still computed in 32 bits without
+   --  an overflow check in the dynamic case, but the size in bits is
+   --  computed in 64 bits. We assume that's good enough, and we do not
+   --  bother to generate any front end test.
 
    procedure Apply_Array_Size_Check (N : Node_Id; Typ : Entity_Id) is
       Loc  : constant Source_Ptr := Sloc (N);
@@ -775,13 +933,27 @@ package body Checks is
    --  Start of processing for Apply_Array_Size_Check
 
    begin
-      if not Expander_Active
-        or else Storage_Checks_Suppressed (Typ)
-      then
+      --  Do size check on local arrays. We only need this in the GCC 2
+      --  case, since in GCC 3, we expect the back end to properly handle
+      --  things. This routine can be removed when we baseline GNAT 3.
+
+      if Opt.GCC_Version >= 3 then
          return;
       end if;
 
-      --  It is pointless to insert this check inside an  init proc, because
+      --  No need for a check if not expanding
+
+      if not Expander_Active then
+         return;
+      end if;
+
+      --  No need for a check if checks are suppressed
+
+      if Storage_Checks_Suppressed (Typ) then
+         return;
+      end if;
+
+      --  It is pointless to insert this check inside an init proc, because
       --  that's too late, we have already built the object to be the right
       --  size, and if it's too large, too bad!
 
@@ -804,10 +976,10 @@ package body Checks is
          end if;
       end loop;
 
-      --  First step is to calculate the maximum number of elements. For this
-      --  calculation, we use the actual size of the subtype if it is static,
-      --  and if a bound of a subtype is non-static, we go to the bound of the
-      --  base type.
+      --  First step is to calculate the maximum number of elements. For
+      --  this calculation, we use the actual size of the subtype if it is
+      --  static, and if a bound of a subtype is non-static, we go to the
+      --  bound of the base type.
 
       Siz := Uint_1;
       Indx := First_Index (Typ);
@@ -820,8 +992,8 @@ package body Checks is
          --  far, so there is no need to generate any kind of check.
 
          if Raises_Constraint_Error (Lo)
-              or else
-            Raises_Constraint_Error (Hi)
+           or else
+             Raises_Constraint_Error (Hi)
          then
             Uintp.Release (Umark);
             return;
@@ -857,8 +1029,8 @@ package body Checks is
          Check_Siz := Uint_2 ** 31;
       end if;
 
-      --  If we have all static bounds and Siz is too large, then we know we
-      --  know we have a storage error right now, so generate message
+      --  If we have all static bounds and Siz is too large, then we know
+      --  we know we have a storage error right now, so generate message
 
       if Static and then Siz >= Check_Siz then
          Insert_Action (N,
@@ -889,11 +1061,10 @@ package body Checks is
 
       Sizx :=
         Make_Attribute_Reference (Loc,
-          Prefix         => New_Occurrence_Of (Ctyp, Loc),
+          Prefix =>         New_Occurrence_Of (Ctyp, Loc),
           Attribute_Name => Name_Size);
 
       Indx := First_Index (Typ);
-
       for J in 1 .. Number_Dimensions (Typ) loop
          if Sloc (Etype (Indx)) = Sloc (N) then
             Ensure_Defined (Etype (Indx), N);
@@ -904,12 +1075,14 @@ package body Checks is
              Left_Opnd  => Sizx,
              Right_Opnd =>
                Make_Attribute_Reference (Loc,
-                 Prefix => New_Occurrence_Of (Typ, Loc),
+                 Prefix         => New_Occurrence_Of (Typ, Loc),
                  Attribute_Name => Name_Length,
-                 Expressions => New_List (
+                 Expressions    => New_List (
                    Make_Integer_Literal (Loc, J))));
          Next_Index (Indx);
       end loop;
+
+      --  Emit the check
 
       Code :=
         Make_Raise_Storage_Error (Loc,
@@ -917,11 +1090,12 @@ package body Checks is
             Make_Op_Ge (Loc,
               Left_Opnd  => Sizx,
               Right_Opnd =>
-                Make_Integer_Literal (Loc, Check_Siz)),
-            Reason => SE_Object_Too_Large);
+                Make_Integer_Literal (Loc,
+                  Intval    => Check_Siz)),
+          Reason => SE_Object_Too_Large);
 
       Set_Size_Check_Code (Defining_Identifier (N), Code);
-      Insert_Action (N, Code);
+      Insert_Action (N, Code, Suppress => All_Checks);
    end Apply_Array_Size_Check;
 
    ----------------------------
@@ -944,7 +1118,7 @@ package body Checks is
 
       elsif Is_Array_Type (Typ) then
 
-         --  A useful optimization: an aggregate with only an Others clause
+         --  A useful optimization: an aggregate with only an others clause
          --  always has the right bounds.
 
          if Nkind (N) = N_Aggregate
@@ -995,6 +1169,12 @@ package body Checks is
             and then Is_Constrained (Desig_Typ)
          then
             Apply_Discriminant_Check (N, Typ);
+         end if;
+
+         if Can_Never_Be_Null (Typ)
+           and then not Can_Never_Be_Null (Etype (N))
+         then
+            Install_Null_Excluding_Check (N);
          end if;
       end if;
    end Apply_Constraint_Check;
@@ -1066,10 +1246,10 @@ package body Checks is
          return;
       end if;
 
-      --  No discriminant checks necessary for access when expression
+      --  No discriminant checks necessary for an access when expression
       --  is statically Null. This is not only an optimization, this is
       --  fundamental because otherwise discriminant checks may be generated
-      --  in init procs for types containing an access to a non-frozen yet
+      --  in init procs for types containing an access to a not-yet-frozen
       --  record, causing a deadly forward reference.
 
       --  Also, if the expression is of an access type whose designated
@@ -1087,15 +1267,26 @@ package body Checks is
          end if;
       end if;
 
-      --  If an assignment target is present, then we need to generate
-      --  the actual subtype if the target is a parameter or aliased
-      --  object with an unconstrained nominal subtype.
+      --  If an assignment target is present, then we need to generate the
+      --  actual subtype if the target is a parameter or aliased object with
+      --  an unconstrained nominal subtype.
+
+      --  Ada 2005 (AI-363): For Ada 2005, we limit the building of the actual
+      --  subtype to the parameter and dereference cases, since other aliased
+      --  objects are unconstrained (unless the nominal subtype is explicitly
+      --  constrained). (But we also need to test for renamings???)
 
       if Present (Lhs)
         and then (Present (Param_Entity (Lhs))
-                   or else (not Is_Constrained (T_Typ)
+                   or else (Ada_Version < Ada_05
+                             and then not Is_Constrained (T_Typ)
                              and then Is_Aliased_View (Lhs)
-                             and then not Is_Aliased_Unconstrained_Component))
+                             and then not Is_Aliased_Unconstrained_Component)
+                   or else (Ada_Version >= Ada_05
+                             and then not Is_Constrained (T_Typ)
+                             and then Nkind (Lhs) = N_Explicit_Dereference
+                             and then Nkind (Original_Node (Lhs)) /=
+                                        N_Function_Call))
       then
          T_Typ := Get_Actual_Subtype (Lhs);
       end if;
@@ -1105,6 +1296,20 @@ package body Checks is
       --  and no check is required).
 
       if not Is_Constrained (T_Typ) then
+         return;
+
+      --  Ada 2005: nothing to do if the type is one for which there is a
+      --  partial view that is constrained.
+
+      elsif Ada_Version >= Ada_05
+        and then Has_Constrained_Partial_View (Base_Type (T_Typ))
+      then
+         return;
+      end if;
+
+      --  Nothing to do if the type is an Unchecked_Union
+
+      if Is_Unchecked_Union (Base_Type (T_Typ)) then
          return;
       end if;
 
@@ -1294,7 +1499,8 @@ package body Checks is
 
    begin
       if Expander_Active
-        and not Backend_Divide_Checks_On_Target
+        and then not Backend_Divide_Checks_On_Target
+        and then Check_Needed (Right, Division_Check)
       then
          Determine_Range (Right, ROK, Rlo, Rhi);
 
@@ -1302,13 +1508,12 @@ package body Checks is
          --  part of the test is not controlled by the -gnato switch.
 
          if Do_Division_Check (N) then
-
             if (not ROK) or else (Rlo <= 0 and then 0 <= Rhi) then
                Insert_Action (N,
                  Make_Raise_Constraint_Error (Loc,
                    Condition =>
                      Make_Op_Eq (Loc,
-                       Left_Opnd => Duplicate_Subexpr_Move_Checks (Right),
+                       Left_Opnd  => Duplicate_Subexpr_Move_Checks (Right),
                        Right_Opnd => Make_Integer_Literal (Loc, 0)),
                    Reason => CE_Divide_By_Zero));
             end if;
@@ -1317,7 +1522,6 @@ package body Checks is
          --  Test for extremely annoying case of xxx'First divided by -1
 
          if Do_Overflow_Check (N) then
-
             if Nkind (N) = N_Op_Divide
               and then Is_Signed_Integer_Type (Typ)
             then
@@ -1349,6 +1553,186 @@ package body Checks is
          end if;
       end if;
    end Apply_Divide_Check;
+
+   ----------------------------------
+   -- Apply_Float_Conversion_Check --
+   ----------------------------------
+
+   --  Let F and I be the source and target types of the conversion.
+   --  The Ada standard specifies that a floating-point value X is rounded
+   --  to the nearest integer, with halfway cases being rounded away from
+   --  zero. The rounded value of X is checked against I'Range.
+
+   --  The catch in the above paragraph is that there is no good way
+   --  to know whether the round-to-integer operation resulted in
+   --  overflow. A remedy is to perform a range check in the floating-point
+   --  domain instead, however:
+   --      (1)  The bounds may not be known at compile time
+   --      (2)  The check must take into account possible rounding.
+   --      (3)  The range of type I may not be exactly representable in F.
+   --      (4)  The end-points I'First - 0.5 and I'Last + 0.5 may or may
+   --           not be in range, depending on the sign of  I'First and I'Last.
+   --      (5)  X may be a NaN, which will fail any comparison
+
+   --  The following steps take care of these issues converting X:
+   --      (1) If either I'First or I'Last is not known at compile time, use
+   --          I'Base instead of I in the next three steps and perform a
+   --          regular range check against I'Range after conversion.
+   --      (2) If I'First - 0.5 is representable in F then let Lo be that
+   --          value and define Lo_OK as (I'First > 0). Otherwise, let Lo be
+   --          F'Machine (T) and let Lo_OK be (Lo >= I'First). In other words,
+   --          take one of the closest floating-point numbers to T, and see if
+   --          it is in range or not.
+   --      (3) If I'Last + 0.5 is representable in F then let Hi be that value
+   --          and define Hi_OK as (I'Last < 0). Otherwise, let Hi be
+   --          F'Rounding (T) and let Hi_OK be (Hi <= I'Last).
+   --      (4) Raise CE when (Lo_OK and X < Lo) or (not Lo_OK and X <= Lo)
+   --                     or (Hi_OK and X > Hi) or (not Hi_OK and X >= Hi)
+
+   procedure Apply_Float_Conversion_Check
+     (Ck_Node    : Node_Id;
+      Target_Typ : Entity_Id)
+   is
+      LB          : constant Node_Id := Type_Low_Bound (Target_Typ);
+      HB          : constant Node_Id := Type_High_Bound (Target_Typ);
+      Loc         : constant Source_Ptr := Sloc (Ck_Node);
+      Expr_Type   : constant Entity_Id  := Base_Type (Etype (Ck_Node));
+      Target_Base : constant Entity_Id  := Implementation_Base_Type
+                                             (Target_Typ);
+      Max_Bound   : constant Uint := UI_Expon
+                                       (Machine_Radix (Expr_Type),
+                                        Machine_Mantissa (Expr_Type) - 1) - 1;
+      --  Largest bound, so bound plus or minus half is a machine number of F
+
+      Ifirst,
+      Ilast     : Uint;         --  Bounds of integer type
+      Lo, Hi    : Ureal;        --  Bounds to check in floating-point domain
+      Lo_OK,
+      Hi_OK     : Boolean;      --  True iff Lo resp. Hi belongs to I'Range
+
+      Lo_Chk,
+      Hi_Chk    : Node_Id;      --  Expressions that are False iff check fails
+
+      Reason    : RT_Exception_Code;
+
+   begin
+      if not Compile_Time_Known_Value (LB)
+          or not Compile_Time_Known_Value (HB)
+      then
+         declare
+            --  First check that the value falls in the range of the base
+            --  type, to prevent overflow during conversion and then
+            --  perform a regular range check against the (dynamic) bounds.
+
+            Par : constant Node_Id := Parent (Ck_Node);
+
+            pragma Assert (Target_Base /= Target_Typ);
+            pragma Assert (Nkind (Par) = N_Type_Conversion);
+
+            Temp : constant Entity_Id :=
+                    Make_Defining_Identifier (Loc,
+                      Chars => New_Internal_Name ('T'));
+
+         begin
+            Apply_Float_Conversion_Check (Ck_Node, Target_Base);
+            Set_Etype (Temp, Target_Base);
+
+            Insert_Action (Parent (Par),
+              Make_Object_Declaration (Loc,
+                Defining_Identifier => Temp,
+                Object_Definition => New_Occurrence_Of (Target_Typ, Loc),
+                Expression => New_Copy_Tree (Par)),
+                Suppress => All_Checks);
+
+            Insert_Action (Par,
+              Make_Raise_Constraint_Error (Loc,
+                Condition =>
+                  Make_Not_In (Loc,
+                    Left_Opnd  => New_Occurrence_Of (Temp, Loc),
+                    Right_Opnd => New_Occurrence_Of (Target_Typ, Loc)),
+                Reason => CE_Range_Check_Failed));
+            Rewrite (Par, New_Occurrence_Of (Temp, Loc));
+
+            return;
+         end;
+      end if;
+
+      --  Get the bounds of the target type
+
+      Ifirst := Expr_Value (LB);
+      Ilast  := Expr_Value (HB);
+
+      --  Check against lower bound
+
+      if abs (Ifirst) < Max_Bound then
+         Lo := UR_From_Uint (Ifirst) - Ureal_Half;
+         Lo_OK := (Ifirst > 0);
+      else
+         Lo := Machine (Expr_Type, UR_From_Uint (Ifirst), Round_Even, Ck_Node);
+         Lo_OK := (Lo >= UR_From_Uint (Ifirst));
+      end if;
+
+      if Lo_OK then
+
+         --  Lo_Chk := (X >= Lo)
+
+         Lo_Chk := Make_Op_Ge (Loc,
+                     Left_Opnd => Duplicate_Subexpr_No_Checks (Ck_Node),
+                     Right_Opnd => Make_Real_Literal (Loc, Lo));
+
+      else
+         --  Lo_Chk := (X > Lo)
+
+         Lo_Chk := Make_Op_Gt (Loc,
+                     Left_Opnd => Duplicate_Subexpr_No_Checks (Ck_Node),
+                     Right_Opnd => Make_Real_Literal (Loc, Lo));
+      end if;
+
+      --  Check against higher bound
+
+      if abs (Ilast) < Max_Bound then
+         Hi := UR_From_Uint (Ilast) + Ureal_Half;
+         Hi_OK := (Ilast < 0);
+      else
+         Hi := Machine (Expr_Type, UR_From_Uint (Ilast), Round_Even, Ck_Node);
+         Hi_OK := (Hi <= UR_From_Uint (Ilast));
+      end if;
+
+      if Hi_OK then
+
+         --  Hi_Chk := (X <= Hi)
+
+         Hi_Chk := Make_Op_Le (Loc,
+                     Left_Opnd => Duplicate_Subexpr_No_Checks (Ck_Node),
+                     Right_Opnd => Make_Real_Literal (Loc, Hi));
+
+      else
+         --  Hi_Chk := (X < Hi)
+
+         Hi_Chk := Make_Op_Lt (Loc,
+                     Left_Opnd => Duplicate_Subexpr_No_Checks (Ck_Node),
+                     Right_Opnd => Make_Real_Literal (Loc, Hi));
+      end if;
+
+      --  If the bounds of the target type are the same as those of the
+      --  base type, the check is an overflow check as a range check is
+      --  not performed in these cases.
+
+      if Expr_Value (Type_Low_Bound (Target_Base)) = Ifirst
+        and then Expr_Value (Type_High_Bound (Target_Base)) = Ilast
+      then
+         Reason := CE_Overflow_Check_Failed;
+      else
+         Reason := CE_Range_Check_Failed;
+      end if;
+
+      --  Raise CE if either conditions does not hold
+
+      Insert_Action (Ck_Node,
+        Make_Raise_Constraint_Error (Loc,
+          Condition => Make_Op_Not (Loc, Make_And_Then (Loc, Lo_Chk, Hi_Chk)),
+          Reason    => Reason));
+   end Apply_Float_Conversion_Check;
 
    ------------------------
    -- Apply_Length_Check --
@@ -1557,7 +1941,7 @@ package body Checks is
       --  we only do this for discrete types, and not fixed-point or
       --  floating-point types.
 
-      --  The additional less-precise tests below catch these cases.
+      --  The additional less-precise tests below catch these cases
 
       --  Note: skip this if we are given a source_typ, since the point
       --  of supplying a Source_Typ is to stop us looking at the expression.
@@ -1719,13 +2103,27 @@ package body Checks is
          then
             Cond := Condition (R_Cno);
 
-            if not Has_Dynamic_Length_Check (Ck_Node)
-              and then Checks_On
-            then
-               Insert_Action (Ck_Node, R_Cno);
+            --  Case where node does not now have a dynamic check
 
-               if not Do_Static then
-                  Set_Has_Dynamic_Length_Check (Ck_Node);
+            if not Has_Dynamic_Length_Check (Ck_Node) then
+
+               --  If checks are on, just insert the check
+
+               if Checks_On then
+                  Insert_Action (Ck_Node, R_Cno);
+
+                  if not Do_Static then
+                     Set_Has_Dynamic_Length_Check (Ck_Node);
+                  end if;
+
+               --  If checks are off, then analyze the length check after
+               --  temporarily attaching it to the tree in case the relevant
+               --  condition can be evaluted at compile time. We still want a
+               --  compile time warning in this case.
+
+               else
+                  Set_Parent (R_Cno, Ck_Node);
+                  Analyze (R_Cno);
                end if;
             end if;
 
@@ -1922,9 +2320,14 @@ package body Checks is
             --  and no floating point type is involved in the type conversion
             --  then fixed point values must be read as integral values.
 
+            Float_To_Int : constant Boolean :=
+                             Is_Floating_Point_Type (Expr_Type)
+                               and then Is_Integer_Type (Target_Type);
+
          begin
             if not Overflow_Checks_Suppressed (Target_Base)
               and then not In_Subrange_Of (Expr_Type, Target_Base, Conv_OK)
+              and then not Float_To_Int
             then
                Set_Do_Overflow_Check (N);
             end if;
@@ -1932,8 +2335,12 @@ package body Checks is
             if not Range_Checks_Suppressed (Target_Type)
               and then not Range_Checks_Suppressed (Expr_Type)
             then
-               Apply_Scalar_Range_Check
-                 (Expr, Target_Type, Fixed_Int => Conv_OK);
+               if Float_To_Int then
+                  Apply_Float_Conversion_Check (Expr, Target_Type);
+               else
+                  Apply_Scalar_Range_Check
+                    (Expr, Target_Type, Fixed_Int => Conv_OK);
+               end if;
             end if;
          end;
 
@@ -2099,8 +2506,7 @@ package body Checks is
 
    function Build_Discriminant_Checks
      (N     : Node_Id;
-      T_Typ : Entity_Id)
-      return Node_Id
+      T_Typ : Entity_Id) return Node_Id
    is
       Loc      : constant Source_Ptr := Sloc (N);
       Cond     : Node_Id;
@@ -2109,7 +2515,40 @@ package body Checks is
       Dref     : Node_Id;
       Dval     : Node_Id;
 
+      function Aggregate_Discriminant_Val (Disc : Entity_Id) return Node_Id;
+
+      ----------------------------------
+      -- Aggregate_Discriminant_Value --
+      ----------------------------------
+
+      function Aggregate_Discriminant_Val (Disc : Entity_Id) return Node_Id is
+         Assoc : Node_Id;
+
+      begin
+         --  The aggregate has been normalized with named associations. We
+         --  use the Chars field to locate the discriminant to take into
+         --  account discriminants in derived types, which carry the same
+         --  name as those in the parent.
+
+         Assoc := First (Component_Associations (N));
+         while Present (Assoc) loop
+            if Chars (First (Choices (Assoc))) = Chars (Disc) then
+               return Expression (Assoc);
+            else
+               Next (Assoc);
+            end if;
+         end loop;
+
+         --  Discriminant must have been found in the loop above
+
+         raise Program_Error;
+      end Aggregate_Discriminant_Val;
+
+   --  Start of processing for Build_Discriminant_Checks
+
    begin
+      --  Loop through discriminants evolving the condition
+
       Cond := Empty;
       Disc := First_Elmt (Discriminant_Constraint (T_Typ));
 
@@ -2134,14 +2573,31 @@ package body Checks is
             Dval := Duplicate_Subexpr_No_Checks (Dval);
          end if;
 
-         Dref :=
-           Make_Selected_Component (Loc,
-             Prefix =>
-               Duplicate_Subexpr_No_Checks (N, Name_Req => True),
-             Selector_Name =>
-               Make_Identifier (Loc, Chars (Disc_Ent)));
+         --  If we have an Unchecked_Union node, we can infer the discriminants
+         --  of the node.
 
-         Set_Is_In_Discriminant_Check (Dref);
+         if Is_Unchecked_Union (Base_Type (T_Typ)) then
+            Dref := New_Copy (
+              Get_Discriminant_Value (
+                First_Discriminant (T_Typ),
+                T_Typ,
+                Stored_Constraint (T_Typ)));
+
+         elsif Nkind (N) = N_Aggregate then
+            Dref :=
+               Duplicate_Subexpr_No_Checks
+                 (Aggregate_Discriminant_Val (Disc_Ent));
+
+         else
+            Dref :=
+              Make_Selected_Component (Loc,
+                Prefix =>
+                  Duplicate_Subexpr_No_Checks (N, Name_Req => True),
+                Selector_Name =>
+                  Make_Identifier (Loc, Chars (Disc_Ent)));
+
+            Set_Is_In_Discriminant_Check (Dref);
+         end if;
 
          Evolve_Or_Else (Cond,
            Make_Op_Ne (Loc,
@@ -2154,6 +2610,119 @@ package body Checks is
 
       return Cond;
    end Build_Discriminant_Checks;
+
+   ------------------
+   -- Check_Needed --
+   ------------------
+
+   function Check_Needed (Nod : Node_Id; Check : Check_Type) return Boolean is
+      N : Node_Id;
+      P : Node_Id;
+      K : Node_Kind;
+      L : Node_Id;
+      R : Node_Id;
+
+   begin
+      --  Always check if not simple entity
+
+      if Nkind (Nod) not in N_Has_Entity
+        or else not Comes_From_Source (Nod)
+      then
+         return True;
+      end if;
+
+      --  Look up tree for short circuit
+
+      N := Nod;
+      loop
+         P := Parent (N);
+         K := Nkind (P);
+
+         if K not in N_Subexpr then
+            return True;
+
+         --  Or/Or Else case, left operand must be equality test
+
+         elsif K = N_Op_Or or else K = N_Or_Else then
+            exit when N = Right_Opnd (P)
+              and then Nkind (Left_Opnd (P)) = N_Op_Eq;
+
+         --  And/And then case, left operand must be inequality test
+
+         elsif K = N_Op_And or else K = N_And_Then then
+            exit when N = Right_Opnd (P)
+              and then Nkind (Left_Opnd (P)) = N_Op_Ne;
+         end if;
+
+         N := P;
+      end loop;
+
+      --  If we fall through the loop, then we have a conditional with an
+      --  appropriate test as its left operand. So test further.
+
+      L := Left_Opnd (P);
+
+      if Nkind (L) = N_Op_Not then
+         L := Right_Opnd (L);
+      end if;
+
+      R := Right_Opnd (L);
+      L := Left_Opnd (L);
+
+      --  Left operand of test must match original variable
+
+      if Nkind (L) not in N_Has_Entity
+        or else Entity (L) /= Entity (Nod)
+      then
+         return True;
+      end if;
+
+      --  Right operand of test mus be key value (zero or null)
+
+      case Check is
+         when Access_Check =>
+            if Nkind (R) /= N_Null then
+               return True;
+            end if;
+
+         when Division_Check =>
+            if not Compile_Time_Known_Value (R)
+              or else Expr_Value (R) /= Uint_0
+            then
+               return True;
+            end if;
+      end case;
+
+      --  Here we have the optimizable case, warn if not short-circuited
+
+      if K = N_Op_And or else K = N_Op_Or then
+         case Check is
+            when Access_Check =>
+               Error_Msg_N
+                 ("Constraint_Error may be raised (access check)?",
+                  Parent (Nod));
+            when Division_Check =>
+               Error_Msg_N
+                 ("Constraint_Error may be raised (zero divide)?",
+                  Parent (Nod));
+         end case;
+
+         if K = N_Op_And then
+            Error_Msg_N ("use `AND THEN` instead of AND?", P);
+         else
+            Error_Msg_N ("use `OR ELSE` instead of OR?", P);
+         end if;
+
+         --  If not short-circuited, we need the ckeck
+
+         return True;
+
+      --  If short-circuited, we can omit the check
+
+      else
+         return False;
+      end if;
+   end Check_Needed;
 
    -----------------------------------
    -- Check_Valid_Lvalue_Subscripts --
@@ -2191,6 +2760,139 @@ package body Checks is
          Check_Valid_Lvalue_Subscripts (Prefix (Expr));
       end if;
    end Check_Valid_Lvalue_Subscripts;
+
+   ----------------------------------
+   -- Null_Exclusion_Static_Checks --
+   ----------------------------------
+
+   procedure Null_Exclusion_Static_Checks (N : Node_Id) is
+      Error_Node : Node_Id;
+      Expr       : Node_Id;
+      Has_Null   : constant Boolean := Has_Null_Exclusion (N);
+      K          : constant Node_Kind := Nkind (N);
+      Typ        : Entity_Id;
+
+   begin
+      pragma Assert
+        (K = N_Component_Declaration
+           or else K = N_Discriminant_Specification
+           or else K = N_Function_Specification
+           or else K = N_Object_Declaration
+           or else K = N_Parameter_Specification);
+
+      if K = N_Function_Specification then
+         Typ := Etype (Defining_Entity (N));
+      else
+         Typ := Etype (Defining_Identifier (N));
+      end if;
+
+      case K is
+         when N_Component_Declaration =>
+            if Present (Access_Definition (Component_Definition (N))) then
+               Error_Node := Component_Definition (N);
+            else
+               Error_Node := Subtype_Indication (Component_Definition (N));
+            end if;
+
+         when N_Discriminant_Specification =>
+            Error_Node    := Discriminant_Type (N);
+
+         when N_Function_Specification =>
+            Error_Node    := Result_Definition (N);
+
+         when N_Object_Declaration =>
+            Error_Node    := Object_Definition (N);
+
+         when N_Parameter_Specification =>
+            Error_Node    := Parameter_Type (N);
+
+         when others =>
+            raise Program_Error;
+      end case;
+
+      if Has_Null then
+
+         --  Enforce legality rule 3.10 (13): A null exclusion can only be
+         --  applied to an access [sub]type.
+
+         if not Is_Access_Type (Typ) then
+            Error_Msg_N
+              ("null-exclusion must be applied to an access type",
+               Error_Node);
+
+         --  Enforce legality rule 3.10 (14/1): A null exclusion can only
+         --  be applied to a [sub]type that does not exclude null already.
+
+         elsif Can_Never_Be_Null (Typ)
+
+            --  No need to check itypes that have a null exclusion because
+            --  they are already examined at their point of creation.
+
+           and then not Is_Itype (Typ)
+         then
+            Error_Msg_N
+              ("null-exclusion cannot be applied to a null excluding type",
+               Error_Node);
+         end if;
+      end if;
+
+      --  Check that null-excluding objects are always initialized
+
+      if K = N_Object_Declaration
+        and then No (Expression (N))
+      then
+         --  Add a an expression that assignates null. This node is needed
+         --  by Apply_Compile_Time_Constraint_Error, that will replace this
+         --  node by a Constraint_Error node.
+
+         Set_Expression (N, Make_Null (Sloc (N)));
+         Set_Etype (Expression (N), Etype (Defining_Identifier (N)));
+
+         Apply_Compile_Time_Constraint_Error
+           (N      => Expression (N),
+            Msg    => "(Ada 2005) null-excluding objects must be initialized?",
+            Reason => CE_Null_Not_Allowed);
+      end if;
+
+      --  Check that a null-excluding component, formal or object is not
+      --  being assigned a null value. Otherwise generate a warning message
+      --  and replace Expression (N) by a N_Contraint_Error node.
+
+      if K /= N_Function_Specification then
+         Expr := Expression (N);
+
+         if Present (Expr)
+           and then Nkind (Expr) = N_Null
+         then
+            case K is
+               when N_Component_Declaration      |
+                    N_Discriminant_Specification =>
+                  Apply_Compile_Time_Constraint_Error
+                    (N      => Expr,
+                     Msg    => "(Ada 2005) NULL not allowed " &
+                               "in null-excluding components?",
+                     Reason => CE_Null_Not_Allowed);
+
+               when N_Object_Declaration =>
+                  Apply_Compile_Time_Constraint_Error
+                    (N      => Expr,
+                     Msg    => "(Ada 2005) NULL not allowed " &
+                               "in null-excluding objects?",
+                     Reason => CE_Null_Not_Allowed);
+
+               when N_Parameter_Specification =>
+                  Apply_Compile_Time_Constraint_Error
+                    (N      => Expr,
+                     Msg    => "(Ada 2005) NULL not allowed " &
+                               "in null-excluding formals?",
+                     Reason => CE_Null_Not_Allowed);
+
+               when others =>
+                  null;
+            end case;
+         end if;
+      end if;
+   end Null_Exclusion_Static_Checks;
 
    ----------------------------------
    -- Conditional_Statements_Begin --
@@ -2728,15 +3430,32 @@ package body Checks is
 
    function Elaboration_Checks_Suppressed (E : Entity_Id) return Boolean is
    begin
+      --  The complication in this routine is that if we are in the dynamic
+      --  model of elaboration, we also check All_Checks, since All_Checks
+      --  does not set Elaboration_Check explicitly.
+
       if Present (E) then
          if Kill_Elaboration_Checks (E) then
             return True;
+
          elsif Checks_May_Be_Suppressed (E) then
-            return Is_Check_Suppressed (E, Elaboration_Check);
+            if Is_Check_Suppressed (E, Elaboration_Check) then
+               return True;
+            elsif Dynamic_Elaboration_Checks then
+               return Is_Check_Suppressed (E, All_Checks);
+            else
+               return False;
+            end if;
          end if;
       end if;
 
-      return Scope_Suppress (Elaboration_Check);
+      if Scope_Suppress (Elaboration_Check) then
+         return True;
+      elsif Dynamic_Elaboration_Checks then
+         return Scope_Suppress (All_Checks);
+      else
+         return False;
+      end if;
    end Elaboration_Checks_Suppressed;
 
    ---------------------------
@@ -2916,6 +3635,41 @@ package body Checks is
          return;
       end if;
 
+      --  Check for various cases where we should suppress the range check
+
+      --  No check if range checks suppressed for type of node
+
+      if Present (Etype (N))
+        and then Range_Checks_Suppressed (Etype (N))
+      then
+         return;
+
+      --  No check if node is an entity name, and range checks are suppressed
+      --  for this entity, or for the type of this entity.
+
+      elsif Is_Entity_Name (N)
+        and then (Range_Checks_Suppressed (Entity (N))
+                    or else Range_Checks_Suppressed (Etype (Entity (N))))
+      then
+         return;
+
+      --  No checks if index of array, and index checks are suppressed for
+      --  the array object or the type of the array.
+
+      elsif Nkind (Parent (N)) = N_Indexed_Component then
+         declare
+            Pref : constant Node_Id := Prefix (Parent (N));
+         begin
+            if Is_Entity_Name (Pref)
+              and then Index_Checks_Suppressed (Entity (Pref))
+            then
+               return;
+            elsif Index_Checks_Suppressed (Etype (Pref)) then
+               return;
+            end if;
+         end;
+      end if;
+
       --  Debug trace output
 
       if Debug_Flag_CC then
@@ -2970,6 +3724,25 @@ package body Checks is
 
             if Is_Access_Type (Atyp) then
                Atyp := Designated_Type (Atyp);
+
+               --  If the prefix is an access to an unconstrained array,
+               --  perform check unconditionally: it depends on the bounds
+               --  of an object and we cannot currently recognize whether
+               --  the test may be redundant.
+
+               if not Is_Constrained (Atyp) then
+                  Set_Do_Range_Check (N, True);
+                  return;
+               end if;
+
+            --  Ditto if the prefix is an explicit dereference whose
+            --  designated type is unconstrained.
+
+            elsif Nkind (Prefix (P)) = N_Explicit_Dereference
+              and then not Is_Constrained (Atyp)
+            then
+               Set_Do_Range_Check (N, True);
+               return;
             end if;
 
             Indx := First_Index (Atyp);
@@ -3133,10 +3906,35 @@ package body Checks is
       then
          return;
 
-      --  No check required on the left-hand side of an assignment.
+      --  No check required on the left-hand side of an assignment
 
       elsif Nkind (Parent (Expr)) = N_Assignment_Statement
         and then Expr = Name (Parent (Expr))
+      then
+         return;
+
+      --  No check on a univeral real constant. The context will eventually
+      --  convert it to a machine number for some target type, or report an
+      --  illegality.
+
+      elsif Nkind (Expr) = N_Real_Literal
+        and then Etype (Expr) = Universal_Real
+      then
+         return;
+
+      --  If the expression denotes a component of a packed boolean arrray,
+      --  no possible check applies. We ignore the old ACATS chestnuts that
+      --  involve Boolean range True..True.
+
+      --  Note: validity checks are generated for expressions that yield a
+      --  scalar type, when it is possible to create a value that is outside of
+      --  the type. If this is a one-bit boolean no such value exists. This is
+      --  an optimization, and it also prevents compiler blowing up during the
+      --  elaboration of improperly expanded packed array references.
+
+      elsif Nkind (Expr) = N_Indexed_Component
+        and then Is_Bit_Packed_Array (Etype (Prefix (Expr)))
+        and then Root_Type (Etype (Expr)) = Standard_Boolean
       then
          return;
 
@@ -3229,12 +4027,16 @@ package body Checks is
       Typ : constant Entity_Id := Etype (Expr);
 
    begin
-      --  Non-scalar types are always consdered valid, since they never
+      --  Non-scalar types are always considered valid, since they never
       --  give rise to the issues of erroneous or bounded error behavior
       --  that are the concern. In formal reference manual terms the
-      --  notion of validity only applies to scalar types.
+      --  notion of validity only applies to scalar types. Note that
+      --  even when packed arrays are represented using modular types,
+      --  they are still arrays semantically, so they are also always
+      --  valid (in particular, the unused bits can be random rubbish
+      --  without affecting the validity of the array value).
 
-      if not Is_Scalar_Type (Typ) then
+      if not Is_Scalar_Type (Typ) or else Is_Packed_Array_Type (Typ) then
          return True;
 
       --  If no validity checking, then everything is considered valid
@@ -3291,16 +4093,25 @@ package body Checks is
       then
          return Expr_Known_Valid (Expression (Expr));
 
-      --  The result of any function call or operator is always considered
-      --  valid, since we assume the necessary checks are done by the call.
+      --  The result of any operator is always considered valid, since we
+      --  assume the necessary checks are done by the operator. For operators
+      --  on floating-point operations, we must also check when the operation
+      --  is the right-hand side of an assignment, or is an actual in a call.
 
-      elsif Nkind (Expr) in N_Binary_Op
-              or else
-            Nkind (Expr) in N_Unary_Op
-              or else
-            Nkind (Expr) = N_Function_Call
+      elsif
+        Nkind (Expr) in N_Binary_Op or else Nkind (Expr) in N_Unary_Op
       then
-         return True;
+         if Is_Floating_Point_Type (Typ)
+            and then Validity_Check_Floating_Point
+            and then
+              (Nkind (Parent (Expr)) = N_Assignment_Statement
+                or else Nkind (Parent (Expr)) = N_Function_Call
+                or else Nkind (Parent (Expr)) = N_Parameter_Association)
+         then
+            return False;
+         else
+            return True;
+         end if;
 
       --  For all other cases, we do not know the expression is valid
 
@@ -3324,8 +4135,7 @@ package body Checks is
    is
       function Within_Range_Of
         (Target_Type : Entity_Id;
-         Check_Type  : Entity_Id)
-         return        Boolean;
+         Check_Type  : Entity_Id) return Boolean;
       --  Given a requirement for checking a range against Target_Type, and
       --  and a range Check_Type against which a check has already been made,
       --  determines if the check against check type is sufficient to ensure
@@ -3337,8 +4147,7 @@ package body Checks is
 
       function Within_Range_Of
         (Target_Type : Entity_Id;
-         Check_Type  : Entity_Id)
-         return        Boolean
+         Check_Type  : Entity_Id) return Boolean
       is
       begin
          if Target_Type = Check_Type then
@@ -3377,7 +4186,7 @@ package body Checks is
    --  Start of processing for Find_Check
 
    begin
-      --  Establish default, to avoid warnings from GCC.
+      --  Establish default, to avoid warnings from GCC
 
       Check_Num := 0;
 
@@ -3604,9 +4413,9 @@ package body Checks is
           Reason => CE_Discriminant_Check_Failed));
    end Generate_Discriminant_Check;
 
-   ----------------------------
-   --  Generate_Index_Checks --
-   ----------------------------
+   ---------------------------
+   -- Generate_Index_Checks --
+   ---------------------------
 
    procedure Generate_Index_Checks (N : Node_Id) is
       Loc : constant Source_Ptr := Sloc (N);
@@ -3616,6 +4425,16 @@ package body Checks is
       Num : List_Id;
 
    begin
+      --  Ignore call if index checks suppressed for array object or type
+
+      if (Is_Entity_Name (A) and then Index_Checks_Suppressed (Entity (A)))
+        or else Index_Checks_Suppressed (Etype (A))
+      then
+         return;
+      end if;
+
+      --  Generate the checks
+
       Sub := First (Expressions (N));
       Ind := 1;
       while Present (Sub) loop
@@ -3746,7 +4565,7 @@ package body Checks is
       --         ..
       --       Source_Base_Type(Target_Type'Last))]
 
-      --  The conversions will always work and need no check.
+      --  The conversions will always work and need no check
 
       elsif In_Subrange_Of (Target_Type, Source_Base_Type) then
          Insert_Action (N,
@@ -4010,6 +4829,13 @@ package body Checks is
          end if;
       end if;
 
+      --  The bound can be a bona fide parameter of a protected operation,
+      --  rather than a prival encoded as an in-parameter.
+
+      if No (Discriminal_Link (Entity (Bound))) then
+         return Bound;
+      end if;
+
       D := First_Discriminant (Sc);
 
       while Present (D)
@@ -4028,8 +4854,7 @@ package body Checks is
    function Guard_Access
      (Cond    : Node_Id;
       Loc     : Source_Ptr;
-      Ck_Node : Node_Id)
-      return    Node_Id
+      Ck_Node : Node_Id) return Node_Id
    is
    begin
       if Nkind (Cond) = N_Or_Else then
@@ -4188,8 +5013,112 @@ package body Checks is
                    Attribute_Name => Name_Valid)),
            Reason => CE_Invalid_Data),
          Suppress => All_Checks);
+
+      --  If the expression is a a reference to an element of a bit-packed
+      --  array, it is rewritten as a renaming declaration. If the expression
+      --  is an actual in a call, it has not been expanded, waiting for the
+      --  proper point at which to do it. The same happens with renamings, so
+      --  that we have to force the expansion now. This non-local complication
+      --  is due to code in exp_ch2,adb, exp_ch4.adb and exp_ch6.adb.
+
+      if Is_Entity_Name (Exp)
+        and then Nkind (Parent (Entity (Exp))) = N_Object_Renaming_Declaration
+      then
+         declare
+            Old_Exp : constant Node_Id := Name (Parent (Entity (Exp)));
+         begin
+            if Nkind (Old_Exp) = N_Indexed_Component
+              and then Is_Bit_Packed_Array (Etype (Prefix (Old_Exp)))
+            then
+               Expand_Packed_Element_Reference (Old_Exp);
+            end if;
+         end;
+      end if;
+
       Validity_Checks_On := True;
    end Insert_Valid_Check;
+
+   ----------------------------------
+   -- Install_Null_Excluding_Check --
+   ----------------------------------
+
+   procedure Install_Null_Excluding_Check (N : Node_Id) is
+      Loc : constant Source_Ptr := Sloc (N);
+      Typ : constant Entity_Id  := Etype (N);
+
+      procedure Mark_Non_Null;
+      --  After installation of check, marks node as non-null if entity
+
+      -------------------
+      -- Mark_Non_Null --
+      -------------------
+
+      procedure Mark_Non_Null is
+      begin
+         if Is_Entity_Name (N) then
+            Set_Is_Known_Null (Entity (N), False);
+
+            if Safe_To_Capture_Value (N, Entity (N)) then
+               Set_Is_Known_Non_Null (Entity (N), True);
+            end if;
+         end if;
+      end Mark_Non_Null;
+
+   --  Start of processing for Install_Null_Excluding_Check
+
+   begin
+      pragma Assert (Is_Access_Type (Typ));
+
+      --  No check inside a generic (why not???)
+
+      if Inside_A_Generic then
+         return;
+      end if;
+
+      --  No check needed if known to be non-null
+
+      if Known_Non_Null (N) then
+         return;
+      end if;
+
+      --  If known to be null, here is where we generate a compile time check
+
+      if Known_Null (N) then
+         Apply_Compile_Time_Constraint_Error
+           (N,
+            "null value not allowed here?",
+            CE_Access_Check_Failed);
+         Mark_Non_Null;
+         return;
+      end if;
+
+      --  If entity is never assigned, for sure a warning is appropriate
+
+      if Is_Entity_Name (N) then
+         Check_Unset_Reference (N);
+      end if;
+
+      --  No check needed if checks are suppressed on the range. Note that we
+      --  don't set Is_Known_Non_Null in this case (we could legitimately do
+      --  so, since the program is erroneous, but we don't like to casually
+      --  propagate such conclusions from erroneosity).
+
+      if Access_Checks_Suppressed (Typ) then
+         return;
+      end if;
+
+      --  Otherwise install access check
+
+      Insert_Action (N,
+        Make_Raise_Constraint_Error (Loc,
+          Condition =>
+            Make_Op_Eq (Loc,
+              Left_Opnd  => Duplicate_Subexpr_Move_Checks (N),
+              Right_Opnd => Make_Null (Loc)),
+          Reason => CE_Access_Check_Failed));
+
+      Mark_Non_Null;
+   end Install_Null_Excluding_Check;
 
    --------------------------
    -- Install_Static_Check --
@@ -4285,8 +5214,7 @@ package body Checks is
      (Ck_Node    : Node_Id;
       Target_Typ : Entity_Id;
       Source_Typ : Entity_Id := Empty;
-      Warn_Node  : Node_Id   := Empty)
-      return       Check_Result
+      Warn_Node  : Node_Id   := Empty) return Check_Result
    is
    begin
       return Selected_Range_Checks
@@ -4412,8 +5340,7 @@ package body Checks is
      (Ck_Node    : Node_Id;
       Target_Typ : Entity_Id;
       Source_Typ : Entity_Id;
-      Warn_Node  : Node_Id)
-      return       Check_Result
+      Warn_Node  : Node_Id) return Check_Result
    is
       Loc         : constant Source_Ptr := Sloc (Ck_Node);
       S_Typ       : Entity_Id;
@@ -4431,6 +5358,7 @@ package body Checks is
 
       function Get_E_Length (E : Entity_Id; Indx : Nat) return Node_Id;
       function Get_N_Length (N : Node_Id; Indx : Nat) return Node_Id;
+      --  Comments required ???
 
       function Same_Bounds (L : Node_Id; R : Node_Id) return Boolean;
       --  True for equal literals and for nodes that denote the same constant
@@ -4441,16 +5369,14 @@ package body Checks is
       function Length_E_Cond
         (Exptyp : Entity_Id;
          Typ    : Entity_Id;
-         Indx   : Nat)
-         return   Node_Id;
+         Indx   : Nat) return Node_Id;
       --  Returns expression to compute:
       --    Typ'Length /= Exptyp'Length
 
       function Length_N_Cond
         (Expr : Node_Id;
          Typ  : Entity_Id;
-         Indx : Nat)
-         return Node_Id;
+         Indx : Nat) return Node_Id;
       --  Returns expression to compute:
       --    Typ'Length /= Expr'Length
 
@@ -4617,8 +5543,7 @@ package body Checks is
       function Length_E_Cond
         (Exptyp : Entity_Id;
          Typ    : Entity_Id;
-         Indx   : Nat)
-         return   Node_Id
+         Indx   : Nat) return Node_Id
       is
       begin
          return
@@ -4635,8 +5560,7 @@ package body Checks is
       function Length_N_Cond
         (Expr : Node_Id;
          Typ  : Entity_Id;
-         Indx : Nat)
-         return Node_Id
+         Indx : Nat) return Node_Id
       is
       begin
          return
@@ -4731,7 +5655,7 @@ package body Checks is
             Freeze_Before (Ck_Node, T_Typ);
 
             Expr_Actual := Get_Referenced_Object (Ck_Node);
-            Exptyp      := Get_Actual_Subtype (Expr_Actual);
+            Exptyp      := Get_Actual_Subtype (Ck_Node);
 
             if Is_Access_Type (Exptyp) then
                Exptyp := Designated_Type (Exptyp);
@@ -4918,8 +5842,7 @@ package body Checks is
      (Ck_Node    : Node_Id;
       Target_Typ : Entity_Id;
       Source_Typ : Entity_Id;
-      Warn_Node  : Node_Id)
-      return       Check_Result
+      Warn_Node  : Node_Id) return Check_Result
    is
       Loc         : constant Source_Ptr := Sloc (Ck_Node);
       S_Typ       : Entity_Id;
@@ -4937,8 +5860,7 @@ package body Checks is
 
       function Discrete_Range_Cond
         (Expr : Node_Id;
-         Typ  : Entity_Id)
-         return Node_Id;
+         Typ  : Entity_Id) return Node_Id;
       --  Returns expression to compute:
       --    Low_Bound (Expr) < Typ'First
       --      or else
@@ -4946,8 +5868,7 @@ package body Checks is
 
       function Discrete_Expr_Cond
         (Expr : Node_Id;
-         Typ  : Entity_Id)
-         return Node_Id;
+         Typ  : Entity_Id) return Node_Id;
       --  Returns expression to compute:
       --    Expr < Typ'First
       --      or else
@@ -4956,8 +5877,7 @@ package body Checks is
       function Get_E_First_Or_Last
         (E    : Entity_Id;
          Indx : Nat;
-         Nam  : Name_Id)
-         return Node_Id;
+         Nam  : Name_Id) return Node_Id;
       --  Returns expression to compute:
       --    E'First or E'Last
 
@@ -4977,16 +5897,14 @@ package body Checks is
       function Range_Equal_E_Cond
         (Exptyp : Entity_Id;
          Typ    : Entity_Id;
-         Indx   : Nat)
-         return   Node_Id;
+         Indx   : Nat) return Node_Id;
       --  Returns expression to compute:
       --    Exptyp'First /= Typ'First or else Exptyp'Last /= Typ'Last
 
       function Range_N_Cond
         (Expr : Node_Id;
          Typ  : Entity_Id;
-         Indx : Nat)
-         return Node_Id;
+         Indx : Nat) return Node_Id;
       --  Return expression to compute:
       --    Expr'First < Typ'First or else Expr'Last > Typ'Last
 
@@ -5016,8 +5934,7 @@ package body Checks is
 
       function Discrete_Expr_Cond
         (Expr : Node_Id;
-         Typ  : Entity_Id)
-         return Node_Id
+         Typ  : Entity_Id) return Node_Id
       is
       begin
          return
@@ -5048,8 +5965,7 @@ package body Checks is
 
       function Discrete_Range_Cond
         (Expr : Node_Id;
-         Typ  : Entity_Id)
-         return Node_Id
+         Typ  : Entity_Id) return Node_Id
       is
          LB : Node_Id := Low_Bound (Expr);
          HB : Node_Id := High_Bound (Expr);
@@ -5123,8 +6039,7 @@ package body Checks is
       function Get_E_First_Or_Last
         (E    : Entity_Id;
          Indx : Nat;
-         Nam  : Name_Id)
-         return Node_Id
+         Nam  : Name_Id) return Node_Id
       is
          N     : Node_Id;
          LB    : Node_Id;
@@ -5217,7 +6132,17 @@ package body Checks is
             return Get_Discriminal (E, Bound);
 
          elsif Nkind (Bound) = N_Integer_Literal then
-            return  Make_Integer_Literal (Loc, Intval (Bound));
+            return Make_Integer_Literal (Loc, Intval (Bound));
+
+         --  Case of a bound that has been rewritten to an
+         --  N_Raise_Constraint_Error node because it is an out-of-range
+         --  value. We may not call Duplicate_Subexpr on this node because
+         --  an N_Raise_Constraint_Error is not side effect free, and we may
+         --  not assume that we are in the proper context to remove side
+         --  effects on it at the point of reference.
+
+         elsif Nkind (Bound) = N_Raise_Constraint_Error then
+            return New_Copy_Tree (Bound);
 
          else
             return Duplicate_Subexpr_No_Checks (Bound);
@@ -5237,7 +6162,6 @@ package body Checks is
                Duplicate_Subexpr_No_Checks (N, Name_Req => True),
              Expressions => New_List (
                Make_Integer_Literal (Loc, Indx)));
-
       end Get_N_First;
 
       ----------------
@@ -5253,7 +6177,6 @@ package body Checks is
                Duplicate_Subexpr_No_Checks (N, Name_Req => True),
              Expressions => New_List (
               Make_Integer_Literal (Loc, Indx)));
-
       end Get_N_Last;
 
       ------------------
@@ -5263,8 +6186,7 @@ package body Checks is
       function Range_E_Cond
         (Exptyp : Entity_Id;
          Typ    : Entity_Id;
-         Indx   : Nat)
-         return   Node_Id
+         Indx   : Nat) return Node_Id
       is
       begin
          return
@@ -5288,8 +6210,7 @@ package body Checks is
       function Range_Equal_E_Cond
         (Exptyp : Entity_Id;
          Typ    : Entity_Id;
-         Indx   : Nat)
-         return   Node_Id
+         Indx   : Nat) return Node_Id
       is
       begin
          return
@@ -5311,8 +6232,7 @@ package body Checks is
       function Range_N_Cond
         (Expr : Node_Id;
          Typ  : Entity_Id;
-         Indx : Nat)
-         return Node_Id
+         Indx : Nat) return Node_Id
       is
       begin
          return
@@ -5737,14 +6657,15 @@ package body Checks is
                         then
                            null;
 
-                        --  If null range, no check needed.
+                           --  If null range, no check needed
+
                         elsif
                           Compile_Time_Known_Value (High_Bound (Opnd_Index))
                             and then
                           Compile_Time_Known_Value (Low_Bound (Opnd_Index))
                             and then
-                             Expr_Value (High_Bound (Opnd_Index)) <
-                                 Expr_Value (Low_Bound (Opnd_Index))
+                              Expr_Value (High_Bound (Opnd_Index)) <
+                                  Expr_Value (Low_Bound (Opnd_Index))
                         then
                            null;
 

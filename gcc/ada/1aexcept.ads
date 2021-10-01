@@ -7,7 +7,7 @@
 --                                                                          --
 --                                 S p e c                                  --
 --                                                                          --
---          Copyright (C) 1992-2003 Free Software Foundation, Inc.          --
+--          Copyright (C) 1992-2006, Free Software Foundation, Inc.         --
 --                                                                          --
 -- This specification is derived from the Ada Reference Manual for use with --
 -- GNAT. The copyright notice above, and the license provisions that follow --
@@ -24,33 +24,35 @@
 -- to  the Free Software Foundation,  59 Temple Place - Suite 330,  Boston, --
 -- MA 02111-1307, USA.                                                      --
 --                                                                          --
--- As a special exception,  if other files  instantiate  generics from this --
--- unit, or you link  this unit with other files  to produce an executable, --
--- this  unit  does not  by itself cause  the resulting  executable  to  be --
--- covered  by the  GNU  General  Public  License.  This exception does not --
--- however invalidate  any other reasons why  the executable file  might be --
--- covered by the  GNU Public License.                                      --
---                                                                          --
+--
+--
+--
+--
+--
+--
+--
 -- GNAT was originally developed  by the GNAT team at  New York University. --
 -- Extensive contributions were provided by Ada Core Technologies Inc.      --
 --                                                                          --
 ------------------------------------------------------------------------------
 
---  This version is for use when the restriction No_Exception_Handlers
---  is enabled.
+--  Version is for use when the restriction No_Exception_Handlers is enabled
 
 with System;
 
 package Ada.Exceptions is
+   pragma Preelaborate_05;
+   --  In accordance with Ada 2005 AI-362
 
    type Exception_Id is private;
+   pragma Preelaborable_Initialization (Exception_Id);
 
    Null_Id : constant Exception_Id;
 
    procedure Raise_Exception (E : Exception_Id; Message : String := "");
-   --  Unconditionally call __gnat_last_chance_handler.
-   --  Message should be a null terminated string.
    pragma No_Return (Raise_Exception);
+   --  Unconditionally call __gnat_last_chance_handler. Message should be a
+   --  null terminated string.
 
 private
 
@@ -58,8 +60,8 @@ private
    -- Exception_Id --
    ------------------
 
-   type Exception_Id is new System.Address;
-   Null_Id : constant Exception_Id := Exception_Id (System.Null_Address);
+   type Exception_Id is access all System.Address;
+   Null_Id : constant Exception_Id := null;
 
    pragma Inline_Always (Raise_Exception);
 

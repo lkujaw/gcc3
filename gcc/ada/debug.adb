@@ -6,7 +6,7 @@
 --                                                                          --
 --                                 B o d y                                  --
 --                                                                          --
---          Copyright (C) 1992-2003 Free Software Foundation, Inc.          --
+--          Copyright (C) 1992-2006, Free Software Foundation, Inc.         --
 --                                                                          --
 -- GNAT is free software;  you can  redistribute it  and/or modify it under --
 -- terms of the  GNU General Public License as published  by the Free Soft- --
@@ -16,16 +16,16 @@
 -- or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License --
 -- for  more details.  You should have  received  a copy of the GNU General --
 -- Public License  distributed with GNAT;  see file COPYING.  If not, write --
--- to  the Free Software Foundation,  59 Temple Place - Suite 330,  Boston, --
--- MA 02111-1307, USA.                                                      --
+-- to  the  Free Software Foundation,  51  Franklin  Street,  Fifth  Floor, --
+-- Boston, MA 02110-1301, USA.                                              --
 --                                                                          --
--- As a special exception,  if other files  instantiate  generics from this --
--- unit, or you link  this unit with other files  to produce an executable, --
--- this  unit  does not  by itself cause  the resulting  executable  to  be --
--- covered  by the  GNU  General  Public  License.  This exception does not --
--- however invalidate  any other reasons why  the executable file  might be --
--- covered by the  GNU Public License.                                      --
---                                                                          --
+--
+--
+--
+--
+--
+--
+--
 -- GNAT was originally developed  by the GNAT team at  New York University. --
 -- Extensive contributions were provided by Ada Core Technologies Inc.      --
 --                                                                          --
@@ -82,29 +82,29 @@ package body Debug is
    --  dN   No file name information in exception messages
    --  dO   Output immediate error messages
    --  dP   Do not check for controlled objects in preelaborable packages
-   --  dQ
+   --  dQ   Enable full ABI compatibility for interfacing with CPP
    --  dR   Bypass check for correct version of s-rpc
    --  dS   Never convert numbers to machine numbers in Sem_Eval
    --  dT   Convert to machine numbers only for constant declarations
    --  dU   Enable garbage collection of unreachable entities
    --  dV   Enable viewing of all symbols in debugger
    --  dW   Disable warnings on calls for IN OUT parameters
-   --  dX   Enable Frontend ZCX even when it is not supported
+   --  dX
    --  dY   Enable configurable run-time mode
-   --  dZ
+   --  dZ   Generate listing showing the contents of the dispatch tables
 
    --  d.a
    --  d.b
    --  d.c
    --  d.d
    --  d.e
-   --  d.f
+   --  d.f  Inhibit folding of static expressions
    --  d.g
    --  d.h
    --  d.i
    --  d.j
    --  d.k
-   --  d.l
+   --  d.l  Use Ada 95 semantics for limited function returns
    --  d.m
    --  d.n
    --  d.o
@@ -120,8 +120,6 @@ package body Debug is
    --  d.y
    --  d.z
 
-
-
    --  d1   Error msgs have node numbers where possible
    --  d2   Eliminate error flags in verbose form error messages
    --  d3   Dump bad node in Comperr on an abort
@@ -134,21 +132,21 @@ package body Debug is
 
    --  Debug flags for binder (GNATBIND)
 
-   --  da
-   --  db
+   --  da  All links (including internal units) listed if there is a cycle
+   --  db  Output information from Better_Choice
    --  dc  List units as they are chosen
    --  dd
    --  de  Elaboration dependencies including system units
    --  df
    --  dg
    --  dh
-   --  di
+   --  di  Ignore_Errors mode for reading ali files
    --  dj
    --  dk
    --  dl
    --  dm
    --  dn  List details of manipulation of Num_Pred values
-   --  do
+   --  do  Use old preference for elaboration order
    --  dp
    --  dq
    --  dr
@@ -160,16 +158,6 @@ package body Debug is
    --  dx  Force binder to read xref information from ali files
    --  dy
    --  dz
-
-   --  d1
-   --  d2
-   --  d3
-   --  d4
-   --  d5
-   --  d6
-   --  d7
-   --  d8
-   --  d9
 
    --  Debug flags used in package Make and its clients (e.g. GNATMAKE)
 
@@ -199,16 +187,6 @@ package body Debug is
    --  dx
    --  dy
    --  dz
-
-   --  d1
-   --  d2
-   --  d3
-   --  d4
-   --  d5
-   --  d6
-   --  d7
-   --  d8
-   --  d9
 
    --------------------------------------------
    -- Documentation for Compiler Debug Flags --
@@ -345,7 +323,8 @@ package body Debug is
    --  dA   Forces output of representation information, including full
    --       information for all internal type and object entities, as well
    --       as all user defined type and object entities including private
-   --       and incomplete types.
+   --       and incomplete types. This debug switch also automatically sets
+   --       the equivalent of -gnatR3m.
 
    --  dB   Output debug encodings for types and variants. See Exp_Dbug for
    --       exact form of the generated output.
@@ -411,7 +390,7 @@ package body Debug is
    --       indications. This debug flag disconnects the tracking of constant
    --       values (see Exp_Ch2.Expand_Current_Value).
 
-   --  dN   Do not generate file name information in exception messages.
+   --  dN   Do not generate file name information in exception messages
 
    --  dO   Output immediate error messages. This causes error messages to
    --       be output as soon as they are generated (disconnecting several
@@ -423,6 +402,8 @@ package body Debug is
    --       RM 10.2.1(9) forbids the use of library level controlled objects
    --       in preelaborable packages, but this restriction is a huge pain,
    --       especially in the predefined library units.
+
+   --  dQ   needs full documentation ???
 
    --  dR   Bypass the check for a proper version of s-rpc being present
    --       to use the -gnatz? switch. This allows debugging of the use
@@ -458,22 +439,22 @@ package body Debug is
    --       task of transitioning incorrect legacy code, we provide this
    --       undocumented feature for suppressing these warnings.
 
-   --  dX   Enable frontend ZCX even when it is not supported. Equivalent to
-   --       -gnatZ but without verifying that System.Front_End_ZCX_Support
-   --       is set. This causes the front end to generate suitable tables
-   --       for ZCX handling even when the runtime cannot handle ZCX. This
-   --       is used for testing the front end for correct ZCX operation, and
-   --       in particular is useful for multi-target testing.
-
    --  dY   Enable configurable run-time mode, just as though the System file
    --       had Configurable_Run_Time_Mode set to True. This is useful in
    --       testing high integrity mode.
 
+   --  d.f  Suppress folding of static expressions. This of course results
+   --       in seriously non-conforming behavior, but is useful sometimes
+   --       when tracking down handling of complex expressions.
+
+   --  d.l  Use Ada 95 semantics for limited function returns. This may be
+   --       used to work around the incompatibility introduced by AI-318-2.
+   --       It is useful only in -gnat05 mode.
+
    --  d.x  No exception handlers in generated code. This causes exception
-   --       handles to be eliminated from the generated code. They are still
+   --       handlers to be eliminated from the generated code. They are still
    --       fully compiled and analyzed, they just get eliminated from the
    --       code generation step.
-
 
    --  d1   Error messages have node numbers where possible. Normally error
    --       messages have only source locations. This option is useful when
@@ -520,6 +501,12 @@ package body Debug is
    -- Documentation for Binder Debug Flags --
    ------------------------------------------
 
+   --  da  Normally if there is an elaboration circularity, then in describing
+   --      the cycle, links involving internal units are omitted, since they
+   --      are irrelevant and confusing. This debug flag causes all links to
+   --      be listed, and is useful when diagnosing circularities introduced
+   --      by incorrect changes to the run-time library itself.
+
    --  dc  List units as they are chosen. As units are selected for addition to
    --      the elaboration order, a line of output is generated showing which
    --      unit has been selected.
@@ -528,9 +515,21 @@ package body Debug is
    --      dependencies) except that internal units are included in the
    --      listing.
 
+   --  di  Normally gnatbind calls Read_Ali with Ignore_Errors set to
+   --      False, since the binder really needs correct version ALI
+   --      files to do its job. This debug flag causes Ignore_Errors
+   --      mode to be set for the binder (and is particularly useful
+   --      for testing ignore errors mode).
+
    --  dn  List details of manipulation of Num_Pred values during execution of
    --      the algorithm used to determine a correct order of elaboration. This
    --      is useful in diagnosing any problems in its behavior.
+
+   --  do  Use old elaboration order preference. The new preference rules
+   --      prefer specs with no bodies to specs with bodies, and between two
+   --      specs with bodies, prefers the one whose body is closer to being
+   --      able to be elaborated. This is a clear improvement, but we provide
+   --      this debug flag in case of regressions.
 
    --  du  List unit name and file name for each unit as it is read in
 

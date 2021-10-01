@@ -1,12 +1,12 @@
 ------------------------------------------------------------------------------
 --                                                                          --
---                         GNAT RUNTIME COMPONENTS                          --
+--                         GNAT RUN-TIME COMPONENTS                         --
 --                                                                          --
 --   A D A . N U M E R I C S . G E N E R I C _ C O M P L E X _ T Y P E S    --
 --                                                                          --
 --                                 B o d y                                  --
 --                                                                          --
---          Copyright (C) 1992-2002 Free Software Foundation, Inc.          --
+--          Copyright (C) 1992-2006, Free Software Foundation, Inc.         --
 --                                                                          --
 -- GNAT is free software;  you can  redistribute it  and/or modify it under --
 -- terms of the  GNU General Public License as published  by the Free Soft- --
@@ -16,22 +16,23 @@
 -- or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License --
 -- for  more details.  You should have  received  a copy of the GNU General --
 -- Public License  distributed with GNAT;  see file COPYING.  If not, write --
--- to  the Free Software Foundation,  59 Temple Place - Suite 330,  Boston, --
--- MA 02111-1307, USA.                                                      --
+-- to  the  Free Software Foundation,  51  Franklin  Street,  Fifth  Floor, --
+-- Boston, MA 02110-1301, USA.                                              --
 --                                                                          --
--- As a special exception,  if other files  instantiate  generics from this --
--- unit, or you link  this unit with other files  to produce an executable, --
--- this  unit  does not  by itself cause  the resulting  executable  to  be --
--- covered  by the  GNU  General  Public  License.  This exception does not --
--- however invalidate  any other reasons why  the executable file  might be --
--- covered by the  GNU Public License.                                      --
---                                                                          --
+--
+--
+--
+--
+--
+--
+--
 -- GNAT was originally developed  by the GNAT team at  New York University. --
 -- Extensive contributions were provided by Ada Core Technologies Inc.      --
 --                                                                          --
 ------------------------------------------------------------------------------
 
 with Ada.Numerics.Aux; use Ada.Numerics.Aux;
+
 package body Ada.Numerics.Generic_Complex_Types is
 
    subtype R is Real'Base;
@@ -51,7 +52,7 @@ package body Ada.Numerics.Generic_Complex_Types is
       X := Left.Re * Right.Re - Left.Im * Right.Im;
       Y := Left.Re * Right.Im + Left.Im * Right.Re;
 
-      --  If either component overflows, try to scale.
+      --  If either component overflows, try to scale
 
       if abs (X) > R'Last then
          X := R'(4.0) * (R'(Left.Re / 2.0)  * R'(Right.Re / 2.0)
@@ -566,14 +567,18 @@ package body Ada.Numerics.Generic_Complex_Types is
          --  we can use an explicit comparison to determine whether to use
          --  the scaling expression.
 
+         --  The scaling expression is computed in double format throughout
+         --  in order to prevent inaccuracies on machines where not all
+         --  immediate expressions are rounded, such as PowerPC.
+
          if Re2 > R'Last then
             raise Constraint_Error;
          end if;
 
       exception
          when Constraint_Error =>
-            return abs (X.Re)
-              * R (Sqrt (Double (R (1.0) + (X.Im / X.Re) ** 2)));
+            return R (Double (abs (X.Re))
+              * Sqrt (1.0 + (Double (X.Im) / Double (X.Re)) ** 2));
       end;
 
       begin
@@ -585,8 +590,8 @@ package body Ada.Numerics.Generic_Complex_Types is
 
       exception
          when Constraint_Error =>
-            return abs (X.Im)
-              * R (Sqrt (Double (R (1.0) + (X.Re / X.Im) ** 2)));
+            return R (Double (abs (X.Im))
+              * Sqrt (1.0 + (Double (X.Re) / Double (X.Im)) ** 2));
       end;
 
       --  Now deal with cases of underflow. If only one of the squares
@@ -606,12 +611,12 @@ package body Ada.Numerics.Generic_Complex_Types is
             else
                if abs (X.Re) > abs (X.Im) then
                   return
-                    abs (X.Re)
-                      * R (Sqrt (Double (R (1.0) + (X.Im / X.Re) ** 2)));
+                    R (Double (abs (X.Re))
+                      * Sqrt (1.0 + (Double (X.Im) / Double (X.Re)) ** 2));
                else
                   return
-                    abs (X.Im)
-                      * R (Sqrt (Double (R (1.0) + (X.Re / X.Im) ** 2)));
+                    R (Double (abs (X.Im))
+                      * Sqrt (1.0 + (Double (X.Re) / Double (X.Im)) ** 2));
                end if;
             end if;
 
@@ -622,7 +627,7 @@ package body Ada.Numerics.Generic_Complex_Types is
       elsif Im2 = 0.0 then
          return abs (X.Re);
 
-         --  in all other cases, the naive computation will do.
+      --  In all other cases, the naive computation will do
 
       else
          return R (Sqrt (Double (Re2 + Im2)));
@@ -642,12 +647,12 @@ package body Ada.Numerics.Generic_Complex_Types is
    -- Set_Im --
    ------------
 
-   procedure Set_Im (X : in out Complex; Im : in Real'Base) is
+   procedure Set_Im (X : in out Complex; Im : Real'Base) is
    begin
       X.Im := Im;
    end Set_Im;
 
-   procedure Set_Im (X : out Imaginary; Im : in Real'Base) is
+   procedure Set_Im (X : out Imaginary; Im : Real'Base) is
    begin
       X := Imaginary (Im);
    end Set_Im;
@@ -656,7 +661,7 @@ package body Ada.Numerics.Generic_Complex_Types is
    -- Set_Re --
    ------------
 
-   procedure Set_Re (X : in out Complex; Re : in Real'Base) is
+   procedure Set_Re (X : in out Complex; Re : Real'Base) is
    begin
       X.Re := Re;
    end Set_Re;

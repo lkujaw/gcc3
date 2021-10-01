@@ -1,12 +1,12 @@
 ------------------------------------------------------------------------------
 --                                                                          --
---                   GNU ADA RUNTIME LIBRARY COMPONENTS                     --
+--                    GNAT RUN-TIME LIBRARY COMPONENTS                      --
 --                                                                          --
 --       S Y S T E M . C O M P A R E _ A R R A Y _ U N S I G N E D _ 8      --
 --                                                                          --
 --                                 B o d y                                  --
 --                                                                          --
---             Copyright (C) 2002 Free Software Foundation, Inc.            --
+--          Copyright (C) 2002-2005 Free Software Foundation, Inc.          --
 --                                                                          --
 -- GNAT is free software;  you can  redistribute it  and/or modify it under --
 -- terms of the  GNU General Public License as published  by the Free Soft- --
@@ -16,20 +16,22 @@
 -- or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License --
 -- for  more details.  You should have  received  a copy of the GNU General --
 -- Public License  distributed with GNAT;  see file COPYING.  If not, write --
--- to  the Free Software Foundation,  59 Temple Place - Suite 330,  Boston, --
--- MA 02111-1307, USA.                                                      --
+-- to  the  Free Software Foundation,  51  Franklin  Street,  Fifth  Floor, --
+-- Boston, MA 02110-1301, USA.                                              --
 --                                                                          --
--- As a special exception,  if other files  instantiate  generics from this --
--- unit, or you link  this unit with other files  to produce an executable, --
--- this  unit  does not  by itself cause  the resulting  executable  to  be --
--- covered  by the  GNU  General  Public  License.  This exception does not --
--- however invalidate  any other reasons why  the executable file  might be --
--- covered by the  GNU Public License.                                      --
---                                                                          --
+--
+--
+--
+--
+--
+--
+--
 -- GNAT was originally developed  by the GNAT team at  New York University. --
 -- Extensive contributions were provided by Ada Core Technologies Inc.      --
 --                                                                          --
 ------------------------------------------------------------------------------
+
+with System.Address_Operations; use System.Address_Operations;
 
 with Unchecked_Conversion;
 
@@ -63,15 +65,14 @@ package body System.Compare_Array_Unsigned_8 is
      (Left      : System.Address;
       Right     : System.Address;
       Left_Len  : Natural;
-      Right_Len : Natural)
-      return      Integer
+      Right_Len : Natural) return Integer
    is
       Compare_Len : constant Natural := Natural'Min (Left_Len, Right_Len);
 
    begin
       --  If operands are non-aligned, or length is too short, go by bytes
 
-      if (((Left or Right) and 2#11#) /= 0) or else Compare_Len < 4 then
+      if (ModA (OrA (Left, Right), 4) /= 0) or else Compare_Len < 4 then
          return Compare_Array_U8_Unaligned (Left, Right, Left_Len, Right_Len);
       end if;
 
@@ -87,15 +88,15 @@ package body System.Compare_Array_Unsigned_8 is
          for J in 0 .. Clen4 loop
             if LeftP (J) /= RightP (J) then
                return Compare_Array_U8_Unaligned
-                        (Left  + Address (4 * J),
-                         Right + Address (4 * J),
+                        (AddA (Left,  Address (4 * J)),
+                         AddA (Right, Address (4 * J)),
                          4, 4);
             end if;
          end loop;
 
          return Compare_Array_U8_Unaligned
-                  (Left      + Address (Clen4F),
-                   Right     + Address (Clen4F),
+                  (AddA (Left,  Address (Clen4F)),
+                   AddA (Right, Address (Clen4F)),
                    Left_Len  - Clen4F,
                    Right_Len - Clen4F);
       end;
@@ -109,8 +110,7 @@ package body System.Compare_Array_Unsigned_8 is
      (Left      : System.Address;
       Right     : System.Address;
       Left_Len  : Natural;
-      Right_Len : Natural)
-      return      Integer
+      Right_Len : Natural) return Integer
    is
       Compare_Len : constant Natural := Natural'Min (Left_Len, Right_Len);
 

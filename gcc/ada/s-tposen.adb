@@ -1,12 +1,13 @@
 ------------------------------------------------------------------------------
 --                                                                          --
---               GNU ADA RUN-TIME LIBRARY (GNARL) COMPONENTS                --
+--                GNAT RUN-TIME LIBRARY (GNARL) COMPONENTS                  --
 --                                                                          --
---              SYSTEM.TASKING.PROTECTED_OBJECTS.SINGLE_ENTRY               --
+--     S Y S T E M . T A S K I N G . P R O T E C T E D _ O B J E C T S .    --
+--                          S I N G L E _ E N T R Y                         --
 --                                                                          --
---                                  B o d y                                 --
+--                                B o d y                                   --
 --                                                                          --
---         Copyright (C) 1998-2002, Free Software Foundation, Inc.          --
+--         Copyright (C) 1998-2005, Free Software Foundation, Inc.          --
 --                                                                          --
 -- GNARL is free software; you can  redistribute it  and/or modify it under --
 -- terms of the  GNU General Public License as published  by the Free Soft- --
@@ -16,16 +17,16 @@
 -- or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License --
 -- for  more details.  You should have  received  a copy of the GNU General --
 -- Public License  distributed with GNARL; see file COPYING.  If not, write --
--- to  the Free Software Foundation,  59 Temple Place - Suite 330,  Boston, --
--- MA 02111-1307, USA.                                                      --
+-- to  the  Free Software Foundation,  51  Franklin  Street,  Fifth  Floor, --
+-- Boston, MA 02110-1301, USA.                                              --
 --                                                                          --
--- As a special exception,  if other files  instantiate  generics from this --
--- unit, or you link  this unit with other files  to produce an executable, --
--- this  unit  does not  by itself cause  the resulting  executable  to  be --
--- covered  by the  GNU  General  Public  License.  This exception does not --
--- however invalidate  any other reasons why  the executable file  might be --
--- covered by the  GNU Public License.                                      --
---                                                                          --
+--
+--
+--
+--
+--
+--
+--
 -- GNARL was developed by the GNARL team at Florida State University.       --
 -- Extensive contributions were provided by Ada Core Technologies, Inc.     --
 --                                                                          --
@@ -37,22 +38,22 @@ pragma Style_Checks (All_Checks);
 
 --  This package provides an optimized version of Protected_Objects.Operations
 --  and Protected_Objects.Entries making the following assumptions:
---
---  PO have only one entry
---  There is only one caller at a time (No_Entry_Queue)
---  There is no dynamic priority support (No_Dynamic_Priorities)
---  No Abort Statements
---    (No_Abort_Statements, Max_Asynchronous_Select_Nesting => 0)
---  PO are at library level
---  No Requeue
---  None of the tasks will terminate (no need for finalization)
---
+
+--    PO has only one entry
+--    There is only one caller at a time (No_Entry_Queue)
+--    There is no dynamic priority support (No_Dynamic_Priorities)
+--    No Abort Statements
+--     (No_Abort_Statements, Max_Asynchronous_Select_Nesting => 0)
+--    PO are at library level
+--    No Requeue
+--    None of the tasks will terminate (no need for finalization)
+
 --  This interface is intended to be used in the ravenscar and restricted
 --  profiles, the compiler is responsible for ensuring that the conditions
 --  mentioned above are respected, except for the No_Entry_Queue restriction
 --  that is checked dynamically in this package, since the check cannot be
 --  performed at compile time, and is relatively cheap (see PO_Do_Or_Queue,
---  PO_Service_Entry).
+--  Service_Entry).
 
 pragma Polling (Off);
 --  Turn off polling, we do not want polling to take place during tasking
@@ -67,7 +68,8 @@ with System.Task_Primitives.Operations;
 --           Unlock
 
 with Ada.Exceptions;
---  used for Exception_Id;
+--  used for Exception_Id
+--           Raise_Exception
 
 with System.Parameters;
 --  used for Single_Lock
@@ -83,7 +85,7 @@ package body System.Tasking.Protected_Objects.Single_Entry is
    -----------------------
 
    procedure Send_Program_Error
-     (Self_Id    : Task_ID;
+     (Self_Id    : Task_Id;
       Entry_Call : Entry_Call_Link);
    pragma Inline (Send_Program_Error);
    --  Raise Program_Error in the caller of the specified entry call
@@ -93,7 +95,7 @@ package body System.Tasking.Protected_Objects.Single_Entry is
    --------------------------
 
    procedure Wakeup_Entry_Caller
-     (Self_ID    : Task_ID;
+     (Self_ID    : Task_Id;
       Entry_Call : Entry_Call_Link;
       New_State  : Entry_Call_State);
    pragma Inline (Wakeup_Entry_Caller);
@@ -121,7 +123,7 @@ package body System.Tasking.Protected_Objects.Single_Entry is
    --  specified in Wakeup_Time as well.
 
    procedure Check_Exception
-     (Self_ID : Task_ID;
+     (Self_ID : Task_Id;
       Entry_Call : Entry_Call_Link);
    pragma Inline (Check_Exception);
    --  Raise any pending exception from the Entry_Call.
@@ -130,7 +132,7 @@ package body System.Tasking.Protected_Objects.Single_Entry is
    --  The caller should not be holding any locks, or there will be deadlock.
 
    procedure PO_Do_Or_Queue
-     (Self_Id    : Task_ID;
+     (Self_Id    : Task_Id;
       Object     : Protection_Entry_Access;
       Entry_Call : Entry_Call_Link);
    --  This procedure executes or queues an entry call, depending
@@ -142,7 +144,7 @@ package body System.Tasking.Protected_Objects.Single_Entry is
    ---------------------
 
    procedure Check_Exception
-     (Self_ID    : Task_ID;
+     (Self_ID    : Task_Id;
       Entry_Call : Entry_Call_Link)
    is
       pragma Warnings (Off, Self_ID);
@@ -166,10 +168,10 @@ package body System.Tasking.Protected_Objects.Single_Entry is
    ------------------------
 
    procedure Send_Program_Error
-     (Self_Id    : Task_ID;
+     (Self_Id    : Task_Id;
       Entry_Call : Entry_Call_Link)
    is
-      Caller : constant Task_ID := Entry_Call.Self;
+      Caller : constant Task_Id := Entry_Call.Self;
    begin
       Entry_Call.Exception_To_Raise := Program_Error'Identity;
 
@@ -191,7 +193,7 @@ package body System.Tasking.Protected_Objects.Single_Entry is
    -------------------------
 
    procedure Wait_For_Completion (Entry_Call : Entry_Call_Link) is
-      Self_Id : constant Task_ID := Entry_Call.Self;
+      Self_Id : constant Task_Id := Entry_Call.Self;
    begin
       Self_Id.Common.State := Entry_Caller_Sleep;
       STPO.Sleep (Self_Id, Entry_Caller_Sleep);
@@ -207,7 +209,7 @@ package body System.Tasking.Protected_Objects.Single_Entry is
       Wakeup_Time : Duration;
       Mode        : Delay_Modes)
    is
-      Self_Id  : constant Task_ID := Entry_Call.Self;
+      Self_Id  : constant Task_Id := Entry_Call.Self;
       Timedout : Boolean;
       Yielded  : Boolean;
 
@@ -267,13 +269,13 @@ package body System.Tasking.Protected_Objects.Single_Entry is
    --    to complete.
 
    procedure Wakeup_Entry_Caller
-     (Self_ID    : Task_ID;
+     (Self_ID    : Task_Id;
       Entry_Call : Entry_Call_Link;
       New_State  : Entry_Call_State)
    is
       pragma Warnings (Off, Self_ID);
 
-      Caller : constant Task_ID := Entry_Call.Self;
+      Caller : constant Task_Id := Entry_Call.Self;
 
    begin
       pragma Assert (New_State = Done or else New_State = Cancelled);
@@ -332,6 +334,7 @@ package body System.Tasking.Protected_Objects.Single_Entry is
 
       STPO.Initialize_Lock (Init_Priority, Object.L'Access);
       Object.Ceiling := System.Any_Priority (Init_Priority);
+      Object.Owner := Null_Task;
       Object.Compiler_Info := Compiler_Info;
       Object.Call_In_Progress := null;
       Object.Entry_Body := Entry_Body;
@@ -347,11 +350,43 @@ package body System.Tasking.Protected_Objects.Single_Entry is
 
    procedure Lock_Entry (Object : Protection_Entry_Access) is
       Ceiling_Violation : Boolean;
+
    begin
+      --  If pragma Detect_Blocking is active then, as described in the ARM
+      --  9.5.1, par. 15, we must check whether this is an external call on a
+      --  protected subprogram with the same target object as that of the
+      --  protected action that is currently in progress (i.e., if the caller
+      --  is already the protected object's owner). If this is the case hence
+      --  Program_Error must be raised.
+
+      if Detect_Blocking and then Object.Owner = Self then
+         raise Program_Error;
+      end if;
+
       STPO.Write_Lock (Object.L'Access, Ceiling_Violation);
 
       if Ceiling_Violation then
          raise Program_Error;
+      end if;
+
+      --  We are entering in a protected action, so that we increase the
+      --  protected object nesting level (if pragma Detect_Blocking is
+      --  active), and update the protected object's owner.
+
+      if Detect_Blocking then
+         declare
+            Self_Id : constant Task_Id := Self;
+
+         begin
+            --  Update the protected object's owner
+
+            Object.Owner := Self_Id;
+
+            --  Increase protected object nesting level
+
+            Self_Id.Common.Protected_Action_Nesting :=
+              Self_Id.Common.Protected_Action_Nesting + 1;
+         end;
       end if;
    end Lock_Entry;
 
@@ -359,16 +394,57 @@ package body System.Tasking.Protected_Objects.Single_Entry is
    -- Lock_Read_Only_Entry --
    --------------------------
 
-   --  Compiler interface only.
-   --  Do not call this procedure from within the runtime system.
+   --  Compiler interface only
+
+   --  Do not call this procedure from within the runtime system
 
    procedure Lock_Read_Only_Entry (Object : Protection_Entry_Access) is
       Ceiling_Violation : Boolean;
+
    begin
+      --  If pragma Detect_Blocking is active then, as described in the ARM
+      --  9.5.1, par. 15, we must check whether this is an external call on a
+      --  protected subprogram with the same target object as that of the
+      --  protected action that is currently in progress (i.e., if the caller
+      --  is already the protected object's owner). If this is the case hence
+      --  Program_Error must be raised.
+
+      --  Note that in this case (getting read access), several tasks may
+      --  have read ownership of the protected object, so that this method of
+      --  storing the (single) protected object's owner does not work
+      --  reliably for read locks. However, this is the approach taken for two
+      --  major reasosn: first, this function is not currently being used (it
+      --  is provided for possible future use), and second, it largely
+      --  simplifies the implementation.
+
+      if Detect_Blocking and then Object.Owner = Self then
+         raise Program_Error;
+      end if;
+
       STPO.Read_Lock (Object.L'Access, Ceiling_Violation);
 
       if Ceiling_Violation then
          raise Program_Error;
+      end if;
+
+      --  We are entering in a protected action, so that we increase the
+      --  protected object nesting level (if pragma Detect_Blocking is
+      --  active), and update the protected object's owner.
+
+      if Detect_Blocking then
+         declare
+            Self_Id : constant Task_Id := Self;
+
+         begin
+            --  Update the protected object's owner
+
+            Object.Owner := Self_Id;
+
+            --  Increase protected object nesting level
+
+            Self_Id.Common.Protected_Action_Nesting :=
+              Self_Id.Common.Protected_Action_Nesting + 1;
+         end;
       end if;
    end Lock_Read_Only_Entry;
 
@@ -377,11 +453,12 @@ package body System.Tasking.Protected_Objects.Single_Entry is
    --------------------
 
    procedure PO_Do_Or_Queue
-     (Self_Id    : Task_ID;
+     (Self_Id    : Task_Id;
       Object     : Protection_Entry_Access;
       Entry_Call : Entry_Call_Link)
    is
       Barrier_Value : Boolean;
+
    begin
       --  When the Action procedure for an entry body returns, it must be
       --  completed (having called [Exceptional_]Complete_Entry_Body).
@@ -390,6 +467,7 @@ package body System.Tasking.Protected_Objects.Single_Entry is
 
       if Barrier_Value then
          if Object.Call_In_Progress /= null then
+
             --  This violates the No_Entry_Queue restriction, send
             --  Program_Error to the caller.
 
@@ -415,7 +493,17 @@ package body System.Tasking.Protected_Objects.Single_Entry is
          end if;
 
       elsif Entry_Call.Mode /= Conditional_Call then
-         Object.Entry_Queue := Entry_Call;
+         if Object.Entry_Queue /= null then
+
+            --  This violates the No_Entry_Queue restriction, send
+            --  Program_Error to the caller.
+
+            Send_Program_Error (Self_Id, Entry_Call);
+            return;
+         else
+            Object.Entry_Queue := Entry_Call;
+         end if;
+
       else
          --  Conditional_Call
 
@@ -460,11 +548,22 @@ package body System.Tasking.Protected_Objects.Single_Entry is
       Uninterpreted_Data : System.Address;
       Mode               : Call_Modes)
    is
-      Self_Id           : constant Task_ID := STPO.Self;
+      Self_Id           : constant Task_Id := STPO.Self;
       Entry_Call        : Entry_Call_Record renames Self_Id.Entry_Calls (1);
       Ceiling_Violation : Boolean;
 
    begin
+      --  If pragma Detect_Blocking is active then Program_Error must be
+      --  raised if this potentially blocking operation is called from a
+      --  protected action.
+
+      if Detect_Blocking
+        and then Self_Id.Common.Protected_Action_Nesting > 0
+      then
+         Ada.Exceptions.Raise_Exception
+           (Program_Error'Identity, "potentially blocking operation");
+      end if;
+
       STPO.Write_Lock (Object.L'Access, Ceiling_Violation);
 
       if Ceiling_Violation then
@@ -506,7 +605,7 @@ package body System.Tasking.Protected_Objects.Single_Entry is
    -----------------------------------
 
    function Protected_Single_Entry_Caller
-     (Object : Protection_Entry) return Task_ID is
+     (Object : Protection_Entry) return Task_Id is
    begin
       return Object.Call_In_Progress.Self;
    end Protected_Single_Entry_Caller;
@@ -516,46 +615,54 @@ package body System.Tasking.Protected_Objects.Single_Entry is
    -------------------
 
    procedure Service_Entry (Object : Protection_Entry_Access) is
-      Self_Id       : constant Task_ID := STPO.Self;
-      Entry_Call    : constant Entry_Call_Link := Object.Entry_Queue;
-      Caller        : Task_ID;
+      Self_Id    : constant Task_Id := STPO.Self;
+      Entry_Call : constant Entry_Call_Link := Object.Entry_Queue;
+      Caller     : Task_Id;
 
    begin
-      if Entry_Call /= null then
-         if Object.Entry_Body.Barrier (Object.Compiler_Info, 1) then
-            Object.Entry_Queue := null;
+      if Entry_Call /= null
+        and then Object.Entry_Body.Barrier (Object.Compiler_Info, 1)
+      then
+         Object.Entry_Queue := null;
 
-            if Object.Call_In_Progress /= null then
-               --  This violates the No_Entry_Queue restriction, send
-               --  Program_Error to the caller.
+         if Object.Call_In_Progress /= null then
 
-               Send_Program_Error (Self_Id, Entry_Call);
-               return;
-            end if;
+            --  Violation of No_Entry_Queue restriction, raise exception
 
-            Object.Call_In_Progress := Entry_Call;
-            Object.Entry_Body.Action
-              (Object.Compiler_Info, Entry_Call.Uninterpreted_Data, 1);
-            Object.Call_In_Progress := null;
-            Caller := Entry_Call.Self;
-
-            if Single_Lock then
-               STPO.Lock_RTS;
-            end if;
-
-            STPO.Write_Lock (Caller);
-            Wakeup_Entry_Caller (Self_Id, Entry_Call, Done);
-            STPO.Unlock (Caller);
-
-            if Single_Lock then
-               STPO.Unlock_RTS;
-            end if;
+            Send_Program_Error (Self_Id, Entry_Call);
+            Unlock_Entry (Object);
+            return;
          end if;
+
+         Object.Call_In_Progress := Entry_Call;
+         Object.Entry_Body.Action
+           (Object.Compiler_Info, Entry_Call.Uninterpreted_Data, 1);
+         Object.Call_In_Progress := null;
+         Caller := Entry_Call.Self;
+         Unlock_Entry (Object);
+
+         if Single_Lock then
+            STPO.Lock_RTS;
+         end if;
+
+         STPO.Write_Lock (Caller);
+         Wakeup_Entry_Caller (Self_Id, Entry_Call, Done);
+         STPO.Unlock (Caller);
+
+         if Single_Lock then
+            STPO.Unlock_RTS;
+         end if;
+
+      else
+         --  Just unlock the entry
+
+         Unlock_Entry (Object);
       end if;
 
    exception
       when others =>
          Send_Program_Error (Self_Id, Entry_Call);
+         Unlock_Entry (Object);
    end Service_Entry;
 
    ---------------------------------------
@@ -571,11 +678,22 @@ package body System.Tasking.Protected_Objects.Single_Entry is
       Mode                  : Delay_Modes;
       Entry_Call_Successful : out Boolean)
    is
-      Self_Id           : constant Task_ID  := STPO.Self;
+      Self_Id           : constant Task_Id  := STPO.Self;
       Entry_Call        : Entry_Call_Record renames Self_Id.Entry_Calls (1);
       Ceiling_Violation : Boolean;
 
    begin
+      --  If pragma Detect_Blocking is active then Program_Error must be
+      --  raised if this potentially blocking operation is called from a
+      --  protected action.
+
+      if Detect_Blocking
+        and then Self_Id.Common.Protected_Action_Nesting > 0
+      then
+         Ada.Exceptions.Raise_Exception
+           (Program_Error'Identity, "potentially blocking operation");
+      end if;
+
       STPO.Write_Lock (Object.L'Access, Ceiling_Violation);
 
       if Ceiling_Violation then
@@ -628,6 +746,31 @@ package body System.Tasking.Protected_Objects.Single_Entry is
 
    procedure Unlock_Entry (Object : Protection_Entry_Access) is
    begin
+      --  We are exiting from a protected action, so that we decrease the
+      --  protected object nesting level (if pragma Detect_Blocking is
+      --  active), and remove ownership of the protected object.
+
+      if Detect_Blocking then
+         declare
+            Self_Id : constant Task_Id := Self;
+
+         begin
+            --  Calls to this procedure can only take place when being within
+            --  a protected action and when the caller is the protected
+            --  object's owner.
+
+            pragma Assert (Self_Id.Common.Protected_Action_Nesting > 0
+                             and then Object.Owner = Self_Id);
+
+            --  Remove ownership of the protected object
+
+            Object.Owner := Null_Task;
+
+            Self_Id.Common.Protected_Action_Nesting :=
+              Self_Id.Common.Protected_Action_Nesting - 1;
+         end;
+      end if;
+
       STPO.Unlock (Object.L'Access);
    end Unlock_Entry;
 
