@@ -26,6 +26,7 @@ host_gnatchop=`which gnatchop`
 host_gnatmake=`which gnatmake`
 ROOT=`${PWDCMD-pwd}`
 BASE=`cd $ROOT/../../..; ${PWDCMD-pwd}`
+TOP=`cd $BASE/..; ${PWDCMD-pwd}`
 
 PATH=$BASE:$ROOT:$PATH
 ADA_INCLUDE_PATH=$BASE/ada/rts
@@ -49,7 +50,7 @@ fi
 
 GCC_DRIVER="$BASE/xgcc"
 GCC="$BASE/xgcc -B$BASE/"
-export PATH ADA_INCLUDE_PATH ADA_OBJECTS_PATH GCC_DRIVER GCC LD_LIBRARY_PATH
+export PATH ADA_INCLUDE_PATH ADA_OBJECTS_PATH GCC_DRIVER GCC LD_LIBRARY_PATH TOP
 
 echo '#!/bin/sh' > host_gnatchop
 echo PATH=`dirname $host_gnatchop`:'$PATH' >> host_gnatchop

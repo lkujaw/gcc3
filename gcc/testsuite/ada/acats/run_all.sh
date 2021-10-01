@@ -18,6 +18,8 @@ $*
 
 # End of customization section.
 
+suite_name="ACATS 2.6 for Ada 95"
+
 display_noeol () {
   printf "$@"
   printf "$@" >> $dir/acats.sum
@@ -78,7 +80,7 @@ rm -f $dir/acats.sum $dir/acats.log
 
 display "Test Run By $USER on `date`"
 
-display "		=== acats configuration ==="
+display "		=== $suite_name configuration ==="
 
 target=`$GCC -dumpmachine`
 
@@ -90,7 +92,7 @@ display `type gnatmake`
 gnatls -v >> $dir/acats.log
 display ""
 
-display "		=== acats support ==="
+display "		=== $suite_name support ==="
 display_noeol "Generating support files..."
 
 rm -rf $dir/support
@@ -121,6 +123,10 @@ esac
 echo target_insn="$target_insn" >> $dir/acats.log
 
 sed -e "s,ACATS4GNATDIR,$dir,g" \
+    -e 's,"CXB50040","args_",' \
+    -e 's,"CXB50041","tax_",' \
+    -e 's,"CXB50050","align_",' \
+    -e 's,"CXB50051","modify_",' \
   < $testdir/support/impdef.a > $dir/support/impdef.a
 sed -e "s,ACATS4GNATDIR,$dir,g" \
   -e "s,ACATS4GNATBIT,$target_bit,g" \
@@ -193,7 +199,7 @@ target_gnatmake -c -gnato -gnatE *.adb >> $dir/acats.log 2>&1
 
 display " done."
 display ""
-display "		=== acats tests ==="
+display "		=== $suite_name tests ==="
 
 if [ $# -eq 0 ]; then
    chapters=`cd $dir/tests; echo [a-z]*`
@@ -250,9 +256,10 @@ for chapter in $chapters; do
       EXTERNAL_OBJECTS=""
       case $i in
         cxb30*) EXTERNAL_OBJECTS="$dir/support/cxb30040.o $dir/support/cxb30060.o $dir/support/cxb30130.o $dir/support/cxb30131.o";;
+        cxb50*) EXTERNAL_OBJECTS="${TOP}/${target}/libf2c/.libs/libg2c.a $dir/support/cxb50040.o $dir/support/cxb50041.o $dir/support/cxb50050.o $dir/support/cxb50051.o";;
         ca1020e) rm -f ca1020e_func1.adb ca1020e_func2.adb ca1020e_proc1.adb ca1020e_proc2.adb > /dev/null 2>&1;;
         ca14028) rm -f ca14028_func2.ads ca14028_func3.ads ca14028_proc1.ads ca14028_proc3.ads > /dev/null 2>&1;;
-        cxh1001) extraflags="-a -f"; echo "pragma Normalize_Scalars;" > gnat.adc
+        cxh1001) extraflags="$extraflags -a -f"; echo "pragma Normalize_Scalars;" > gnat.adc
       esac
       if [ "$main" = "" ]; then
          display "FAIL:	$i"
@@ -269,13 +276,13 @@ for chapter in $chapters; do
          continue
       fi
 
-      echo "RUN $binmain" >> $dir/acats.log
-      cd $dir/run
+      echo "RUN $binmain" >> "$dir/acats.log"
+      cd "$dir/run" || exit 1
       if [ ! -x $dir/tests/$chapter/$i/$binmain ]; then
          sync
       fi
       target_run $dir/tests/$chapter/$i/$binmain > $dir/tests/$chapter/$i/${i}.log 2>&1
-      cd $dir/tests/$chapter/$i
+      cd "$dir/tests/$chapter/$i" || exit 1
       cat ${i}.log >> $dir/acats.log
       egrep -e '(==== |\+\+\+\+ |\!\!\!\! )' ${i}.log > /dev/null 2>&1
       if [ $? -ne 0 ]; then
@@ -297,7 +304,7 @@ for chapter in $chapters; do
    done
 done
 
-display "		=== acats Summary ==="
+display "		=== $suite_name Summary ==="
 display "# of expected passes		$glob_countok"
 display "# of unexpected failures	`expr $glob_countn - $glob_countok`"
 
